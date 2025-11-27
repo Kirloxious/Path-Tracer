@@ -4,6 +4,7 @@
 #include <vector>
 #include <chrono>
 #include <random>
+#include <numeric>
 
 #include "renderer.h"
 #include "window.h"
