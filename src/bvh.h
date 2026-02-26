@@ -20,7 +20,7 @@ struct AABB {
             glm::vec3(max.x + padding, max.y + padding, max.z + padding) };
         }
         
-        float surfaceArea() const {
+    float surfaceArea() const {
             glm::vec3 d = max - min;
             return 2.0f * (d.x * d.y + d.y * d.z + d.z * d.x);
         }
