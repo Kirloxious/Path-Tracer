@@ -59,6 +59,7 @@ class Camera {
         float lookSpeed{1.1f};
 
         Camera(CameraSettings &settings) {
+            
             this->settings = settings;
             data.lookfrom = glm::vec4(settings.lookfrom, 1.0f);
             image_width = settings.image_width;

@@ -2,8 +2,7 @@
 
 #include <iostream>
 
-Texture createTexture(int width, int height)
-{
+Texture createTexture(int width, int height){
     Texture texture;
     texture.width = width;
     texture.height = height;
@@ -23,8 +22,12 @@ Texture createTexture(int width, int height)
     return texture;
 }
 
-FrameBuffer createFrameBuffer(const Texture texture)
-{
+void bindDoubleBufferTexture(const Texture texture){
+    glBindImageTexture(0, texture.handle, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F);
+    glBindImageTexture(1, texture.handle, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+}
+
+FrameBuffer createFrameBuffer(const Texture texture){
     FrameBuffer buffer;
 
     glCreateFramebuffers(1, &buffer.handle);
@@ -38,8 +41,7 @@ FrameBuffer createFrameBuffer(const Texture texture)
     return buffer;
 }
 
-bool attachTextureToFrameBuffer( const Texture texture, FrameBuffer& framebuffer)
-{
+bool attachTextureToFrameBuffer( const Texture texture, FrameBuffer& framebuffer){
 	glNamedFramebufferTexture(framebuffer.handle, GL_COLOR_ATTACHMENT0, texture.handle, 0);
 
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
@@ -52,8 +54,7 @@ bool attachTextureToFrameBuffer( const Texture texture, FrameBuffer& framebuffer
 	return true;
 }
 
-void blitFrameBuffer(const FrameBuffer frameBuffer)
-{
+void blitFrameBuffer(const FrameBuffer frameBuffer){
     glBindFramebuffer(GL_READ_FRAMEBUFFER, frameBuffer.handle);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // (swapchain)
 

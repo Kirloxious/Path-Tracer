@@ -1,10 +1,11 @@
 #pragma once
 
-#include "world.h"
 #include <vector>
 #include <iostream>
 #include <algorithm>
+#include <glm/glm.hpp>
 
+#include "primitive.h"
 
 struct AABB {
     glm::vec3 min;
@@ -145,7 +146,7 @@ int findBestSAHSplit(const std::vector<AABB>& aabbs, const std::vector<int>& ind
         // Compute left and right boxes on current axis
         std::vector<AABB> leftBoxes(sorted.size()), rightBoxes(sorted.size());
         AABB leftBox = aabbs[sorted[0]];
-        for (int i = 1; i < sorted.size(); ++i)
+        for (int i = 1; i < (int)sorted.size(); ++i)
             leftBoxes[i] = leftBox = surroundingBox(leftBox, aabbs[sorted[i]]);
 
         AABB rightBox = aabbs[sorted.back()];
@@ -153,7 +154,7 @@ int findBestSAHSplit(const std::vector<AABB>& aabbs, const std::vector<int>& ind
             rightBoxes[i] = rightBox = surroundingBox(rightBox, aabbs[sorted[i]]);
 
         // Compute the SAH cost which uses the surface area of the left and right boxes
-        for (int i = 1; i < sorted.size(); ++i) {
+        for (int i = 1; i < (int)sorted.size(); ++i) {
             float leftArea = leftBoxes[i].surfaceArea();
             float rightArea = rightBoxes[i].surfaceArea();
 
@@ -187,18 +188,6 @@ int buildBVH(std::vector<BVHNode>& bvh, const std::vector<Sphere>& spheres, cons
         bvh.push_back(node);
         return bvh.size() - 1;
     }
-
-    // Split: sort by axis
-    // int axis = findMaxVarianceAxis(sphereIndices, aabbs);
-    // int axis = longestAxis(box);
-    // int axis = rand() % 3;
-    // std::sort(sphereIndices.begin(), sphereIndices.end(), [&](int a, int b) {
-    //     return aabbs[a].center()[axis] < aabbs[b].center()[axis];
-    // });
-
-    // int mid = sphereIndices.size() / 2;
-    // std::vector<int> leftIndices(sphereIndices.begin(), sphereIndices.begin() + mid);
-    // std::vector<int> rightIndices(sphereIndices.begin() + mid, sphereIndices.end());
 
     int axis, splitIndex;
     findBestSAHSplit(aabbs, sphereIndices, axis, splitIndex);

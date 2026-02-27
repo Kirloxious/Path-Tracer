@@ -1,101 +1,142 @@
 #pragma once
 
+#include <cstdint>
+#include <glm/ext/vector_float3.hpp>
 #include <glm/glm.hpp>
+#include <numeric>
 
-struct alignas(16) Sphere
-{
-    glm::vec3 position;
-    float radius;
-    uint32_t material_index;
+#include "bvh.h"
+#include "utils.h"
+
+enum class MaterialType : uint32_t {
+    Lambertian  = 0,
+    Metal       = 1,
+    Dielectric  = 2,
+    Emissive    = 3,
 };
 
-Sphere createSphere(glm::vec3 position, float radius, uint32_t material_index){
-    Sphere sphere;
-    sphere.position = position;
-    sphere.radius = radius;
-    sphere.material_index = material_index;
-    return sphere;
-}
+struct alignas(16) Material {
+    glm::vec3 color            = glm::vec3(1.0f);
+    float     fuzz             = 0.0f;
+    glm::vec3 emission         = glm::vec3(0.0f);
+    float     refractive_index = 0.0f;
+    float     type             = 0.0f;
 
-struct alignas(16) Quad
-{
-    glm::vec3 corner_point;
-    glm::vec3 u;
-    glm::vec3 v;
-    uint32_t material_index;
+    static Material Lambertian(glm::vec3 color) {
+        Material m;
+        m.color = color;
+        m.type  = (float)MaterialType::Lambertian;
+        return m;
+    }
 
+    static Material Metal(glm::vec3 color, float fuzz) {
+        Material m;
+        m.color = color;
+        m.fuzz  = fuzz;
+        m.type  = (float)MaterialType::Metal;
+        return m;
+    }
+
+    static Material Dielectric(float refractive_index) {
+        Material m;
+        m.refractive_index = refractive_index;
+        m.type             = (float)MaterialType::Dielectric;
+        return m;
+    }
+
+    static Material Emissive(glm::vec3 color, glm::vec3 emission) {
+        Material m;
+        m.color    = color;
+        m.emission = emission;
+        m.type     = (float)MaterialType::Emissive;
+        return m;
+    }
 };
 
-Quad createQuad(glm::vec3 corner_point, glm::vec3 u, glm::vec3 v, uint32_t material_index){
-    Quad quad;
-    quad.corner_point = corner_point;
-    quad.u = u;
-    quad.v = v;
-    quad.material_index = material_index;
-    return quad;
-}
-
-const float MAT_LAMBERTIAN = 0.0;
-const float MAT_METAL = 1.0;
-const float MAT_DIELECTRIC = 2.0;
-const float MAT_EMISSIVE = 3.0;
-
-struct alignas(16) Material
+class World
 {
-    glm::vec3 color;
-    float fuzz;
-    glm::vec3 emission;
-    float refractive_index;
-    float type;
-};
+public:
+    std::vector<Sphere>   spheres;
+    std::vector<Material> materials;
+    std::vector<BVHNodeFlat> bvh;
+    int                      bvhRoot = -1;
+    uint32_t bvhSize = 0;
 
-Material Dielectric(float refractive_index)
-{
-    Material material;
-    material.color = glm::vec4(1.0f, 1.0f, 1.0f, -2.0f);
-    material.fuzz = 0.0f;
-    material.emission = glm::vec3(0.0f);
-    material.refractive_index = refractive_index;
-    material.type = MAT_DIELECTRIC;
-    return material;
-}
+    // Returns the index of the added material
+    uint32_t addMaterial(Material mat) {
+        materials.push_back(mat);
+        return (uint32_t)materials.size() - 1;
+    }
 
-Material Lambertian(glm::vec3 color)
-{
-    Material material;
-    material.color = color;
-    material.fuzz = 0.0f;
-    material.emission = glm::vec3(0.0f);
-    material.refractive_index = 0.0f;
-    material.type = MAT_LAMBERTIAN;
-    return material;
-}
+    void addSphere(glm::vec3 position, float radius, uint32_t material_index) {
+        spheres.emplace_back(position, radius, material_index);
+    }
 
-Material Metal(glm::vec3 color, float fuzz)
-{
-    Material material;
-    material.color = color;
-    material.fuzz = fuzz;
-    material.emission = glm::vec3(0.0f);
-    material.refractive_index = 0.0f;
-    material.type = MAT_METAL;
-    return material;
-}
+    void addSphere(glm::vec3 position, float radius, Material mat) {
+        addSphere(position, radius, addMaterial(mat));
+    }
 
-Material Emissive(glm::vec3 color, glm::vec3 emission)
-{
-    Material material;
-    material.color = color;
-    material.fuzz = 0.0f;
-    material.emission = emission;
-    material.refractive_index = 0.0f;
-    material.type = MAT_EMISSIVE;
-    return material;
-}
+    void constructBVH(){
+        std::vector<AABB> spheresAABBS;
+        for (const auto& sphere : spheres) {
+            spheresAABBS.push_back(computeAABB(sphere));
+        }
+        std::cout << "Number of spheres: " << spheres.size() << std::endl;
 
-struct World
-{
-    /* data */
+        std::vector<BVHNode> bvhNodes;
+
+        std::vector<int> sphereIndices(spheres.size());
+        std::iota(sphereIndices.begin(), sphereIndices.end(), 0); // [0, 1, 2, ..., N]
+        
+        bvhRoot = buildBVH(bvhNodes, spheres, spheresAABBS, sphereIndices);
+
+        bvhSize = bvhNodes.size();
+        bvh.reserve(bvhSize);
+        flattenBVH(bvhRoot, bvhNodes, bvh, -1);
+    }
+
+    static void buildSphereWorld(World& world){
+        // Ground sphere and mat
+        uint32_t ground = world.addMaterial(Material::Lambertian(glm::vec3(0.5f, 0.5f, 0.5f)));
+        world.addSphere(glm::vec3(0.0f, -1000.0f, 0.0f), 1000.0f, ground);
+
+        for(int a = -11; a < 11; a++) {
+            for(int b = -11; b < 11; b++) {
+                float choose_mat = randomFloat();
+                glm::vec3 center = glm::vec3(a + 0.9f * randomFloat(), 0.2f, b + 0.9f * randomFloat());
+                if (choose_mat < 0.8f) {
+                    // diffuse
+                    glm::vec3 color = glm::vec3(randomFloat(), randomFloat(), randomFloat());
+                    world.addSphere(center, 0.2f, Material::Lambertian(color));
+                }
+                else if (choose_mat < 0.95f) {
+                    // metal
+                    glm::vec3 color = glm::vec3(randomFloat(), randomFloat(), randomFloat());
+                    float fuzz = 0.5f * randomFloat();
+                    world.addSphere(center, 0.2f, Material::Metal(color, fuzz));
+                }
+                else {
+                    // glass
+                    world.addSphere(center, 0.2f, Material::Dielectric(1.5f));
+                }
+            }
+        }
+        
+        // Big spheres
+        
+        //Glasss
+        world.addSphere(glm::vec3(0.0f, 1.0f, 0.0f), 1.0f, Material::Dielectric(1.5f));
+        //Mirror
+        world.addSphere(glm::vec3(-4.0f, 1.0f, 0.0f), 1.0f, Material::Lambertian(glm::vec3(0.4f, 0.2f, 0.1f)));
+        //Brown
+        world.addSphere(glm::vec3(4.0f, 1.0f, 0.0f), 1.0f,Material::Metal(glm::vec3(0.7f, 0.6f, 0.5f), 0.0f));
+        //Red light
+        world.addSphere(glm::vec3(-8.0f, 1.0f, 0.0f), 1.0f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(15.0f, 6.0f, 2.0f)));
+        
+
+        world.constructBVH();
+    
+    }
 };
 
 

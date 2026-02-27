@@ -17,6 +17,7 @@ struct FrameBuffer
 };
 
 Texture createTexture(int width, int height);
+void bindDoubleBufferTexture(const Texture texture);
 FrameBuffer createFrameBuffer(const Texture texture);   
 bool attachTextureToFrameBuffer(const Texture texture, FrameBuffer& frameBuffer);
 void blitFrameBuffer(const FrameBuffer frameBuffer);
