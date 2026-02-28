@@ -132,81 +132,79 @@ float computeSAHCost(int numLeft, float leftArea, int numRight, float rightArea)
 
 // SAH effectivly reduces the number of interesection tests by splitting the aabb into optimal subboxes.
 // It does this by finding the best axis to split on using the surface area of the aabbs
-int findBestSAHSplit(const std::vector<AABB>& aabbs, const std::vector<int>& indices, int& splitAxis, int& splitIndex) {
+void findBestSAHSplit(const std::vector<AABB>& aabbs, const std::vector<int>& indices, int& splitIndex, std::vector<int>& outSorted, std::vector<AABB>& scratchLeft, std::vector<AABB>& scratchRight)
+{
     float bestCost = FLT_MAX;
+    int n = (int)indices.size();
 
-    // Iterate over all axis
+    scratchLeft.resize(n);
+    scratchRight.resize(n);
+
     for (int axis = 0; axis < 3; axis++) {
-        // Sort by axis 
         std::vector<int> sorted = indices;
         std::sort(sorted.begin(), sorted.end(), [&](int a, int b) {
             return aabbs[a].center()[axis] < aabbs[b].center()[axis];
         });
 
-        // Compute left and right boxes on current axis
-        std::vector<AABB> leftBoxes(sorted.size()), rightBoxes(sorted.size());
-        AABB leftBox = aabbs[sorted[0]];
-        for (int i = 1; i < (int)sorted.size(); ++i)
-            leftBoxes[i] = leftBox = surroundingBox(leftBox, aabbs[sorted[i]]);
+        scratchLeft[0] = aabbs[sorted[0]];
+        for (int i = 1; i < n; ++i)
+            scratchLeft[i] = surroundingBox(scratchLeft[i-1], aabbs[sorted[i]]);
 
-        AABB rightBox = aabbs[sorted.back()];
-        for (int i = (int)sorted.size() - 2; i >= 0; --i)
-            rightBoxes[i] = rightBox = surroundingBox(rightBox, aabbs[sorted[i]]);
+        scratchRight[n-1] = aabbs[sorted[n-1]];
+        for (int i = n - 2; i >= 0; --i)
+            scratchRight[i] = surroundingBox(scratchRight[i+1], aabbs[sorted[i]]);
 
-        // Compute the SAH cost which uses the surface area of the left and right boxes
-        for (int i = 1; i < (int)sorted.size(); ++i) {
-            float leftArea = leftBoxes[i].surfaceArea();
-            float rightArea = rightBoxes[i].surfaceArea();
-
-            float cost = computeSAHCost(i, leftArea, sorted.size() - i, rightArea);
+        for (int i = 1; i < n; ++i) {
+            float cost = computeSAHCost(i,     scratchLeft[i-1].surfaceArea(),
+                                        n - i, scratchRight[i].surfaceArea());
             if (cost < bestCost) {
-                bestCost = cost;
-                splitAxis = axis;
+                bestCost   = cost;
                 splitIndex = i;
+                outSorted  = sorted;
             }
         }
     }
-
-    return splitAxis;
 }
 
-
-int buildBVH(std::vector<BVHNode>& bvh, const std::vector<Sphere>& spheres, const std::vector<AABB>& aabbs, std::vector<int> sphereIndices) {
+int buildBVH_r(std::vector<BVHNode>& bvh, const std::vector<AABB>& aabbs, std::vector<int> indices, std::vector<AABB>& scratchLeft, std::vector<AABB>& scratchRight){
     BVHNode node;
 
     // Compute bounding box for all spheres in this node
-    AABB box = aabbs[sphereIndices[0]];
-    for (size_t i = 1; i < sphereIndices.size(); i++) {
-        box = surroundingBox(box, aabbs[sphereIndices[i]]);
-    }
+    node.aabb = aabbs[indices[0]];
+    for (int i = 1; i < (int)indices.size(); ++i)
+        node.aabb = surroundingBox(node.aabb, aabbs[indices[i]]);
 
-    node.aabb = box;
-
-    if (sphereIndices.size() == 1) {
-        node.sphereIndex = sphereIndices[0];
+    if (indices.size() == 1) {
+        node.sphereIndex = indices[0];
         node.left = node.right = -1;
         bvh.push_back(node);
-        return bvh.size() - 1;
+        return (int)bvh.size() - 1;
     }
 
-    int axis, splitIndex;
-    findBestSAHSplit(aabbs, sphereIndices, axis, splitIndex);
+    int splitIndex;
+    std::vector<int> sorted;
+    findBestSAHSplit(aabbs, indices, splitIndex, sorted, scratchLeft, scratchRight);
 
-    std::sort(sphereIndices.begin(), sphereIndices.end(), [&](int a, int b) {
-        return aabbs[a].center()[axis] < aabbs[b].center()[axis];
-    });
+    std::vector<int> leftIndices (sorted.begin(), sorted.begin() + splitIndex);
+    std::vector<int> rightIndices(sorted.begin() + splitIndex, sorted.end());
 
-    std::vector<int> leftIndices(sphereIndices.begin(), sphereIndices.begin() + splitIndex);
-    std::vector<int> rightIndices(sphereIndices.begin() + splitIndex, sphereIndices.end());
+    int leftChild  = buildBVH_r(bvh, aabbs, std::move(leftIndices),  scratchLeft, scratchRight);
+    int rightChild = buildBVH_r(bvh, aabbs, std::move(rightIndices), scratchLeft, scratchRight);
 
-    int leftChild = buildBVH(bvh, spheres, aabbs, leftIndices);
-    int rightChild = buildBVH(bvh, spheres, aabbs, rightIndices);
-
-    node.left = leftChild;
+    node.sphereIndex = -1;
+    node.left  = leftChild;
     node.right = rightChild;
     bvh.push_back(node);
-    return bvh.size() - 1;
+    return (int)bvh.size() - 1;
 }
+
+int buildBVH(std::vector<BVHNode>& bvh, const std::vector<AABB>& aabbs, std::vector<int> indices){
+    int n = (int)indices.size();
+    std::vector<AABB> scratchLeft(n), scratchRight(n);
+    bvh.reserve(2 * n);
+    return buildBVH_r(bvh, aabbs, std::move(indices), scratchLeft, scratchRight);
+} 
+
 struct MortonPrimitive{
     uint32_t code;
     int index;

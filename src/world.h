@@ -88,7 +88,7 @@ public:
         std::vector<int> sphereIndices(spheres.size());
         std::iota(sphereIndices.begin(), sphereIndices.end(), 0); // [0, 1, 2, ..., N]
         
-        bvhRoot = buildBVH(bvhNodes, spheres, spheresAABBS, sphereIndices);
+        bvhRoot = buildBVH(bvhNodes, spheresAABBS, sphereIndices);
 
         bvhSize = bvhNodes.size();
         bvh.reserve(bvhSize);

@@ -1,6 +1,7 @@
 #version 460 core
 
-#define MAX_NUM_SPHERES 10
+
+// #define DEBUG_BRUTE_FORCE //Test the Brute force algorithm
 
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
@@ -239,19 +240,14 @@ bool world_hit(in Ray r, in float ray_tmin,  in float ray_tmax, inout HitRecord 
     return hit_anything;
 }
 
-bool intersect_aabb(in Ray r, in vec3 min_b, in vec3 max_b, in vec3 inv_dir) {
-    vec3 tmin = (min_b - r.origin) * inv_dir;
-    vec3 tmax = (max_b - r.origin) * inv_dir;
-    
-    vec3 t1 = min(tmin, tmax);
-    vec3 t2 = max(tmin, tmax);
-    
-    float t_near = max(max(t1.x, t1.y), t1.z);
-    float t_far = min(min(t2.x, t2.y), t2.z);
-    
-    return t_near < t_far && t_far > 0.0f;
-}
 
+bool intersect_aabb(in Ray r, in vec3 minB, in vec3 maxB, in vec3 invDir, in float tMin, in float tMax) {
+    vec3 t1 = (minB - r.origin) * invDir;
+    vec3 t2 = (maxB - r.origin) * invDir;
+    float tNear = max(max(min(t1.x, t2.x), min(t1.y, t2.y)), min(t1.z, t2.z));
+    float tFar  = min(min(max(t1.x, t2.x), max(t1.y, t2.y)), max(t1.z, t2.z));
+    return tNear < tFar && tFar > tMin && tNear < tMax; // tFar > tMin: rejects boxes behind ray's min distance, tNear < tMax: rejects boxes beyond the closest hit so far
+}
 
 // BVH traversal intersection using pointers
 bool world_hit_aabb_stackless(in Ray r, in float tMin, in float tMax, inout HitRecord hit) {
@@ -262,7 +258,7 @@ bool world_hit_aabb_stackless(in Ray r, in float tMin, in float tMax, inout HitR
     
     while(idx >= 0) {
         BVHNodeFlat node = nodes[idx];
-        if (intersect_aabb(r, node.aabbMin.xyz, node.aabbMax.xyz, invDir)) {
+        if (intersect_aabb(r, node.aabbMin.xyz, node.aabbMax.xyz, invDir, tMin, closest)) {
             // Check if leaf
             if (node.meta.z != -1) {
                 Sphere s = spheres[node.meta.z];
@@ -354,6 +350,7 @@ bool ray_contributes_to_color(vec3 color, float threshold) {
     return length(color) > 0.001;  // Only continue if the color is above the threshold
 }
 
+#ifdef DEBUG_BRUTE_FORCE
 // Original ray color
 vec3 ray_color(in Ray ray, uint max_bounces, inout uint state) {
     vec3 accumulated_color = vec3(1.0);
@@ -395,9 +392,9 @@ vec3 ray_color(in Ray ray, uint max_bounces, inout uint state) {
     return radiance; // max depth reached
 }
 
+#else 
 
-
-vec3 ray_color2(in Ray ray, uint max_bounces, inout uint state) {
+vec3 ray_color(in Ray ray, uint max_bounces, inout uint state) {
     vec3 accumulated_color = vec3(1.0);
     vec3 final_color = vec3(0.0);
     
@@ -410,17 +407,17 @@ vec3 ray_color2(in Ray ray, uint max_bounces, inout uint state) {
         if (world_hit_aabb_stackless(current_ray, 0.001, infinity, hit_rec)) {
             Ray scattered;
             vec3 matColor;
-            vec3 emitted = mats[hit_rec.mat_index].emission;
 
             if (scatter(state, current_ray, hit_rec, matColor, scattered)) {
                 accumulated_color *= matColor;
                 current_ray = scattered;
 
-                // end early if contribution is below a threshold
-                if (!(length(accumulated_color) > 0.001))
-                    break;  
+                // end termination if contribution is below a threshold
+                if (!ray_contributes_to_color(accumulated_color, 0.0001))
+                    break;  // Stop further bounces
             } 
             else { // no scatter
+                vec3 emitted = mats[hit_rec.mat_index].emission;
                 final_color += accumulated_color * matColor * emitted;
                 break;
             }
@@ -437,8 +434,9 @@ vec3 ray_color2(in Ray ray, uint max_bounces, inout uint state) {
     return final_color; // max depth reached
 }
 
+#endif // End of DEBUG_BRUTE_FORCE
 
-vec3 sample_square(uint state) {
+vec3 sample_square(inout uint state) {
     // Returns the vector to a random point in the [-.5,-.5]-[+.5,+.5] unit square.
     return vec3(RandomBilateral(state) - 0.5, RandomBilateral(state) - 0.5 , 0);
 }
@@ -496,7 +494,7 @@ void main() {
     uint width = uint(imageDimensions.x);
     uint height = uint(imageDimensions.y);
 
-    uint random_state = time * (x + y * 36) + 1;
+    uint random_state = uint(time) * (x * 1973u + y * 9277u + 1u) | 1u;
 
     vec2 inv_resolution = 1.0 / vec2(width, height);
     vec3 camera_right = vec3(invViewMatrix[0].xyz);
@@ -530,7 +528,7 @@ void main() {
         ray.origin = origin;
         ray.direction = dir;
 
-        pixel_color += ray_color2(ray, max_bounces, random_state);
+        pixel_color += ray_color(ray, max_bounces, random_state);
     }
 
 
@@ -542,6 +540,7 @@ void main() {
 
     vec3 sum_color = prevColor * max(frameIndex, 0);
     vec3 final_color = (pixel_color + sum_color) / float(frameIndex + 1);
+    
 
     imageStore(destImage, pixel_coords, vec4(final_color, 1.0));
 }

@@ -2,8 +2,6 @@
 #include <glm/glm.hpp>
 #include <iostream>
 #include <vector>
-#include <random>
-#include <numeric>
 
 #include "renderer.h"
 #include "window.h"
@@ -90,7 +88,6 @@ int main() {
     
     GLuint numGroupsX = (camera.image_width + workGroupSizeX - 1) / workGroupSizeX;
     GLuint numGroupsY = (camera.image_height + workGroupSizeY - 1) / workGroupSizeY;
-    std::cout << numGroupsX << " " << numGroupsY << std::endl;
 
     while(!window.shouldClose()){
 
