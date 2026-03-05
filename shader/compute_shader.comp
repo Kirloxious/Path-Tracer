@@ -528,22 +528,22 @@ vec3 ray_color_MIS(in Ray ray, uint max_bounces, inout uint state) {
             vec3 mat_color;
 
             if (scatter(state, current_ray, hit_rec, mat_color, scattered)) {
-                Material mat  = mats[hit_rec.mat_index];
+                Material mat = mats[hit_rec.mat_index];
                 bool is_delta = (mat.type == MAT_METAL || mat.type == MAT_DIELECTRIC);
                 
                 // Direct light sampling 
                 if (num_emissive > 0 && !is_delta) {
-                    int    light_i   = int(RandomUnilateral(state) * float(emissive_last_index));
-                    Sphere light     = spheres[light_i];
-                    vec3   light_dir = sample_sphere(light, hit_rec.point, state);
+                    int light_i = int(RandomUnilateral(state) * float(emissive_last_index));
+                    Sphere light = spheres[light_i];
+                    vec3 light_dir = sample_sphere(light, hit_rec.point, state);
 
                     if (is_visible(hit_rec.point, light.position)) {
-                        Material light_mat  = mats[light.material_index];
-                        float    light_pdf  = sphere_sample_PDF(light, hit_rec.point);
-                        float    bsdf_pdf   = scatter_PDF(mat, hit_rec.normal, light_dir);
-                        float    cos_theta  = max(0.0, dot(hit_rec.normal, light_dir));
-                        float    weight     = mis_weight(light_pdf, bsdf_pdf);
-                        vec3     brdf       = mat_color / PI;
+                        Material light_mat = mats[light.material_index];
+                        float light_pdf = sphere_sample_PDF(light, hit_rec.point);
+                        float bsdf_pdf = scatter_PDF(mat, hit_rec.normal, light_dir);
+                        float cos_theta = max(0.0, dot(hit_rec.normal, light_dir));
+                        float weight = mis_weight(light_pdf, bsdf_pdf);
+                        vec3  brdf = mat_color / PI;
 
                         final_color += accumulated_color
                                      * weight

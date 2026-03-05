@@ -59,7 +59,7 @@ int main() {
     Buffer spheres_ssbo(GL_SHADER_STORAGE_BUFFER, 0, world.spheres, GL_DYNAMIC_READ);    
     Buffer mats_ssbo(GL_SHADER_STORAGE_BUFFER, 1, world.materials, GL_DYNAMIC_READ);
     Buffer cam_ubo(GL_UNIFORM_BUFFER, 2, camera.data, GL_STATIC_READ);
-    Buffer bvhnodes_ssbo(GL_SHADER_STORAGE_BUFFER, 3, world.bvh, GL_DYNAMIC_READ);
+    Buffer bvhnodes_ssbo(GL_SHADER_STORAGE_BUFFER, 3, world.bvh.nodes, GL_DYNAMIC_READ);
     
 
     unsigned int num_objects = world.spheres.size();
@@ -68,7 +68,7 @@ int main() {
     compute.setInt("num_objects", num_objects);
     compute.setVec2("imageDimensions", glm::vec2(camera.image_width, camera.image_height));
     compute.setInt("bvh_size", world.bvhSize);
-    compute.setInt("root_index", world.bvhRoot);
+    compute.setInt("root_index", world.bvh.root);
     compute.setInt("samples_per_pixel", camera.settings.samples_per_pixel);
     compute.setInt("max_bounces", camera.settings.max_bounces);
     compute.setInt("emissive_last_index", world.emissiveLastIndex);
@@ -81,21 +81,22 @@ int main() {
 
     FrameBuffer fb = createFrameBuffer(texture);
 
-    GLuint queryID;
-    glGenQueries(1, &queryID);
-
+    
     int frameIndex = 0; // used for accumulating image
     int frameCount = 0; // fps counting
     double deltaTime = 0;
     double lastTime = glfwGetTime();
     double timer = lastTime;
-
+    
     const GLuint workGroupSizeX = 16;
     const GLuint workGroupSizeY = 16;
     
     GLuint numGroupsX = (camera.image_width + workGroupSizeX - 1) / workGroupSizeX;
     GLuint numGroupsY = (camera.image_height + workGroupSizeY - 1) / workGroupSizeY;
-
+    
+    GLuint queryID;
+    glGenQueries(1, &queryID);
+    
     while(!window.shouldClose()){
 
         if (camera.moving) {

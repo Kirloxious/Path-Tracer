@@ -62,8 +62,7 @@ public:
     std::vector<Sphere>   spheres;
     std::vector<Quad>     quads;
     std::vector<Material> materials;
-    std::vector<BVHNodeFlat> bvh;
-    int                      bvhRoot = -1;
+    BVH bvh;
     uint32_t bvhSize = 0;
     int emissiveLastIndex = 0;
 
@@ -90,23 +89,8 @@ public:
         quads.emplace_back(corner_point, u, v, addMaterial(mat));
     }
 
-    void constructBVH(){
-        std::vector<AABB> spheresAABBS;
-        for (const auto& sphere : spheres) {
-            spheresAABBS.push_back(computeAABB(sphere));
-        }
-        std::cout << "Number of spheres: " << spheres.size() << std::endl;
-
-        std::vector<BVHNode> bvhNodes;
-
-        std::vector<int> sphereIndices(spheres.size());
-        std::iota(sphereIndices.begin(), sphereIndices.end(), 0); // [0, 1, 2, ..., N]
-        
-        bvhRoot = buildBVH(bvhNodes, spheresAABBS, sphereIndices);
-
-        bvhSize = bvhNodes.size();
-        bvh.reserve(bvhSize);
-        flattenBVH(bvhRoot, bvhNodes, bvh, -1);
+    void create(){
+        bvh.build(spheres);
     }
 
     int sortEmissiveLast(){
@@ -158,7 +142,7 @@ public:
         
         world.emissiveLastIndex = world.sortEmissiveLast();
 
-        world.constructBVH();
+        world.create();
     
     }
 };
