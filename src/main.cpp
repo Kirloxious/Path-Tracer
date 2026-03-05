@@ -1,6 +1,7 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <iostream>
+#include <ostream>
 #include <vector>
 
 #include "renderer.h"
@@ -28,6 +29,8 @@ int main() {
     CameraSettings camSettings{};
     camSettings.aspect_ratio = 16.0f / 9.0f;
     camSettings.image_width = 1200;
+
+    camSettings.max_bounces = 16;
     
     camSettings.vfov = 20.0;
 
@@ -68,7 +71,11 @@ int main() {
     compute.setInt("root_index", world.bvhRoot);
     compute.setInt("samples_per_pixel", camera.settings.samples_per_pixel);
     compute.setInt("max_bounces", camera.settings.max_bounces);
+    compute.setInt("emissive_last_index", world.emissiveLastIndex);
+    compute.setInt("num_spheres",    (int)world.spheres.size());
     
+
+
 
     Texture texture = createTexture(window.m_Width, window.m_Height);
 

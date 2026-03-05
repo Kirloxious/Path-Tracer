@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <glm/ext/vector_float3.hpp>
 #include <glm/glm.hpp>
@@ -21,6 +22,8 @@ struct alignas(16) Material {
     glm::vec3 emission         = glm::vec3(0.0f);
     float     refractive_index = 0.0f;
     float     type             = 0.0f;
+
+    bool isEmissive() const { return type == (float)MaterialType::Emissive; }
 
     static Material Lambertian(glm::vec3 color) {
         Material m;
@@ -57,10 +60,12 @@ class World
 {
 public:
     std::vector<Sphere>   spheres;
+    std::vector<Quad>     quads;
     std::vector<Material> materials;
     std::vector<BVHNodeFlat> bvh;
     int                      bvhRoot = -1;
     uint32_t bvhSize = 0;
+    int emissiveLastIndex = 0;
 
     // Returns the index of the added material
     uint32_t addMaterial(Material mat) {
@@ -74,6 +79,15 @@ public:
 
     void addSphere(glm::vec3 position, float radius, Material mat) {
         addSphere(position, radius, addMaterial(mat));
+    }
+
+    void addQuad(glm::vec3 corner_point, glm::vec3 u, glm::vec3 v, uint32_t material_index){
+        quads.emplace_back(corner_point, u, v, material_index);
+    }
+
+
+    void addQuad(glm::vec3 corner_point, glm::vec3 u, glm::vec3 v, Material mat){
+        quads.emplace_back(corner_point, u, v, addMaterial(mat));
     }
 
     void constructBVH(){
@@ -95,10 +109,19 @@ public:
         flattenBVH(bvhRoot, bvhNodes, bvh, -1);
     }
 
+    int sortEmissiveLast(){
+        auto it = std::stable_partition(spheres.begin(), spheres.end(), [&](const Sphere& s) {
+            return (int)materials[s.material_index].isEmissive();
+        });
+        return (int)std::distance(spheres.begin(), it) - 1; // last emissive index
+    }
+
     static void buildSphereWorld(World& world){
         // Ground sphere and mat
         uint32_t ground = world.addMaterial(Material::Lambertian(glm::vec3(0.5f, 0.5f, 0.5f)));
         world.addSphere(glm::vec3(0.0f, -1000.0f, 0.0f), 1000.0f, ground);
+
+        world.addSphere(glm::vec3(0.0f, 100.0f, 0.0f), 50.0f, Material::Emissive(glm::vec3(1.0f), glm::vec3(15.0f)));
 
         for(int a = -11; a < 11; a++) {
             for(int b = -11; b < 11; b++) {
@@ -131,8 +154,9 @@ public:
         //Brown
         world.addSphere(glm::vec3(4.0f, 1.0f, 0.0f), 1.0f,Material::Metal(glm::vec3(0.7f, 0.6f, 0.5f), 0.0f));
         //Red light
-        world.addSphere(glm::vec3(-8.0f, 1.0f, 0.0f), 1.0f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(15.0f, 6.0f, 2.0f)));
+        world.addSphere(glm::vec3(-8.0f, 1.0f, 0.0f), 1.0f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(30.0f, 6.0f, 2.0f)));
         
+        world.emissiveLastIndex = world.sortEmissiveLast();
 
         world.constructBVH();
     

@@ -2,6 +2,7 @@
 
 
 
+#include <cstdint>
 #include <glm/ext/vector_float3.hpp>
 
 struct alignas(16) Sphere
@@ -22,4 +23,7 @@ struct alignas(16) Quad
     glm::vec3 v;
     uint32_t material_index;
 
+    Quad() = default;
+    Quad(glm::vec3 corner_point, glm::vec3 u, glm::vec3 v, uint32_t material_index)
+        : corner_point(corner_point), u(u), v(v), material_index(material_index) {}
 };
