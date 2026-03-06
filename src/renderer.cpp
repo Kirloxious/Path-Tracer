@@ -1,64 +1,87 @@
 #include "renderer.h"
+#include "log.h"
 
-#include <iostream>
+// ----- Texture ---------------------------------------------------------------
 
-Texture createTexture(int width, int height){
-    Texture texture;
-    texture.width = width;
-    texture.height = height;
-
-    glCreateTextures(GL_TEXTURE_2D, 1, &texture.handle);
-
-    glTextureStorage2D(texture.handle, 1, GL_RGBA32F, texture.width, texture.height);
- 
-    glTextureParameteri(texture.handle, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTextureParameteri(texture.handle, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
- 
-    glTextureParameteri(texture.handle, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTextureParameteri(texture.handle, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, texture.width, texture.height, 0, GL_RGBA, GL_FLOAT, NULL);
-
-    return texture;
+Texture::Texture(int width, int height)
+    : width(width)
+    , height(height) {
+    glCreateTextures(GL_TEXTURE_2D, 1, &handle);
+    glTextureStorage2D(handle, 1, GL_RGBA32F, width, height);
+    glTextureParameteri(handle, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTextureParameteri(handle, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTextureParameteri(handle, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(handle, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 }
 
-void bindDoubleBufferTexture(const Texture texture){
-    glBindImageTexture(0, texture.handle, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F);
-    glBindImageTexture(1, texture.handle, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+Texture::~Texture() {
+    if (handle)
+        glDeleteTextures(1, &handle);
 }
 
-FrameBuffer createFrameBuffer(const Texture texture){
-    FrameBuffer buffer;
+Texture::Texture(Texture&& o) noexcept
+    : handle(o.handle)
+    , width(o.width)
+    , height(o.height) {
+    o.handle = 0;
+}
 
-    glCreateFramebuffers(1, &buffer.handle);
-
-    if(!attachTextureToFrameBuffer(texture, buffer)) {
-        std::cerr << "Failed to attach texture to framebuffer" << std::endl;
-        glDeleteFramebuffers(1, &buffer.handle);
-        return {};
+Texture& Texture::operator=(Texture&& o) noexcept {
+    if (this != &o) {
+        if (handle)
+            glDeleteTextures(1, &handle);
+        handle = o.handle;
+        width = o.width;
+        height = o.height;
+        o.handle = 0;
     }
-
-    return buffer;
+    return *this;
 }
 
-bool attachTextureToFrameBuffer( const Texture texture, FrameBuffer& framebuffer){
-	glNamedFramebufferTexture(framebuffer.handle, GL_COLOR_ATTACHMENT0, texture.handle, 0);
-
-	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-	{
-		std::cerr << "Framebuffer is not complete!" << std::endl;
-		return false;
-	}
-
-	framebuffer.texture = texture;
-	return true;
+void Texture::bindAsDoubleBuffer() const {
+    glBindImageTexture(0, handle, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F);
+    glBindImageTexture(1, handle, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
 }
 
-void blitFrameBuffer(const FrameBuffer frameBuffer){
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, frameBuffer.handle);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // (swapchain)
+// ----- FrameBuffer -----------------------------------------------------------
 
-	glBlitFramebuffer(0, 0, frameBuffer.texture.width, frameBuffer.texture.height, // Source rect
-		0, 0, frameBuffer.texture.width, frameBuffer.texture.height,               // Destination rect
-		GL_COLOR_BUFFER_BIT, GL_NEAREST);
+FrameBuffer::FrameBuffer(const Texture& texture) {
+    glCreateFramebuffers(1, &handle);
+    glNamedFramebufferTexture(handle, GL_COLOR_ATTACHMENT0, texture.handle, 0);
+
+    if (glCheckNamedFramebufferStatus(handle, GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        Log::error("Framebuffer is not complete");
+        glDeleteFramebuffers(1, &handle);
+        handle = 0;
+    }
+}
+
+FrameBuffer::~FrameBuffer() {
+    if (handle)
+        glDeleteFramebuffers(1, &handle);
+}
+
+FrameBuffer::FrameBuffer(FrameBuffer&& o) noexcept
+    : handle(o.handle) {
+    o.handle = 0;
+}
+
+FrameBuffer& FrameBuffer::operator=(FrameBuffer&& o) noexcept {
+    if (this != &o) {
+        if (handle)
+            glDeleteFramebuffers(1, &handle);
+        handle = o.handle;
+        o.handle = 0;
+    }
+    return *this;
+}
+
+void FrameBuffer::blit(const Texture& texture) const {
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, handle);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // swapchain
+    // clang-format off
+    glBlitFramebuffer(0, 0, texture.width, texture.height,   // source rect
+                      0, 0, texture.width, texture.height,   // destination rect
+                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    // clang-format on
 }

@@ -1,24 +1,41 @@
 #pragma once
 
-
 #include <GLFW/glfw3.h>
-#include <iostream>
+#include <string_view>
+
+#include "input.h"
+
+// GLFW key bindings used to populate an InputState via Window::pollInput().
+struct KeyMappings
+{
+    int moveLeft = GLFW_KEY_A;
+    int moveRight = GLFW_KEY_D;
+    int moveForward = GLFW_KEY_W;
+    int moveBackward = GLFW_KEY_S;
+    int moveUp = GLFW_KEY_SPACE;
+    int moveDown = GLFW_KEY_LEFT_CONTROL;
+    int lookLeft = GLFW_KEY_LEFT;
+    int lookRight = GLFW_KEY_RIGHT;
+    int lookUp = GLFW_KEY_UP;
+    int lookDown = GLFW_KEY_DOWN;
+};
 
 class Window
 {
-private:
 public:
-    GLFWwindow* m_Window;
-    int m_Width;
-    int m_Height;
-    const char* m_Title;
+    GLFWwindow*      m_Window = nullptr;
+    int              m_Width = 0;
+    int              m_Height = 0;
+    std::string_view m_Title;
 
-    Window(int width, int height, const char* title);
+    Window(int width, int height, std::string_view title);
     ~Window();
-    bool shouldClose();
+
+    [[nodiscard]] bool       shouldClose() const;
+    [[nodiscard]] InputState pollInput(const KeyMappings& keys = {}) const;
+
     void makeCurrentContext();
     void swapBuffers();
     void pollEvents();
     void getFrameBufferSize();
 };
-

@@ -1,0 +1,87 @@
+---
+Language: Cpp
+Standard: c++20
+
+# Base
+BasedOnStyle: LLVM
+
+# Indentation
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+AccessModifierOffset: -4
+IndentAccessModifiers: false
+NamespaceIndentation: None
+
+# Line length
+ColumnLimit: 150
+
+# Braces — class/struct/enum break (Allman), functions/control-flow attach
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: true
+  AfterStruct: true
+  AfterEnum: true
+  AfterUnion: true
+  AfterFunction: false
+  AfterControlStatement: Never
+  AfterNamespace: false
+  AfterExternBlock: false
+  BeforeCatch: false
+  BeforeElse: false
+  BeforeLambdaBody: false
+  IndentBraces: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+  SplitEmptyNamespace: false
+
+# Constructor initializer lists — one member per line, comma before
+BreakConstructorInitializers: BeforeComma
+ConstructorInitializerIndentWidth: 4
+PackConstructorInitializers: Never
+
+# Short constructs
+AllowShortBlocksOnASingleLine: Empty
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortLambdasOnASingleLine: Inline
+
+# Parameters / arguments — never bin-pack; align after open bracket
+BinPackParameters: false
+BinPackArguments: false
+AlignAfterOpenBracket: Align
+
+# Pointers and references attach to the type
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# Consecutive alignment
+AlignConsecutiveAssignments:
+  Enabled: false
+AlignConsecutiveDeclarations:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+AlignConsecutiveMacros:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+AlignTrailingComments:
+  Kind: Always
+  OverEmptyLines: 0
+
+# Templates
+SpaceAfterTemplateKeyword: false
+
+# Includes — preserve manual grouping/ordering
+SortIncludes: Never
+IncludeBlocks: Preserve
+
+# Misc spacing
+SpaceBeforeParens: ControlStatements
+SpaceAfterCStyleCast: false
+SpacesInAngles: Never
+SpaceInEmptyParentheses: false
+Cpp11BracedListStyle: true
+...
