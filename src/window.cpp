@@ -1,5 +1,6 @@
 #include "window.h"
 #include "log.h"
+#include <GLFW/glfw3.h>
 
 Window::Window(int width, int height, std::string_view title)
     : m_Width(width)

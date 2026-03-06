@@ -13,8 +13,8 @@ public:
     Texture(int width, int height);
     ~Texture();
 
-    // Binds this texture to image units 0 (read) and 1 (write) for frame accumulation.
-    void bindAsDoubleBuffer() const;
+    void bindForAccumulation() const;
+    void bindForDisplay() const;
 
     // Non-copyable, movable
     Texture(const Texture&) = delete;

@@ -52,8 +52,7 @@ public:
         uint32_t ground = world.addMaterial(Material::Lambertian(glm::vec3(0.5f, 0.5f, 0.5f)));
         world.addSphere(glm::vec3(0.0f, -1000.0f, 0.0f), 1000.0f, ground);
 
-        // world.addSphere(glm::vec3(0.0f, 100.0f, 0.0f), 30.0f, Material::Emissive(glm::vec3(1.0f),
-        // glm::vec3(15.0f)));
+        world.addSphere(glm::vec3(0.0f, 100.0f, 50.0f), 30.0f, Material::Emissive(glm::vec3(1.0f), glm::vec3(4.0f)));
 
         for (int a = -11; a < 11; a++) {
             for (int b = -11; b < 11; b++) {
@@ -69,7 +68,7 @@ public:
                     float     fuzz = 0.5f * randomFloat();
                     world.addSphere(center, 0.2f, Material::Metal(color, fuzz));
                 } else if (choose_mat < 0.99f) {
-                    world.addSphere(center, 0.2f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(30.0f, 6.0f, 2.0f)));
+                    world.addSphere(center, 0.2f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(15.0f, 6.0f, 2.0f)));
 
                 } else {
                     // glass

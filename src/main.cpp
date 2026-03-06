@@ -25,6 +25,7 @@ int main() {
     camSettings.image_width = 1200;
 
     camSettings.max_bounces = 16;
+    camSettings.samples_per_pixel = 4;
 
     camSettings.vfov = 20.0f;
 
@@ -70,8 +71,10 @@ int main() {
     };
     uploadStaticUniforms();
 
-    Texture     texture(window.m_Width, window.m_Height);
-    FrameBuffer fb(texture);
+    Texture accum(window.m_Width, window.m_Height);
+    Texture display(window.m_Width, window.m_Height);
+
+    FrameBuffer fb(display);
 
     int      frameIndex = 0; // used for accumulating image
     int      frameCount = 0; // fps counting
@@ -112,21 +115,22 @@ int main() {
             compute.setInt("time", static_cast<int>(timeSeed++));
             compute.setInt("frameIndex", frameIndex);
 
-            texture.bindAsDoubleBuffer();
+            accum.bindForAccumulation();
+            display.bindForDisplay();
 
             glBeginQuery(GL_TIME_ELAPSED, queryID); // Computer shader timer start
             glDispatchCompute(numGroupsX, numGroupsY, 1);
             glEndQuery(GL_TIME_ELAPSED); // Computer shader timer end
 
             // make sure writing to image has finished before read
-            glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+            glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_FRAMEBUFFER_BARRIER_BIT);
         }
 
         // Retrieve compute shader execution time from the GPU query
         GLuint64 executionTime;
         glGetQueryObjectui64v(queryID, GL_QUERY_RESULT, &executionTime);
 
-        fb.blit(texture);
+        fb.blit(display);
 
         window.swapBuffers();
         window.pollEvents();

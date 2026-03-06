@@ -1,5 +1,6 @@
 #include "renderer.h"
 #include "log.h"
+#include <GL/glext.h>
 
 // ----- Texture ---------------------------------------------------------------
 
@@ -38,8 +39,11 @@ Texture& Texture::operator=(Texture&& o) noexcept {
     return *this;
 }
 
-void Texture::bindAsDoubleBuffer() const {
-    glBindImageTexture(0, handle, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F);
+void Texture::bindForAccumulation() const {
+    glBindImageTexture(0, handle, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+}
+
+void Texture::bindForDisplay() const {
     glBindImageTexture(1, handle, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
 }
 
