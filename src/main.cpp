@@ -1,5 +1,6 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
+#include <cmath>
 #include <filesystem>
 
 #include "renderer.h"
@@ -11,6 +12,7 @@
 #include "log.h"
 
 static const std::filesystem::path computeShaderPath = "shader/compute_shader.comp";
+static const std::filesystem::path denoiserShaderPath = "shader/denoiser.comp";
 
 static void ErrorCallback(int error, const char* description) {
     Log::error("GLFW {}: {}", error, description);
@@ -56,6 +58,7 @@ int main() {
 
     const auto    num_objects = static_cast<int>(world.spheres.size());
     ComputeShader compute(computeShaderPath);
+    ComputeShader denoiser(denoiserShaderPath);
 
     // Uploads all scene-static uniforms. Called once at startup and again after every hot reload.
     auto uploadStaticUniforms = [&]() {
@@ -71,7 +74,17 @@ int main() {
     };
     uploadStaticUniforms();
 
+    auto uploadDenoiserUniforms = [&]() {
+        denoiser.use();
+        denoiser.setVec2("image_size", glm::vec2(camera.image_width, camera.image_height));
+        // sigma_color is set per-frame based on frameIndex
+        denoiser.setFloat("sigma_normal", 64.0f);
+    };
+    uploadDenoiserUniforms();
+
     Texture accum(window.m_Width, window.m_Height);
+    Texture normals_tex(window.m_Width, window.m_Height);
+    Texture denoised_ping(window.m_Width, window.m_Height);
     Texture display(window.m_Width, window.m_Height);
 
     FrameBuffer fb(display);
@@ -107,6 +120,9 @@ int main() {
             uploadStaticUniforms();
             frameIndex = 0;
         }
+        if (denoiser.reloadIfChanged()) {
+            uploadDenoiserUniforms();
+        }
 
         // Compute
         {
@@ -115,15 +131,37 @@ int main() {
             compute.setInt("time", static_cast<int>(timeSeed++));
             compute.setInt("frameIndex", frameIndex);
 
-            accum.bindForAccumulation();
-            display.bindForDisplay();
+            accum.bindForAccumulation();        // unit 0, READ_WRITE
+            normals_tex.bind(2, GL_WRITE_ONLY); // unit 2, path tracer writes normals
 
             glBeginQuery(GL_TIME_ELAPSED, queryID); // Computer shader timer start
             glDispatchCompute(numGroupsX, numGroupsY, 1);
             glEndQuery(GL_TIME_ELAPSED); // Computer shader timer end
 
             // make sure writing to image has finished before read
-            glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_FRAMEBUFFER_BARRIER_BIT);
+            glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+            // A-Trous denoiser: 4 ping-pong passes, result ends in display
+            Texture* srcs[4] = {&accum, &denoised_ping, &display, &denoised_ping};
+            Texture* dsts[4] = {&denoised_ping, &display, &denoised_ping, &display};
+            int      steps[4] = {1, 2, 4, 8};
+
+            // Sigma decays as 1/sqrt(N) — matches how noise std-dev shrinks with sample count.
+            // No floor: the denoiser naturally becomes transparent as the scene converges,
+            // so it never competes with fully-accumulated detail.
+            const float adaptiveSigmaColor = 1.0f / std::sqrt(static_cast<float>(frameIndex));
+
+            denoiser.use();
+            denoiser.setFloat("sigma_color", adaptiveSigmaColor);
+            for (int pass = 0; pass < 4; ++pass) {
+                srcs[pass]->bind(0, GL_READ_ONLY);
+                normals_tex.bind(1, GL_READ_ONLY);
+                dsts[pass]->bind(2, GL_WRITE_ONLY);
+                denoiser.setInt("step_size", steps[pass]);
+                denoiser.setInt("apply_tonemapping", pass == 3 ? 1 : 0);
+                glDispatchCompute(numGroupsX, numGroupsY, 1);
+                glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+            }
         }
 
         // Retrieve compute shader execution time from the GPU query

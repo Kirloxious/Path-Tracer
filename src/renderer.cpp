@@ -43,8 +43,8 @@ void Texture::bindForAccumulation() const {
     glBindImageTexture(0, handle, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
 }
 
-void Texture::bindForDisplay() const {
-    glBindImageTexture(1, handle, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+void Texture::bind(int unit, GLenum access) const {
+    glBindImageTexture(unit, handle, 0, GL_FALSE, 0, access, GL_RGBA32F);
 }
 
 // ----- FrameBuffer -----------------------------------------------------------

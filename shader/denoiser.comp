@@ -1,0 +1,73 @@
+#version 460 core
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(rgba32f, binding = 0) readonly  uniform image2D src_image;
+layout(rgba32f, binding = 1) readonly  uniform image2D normals_image;
+layout(rgba32f, binding = 2) writeonly uniform image2D dst_image;
+
+layout(location = 0) uniform int   step_size;
+layout(location = 1) uniform vec2  image_size;
+layout(location = 2) uniform float sigma_color;
+layout(location = 3) uniform float sigma_normal;
+layout(location = 4) uniform int   apply_tonemapping;
+
+// Separable Gaussian kernel: 2D weight = h[i] * h[j]
+const float h[5] = float[5](1.0 / 16.0, 1.0 / 4.0, 3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0);
+
+vec3 linear_to_srgb(vec3 c) {
+    return mix(c * 12.92, pow(c, vec3(1.0 / 2.4)) * 1.055 - 0.055, step(0.0031308, c));
+}
+
+void main() {
+    ivec2 p    = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = ivec2(image_size);
+    if (p.x >= size.x || p.y >= size.y) return;
+
+    vec4  normals_sample = imageLoad(normals_image, p);
+    vec3  c_p = imageLoad(src_image, p).rgb;
+    vec3  n_p = normals_sample.rgb * 2.0 - 1.0;
+    float mat_type = normals_sample.a;
+
+    // Specular surfaces (metal=1, dielectric=2) cannot be meaningfully denoised spatially —
+    // adjacent pixels may share the same surface normal but reflect entirely different content.
+    // Bypass the filter and let temporal accumulation handle them instead.
+    bool is_specular = (mat_type > 0.5 && mat_type < 2.5);
+    if (is_specular) {
+        vec3 result = c_p;
+        if (apply_tonemapping == 1) {
+            const float exposure = 0.5;
+            result = result * exposure / (result * exposure + 1.0);
+            result = linear_to_srgb(result);
+        }
+        imageStore(dst_image, p, vec4(result, 1.0));
+        return;
+    }
+
+    vec3  sum  = vec3(0.0);
+    float wsum = 0.0;
+
+    for (int j = -2; j <= 2; ++j) {
+        for (int i = -2; i <= 2; ++i) {
+            ivec2 q   = clamp(p + ivec2(i, j) * step_size, ivec2(0), size - 1);
+            vec3  c_q = imageLoad(src_image, q).rgb;
+            vec3  n_q = imageLoad(normals_image, q).rgb * 2.0 - 1.0;
+
+            float w_c = exp(-dot(c_p - c_q, c_p - c_q) / (sigma_color * sigma_color + 1e-6));
+            float w_n = pow(max(0.0, dot(n_p, n_q)), sigma_normal);
+            float w   = w_c * w_n * h[i + 2] * h[j + 2];
+
+            sum  += c_q * w;
+            wsum += w;
+        }
+    }
+
+    vec3 result = (wsum > 1e-6) ? sum / wsum : c_p;
+
+    if (apply_tonemapping == 1) {
+        const float exposure = 0.5;
+        result = result * exposure / (result * exposure + 1.0);
+        result = linear_to_srgb(result);
+    }
+
+    imageStore(dst_image, p, vec4(result, 1.0));
+}

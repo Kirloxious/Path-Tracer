@@ -14,7 +14,7 @@ public:
     ~Texture();
 
     void bindForAccumulation() const;
-    void bindForDisplay() const;
+    void bind(int unit, GLenum access) const;
 
     // Non-copyable, movable
     Texture(const Texture&) = delete;
