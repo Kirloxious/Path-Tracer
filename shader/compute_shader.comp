@@ -348,9 +348,7 @@ bool is_visible(in vec3 origin, in vec3 target) {
             if (node.meta.z != -1) {
                 HitRecord tmp;
                 if (hit_sphere(shadow, spheres[node.meta.z], 0.001, dist - 0.001, tmp)) {
-                    // Emissive spheres are light sources — they do not occlude other lights
-                    if (node.meta.z > emissive_last_index)
-                        return false;
+                    return false;
                 }
                 idx = node.meta.w;
             } else {

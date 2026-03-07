@@ -68,7 +68,7 @@ public:
                     float     fuzz = 0.5f * randomFloat();
                     world.addSphere(center, 0.2f, Material::Metal(color, fuzz));
                 } else if (choose_mat < 0.99f) {
-                    world.addSphere(center, 0.2f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(15.0f, 6.0f, 2.0f)));
+                    world.addSphere(center, 0.2f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(4.0f, 6.0f, 2.0f)));
 
                 } else {
                     // glass
@@ -86,10 +86,10 @@ public:
         // Brown
         //  world.addSphere(glm::vec3(-4.0f, 1.0f, 0.0f), 1.0f, Material::Lambertian(glm::vec3(0.4f,
         //  0.2f, 0.1f)));
-        world.addSphere(glm::vec3(-4.0f, 1.0f, 0.0f), 1.0f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(30.0f, 6.0f, 2.0f)));
+        world.addSphere(glm::vec3(-4.0f, 1.0f, 0.0f), 1.0f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(10.0f, 6.0f, 2.0f)));
 
         // Red light
-        world.addSphere(glm::vec3(-8.0f, 1.0f, 0.0f), 1.0f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(30.0f, 6.0f, 2.0f)));
+        world.addSphere(glm::vec3(-8.0f, 1.0f, 0.0f), 1.0f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(10.0f, 6.0f, 2.0f)));
 
         world.emissiveLastIndex = world.sortEmissiveFirst();
 

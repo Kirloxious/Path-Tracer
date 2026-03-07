@@ -1,10 +1,5 @@
-Features: 
- - Refactor for easier testing and implemention of further primitives
- - keep following ray tracing book
- - triangles / quads
- - shadow rays
- - functionality for 3d meshes
- - dynamic scenes?
- - 
- - GUI 
- -  
+Next:
+- Triangles & model loading
+- Denoiser (Bilateral/Joint-bilateral filter or A-Trous wavelet filter) for when camera is moving.
+- Gui for change scenes, variables, etc. (ImGui)
+- Interactive scene editor
