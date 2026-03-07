@@ -44,8 +44,9 @@ struct MortonPrimitive
             uint32_t midCode = mortonPrims[mid].code;
             int      midPrefix = __builtin_clz(firstCode ^ midCode);
 
-            if (midPrefix > commonPrefix)
+            if (midPrefix > commonPrefix) {
                 split = mid;
+            }
 
             step >>= 1;
         }

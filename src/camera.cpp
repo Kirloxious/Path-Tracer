@@ -75,8 +75,9 @@ Camera& Camera::update(const InputState& input, float dt) {
     }
 
     pitch = glm::clamp(pitch, -89.0f, 89.0f);
-    if (moving)
+    if (moving) {
         updateDirectionVectors();
+    }
 
     return *this;
 }

@@ -16,8 +16,9 @@ Texture::Texture(int width, int height)
 }
 
 Texture::~Texture() {
-    if (handle)
+    if (handle) {
         glDeleteTextures(1, &handle);
+    }
 }
 
 Texture::Texture(Texture&& o) noexcept
@@ -29,8 +30,9 @@ Texture::Texture(Texture&& o) noexcept
 
 Texture& Texture::operator=(Texture&& o) noexcept {
     if (this != &o) {
-        if (handle)
+        if (handle) {
             glDeleteTextures(1, &handle);
+        }
         handle = o.handle;
         width = o.width;
         height = o.height;
@@ -61,8 +63,9 @@ FrameBuffer::FrameBuffer(const Texture& texture) {
 }
 
 FrameBuffer::~FrameBuffer() {
-    if (handle)
+    if (handle) {
         glDeleteFramebuffers(1, &handle);
+    }
 }
 
 FrameBuffer::FrameBuffer(FrameBuffer&& o) noexcept
@@ -72,8 +75,9 @@ FrameBuffer::FrameBuffer(FrameBuffer&& o) noexcept
 
 FrameBuffer& FrameBuffer::operator=(FrameBuffer&& o) noexcept {
     if (this != &o) {
-        if (handle)
+        if (handle) {
             glDeleteFramebuffers(1, &handle);
+        }
         handle = o.handle;
         o.handle = 0;
     }

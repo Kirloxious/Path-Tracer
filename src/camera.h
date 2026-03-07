@@ -44,7 +44,7 @@ public:
     float     pitch = 0.0f;
 
     bool  moving = false;
-    float moveSpeed = 3.0f;
+    float moveSpeed = 20.0f;
     float lookSpeed = 1.1f;
 
     explicit Camera(const CameraSettings& settings);

@@ -32,13 +32,15 @@ public:
     // and returns true so the caller can re-upload uniforms and reset accumulation.
     // On compile/link failure, keeps the old program running and returns false.
     bool reloadIfChanged() {
-        if (m_path.empty())
+        if (m_path.empty()) {
             return false;
+        }
 
         std::error_code                 ec;
         std::filesystem::file_time_type currentTime = std::filesystem::last_write_time(m_path, ec);
-        if (ec || currentTime == m_lastWriteTime)
+        if (ec || currentTime == m_lastWriteTime) {
             return false;
+        }
 
         // Always advance the stored time so a broken save doesn't spam errors every frame.
         // The user triggers another attempt by saving the file again.
@@ -46,8 +48,9 @@ public:
 
         Log::info("Reloading shader: {}", m_path.string());
         GLuint newProgram = loadShader(m_path);
-        if (newProgram == 0)
+        if (newProgram == 0) {
             return false;
+        }
 
         glDeleteProgram(ID);
         ID = newProgram;

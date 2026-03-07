@@ -25,22 +25,34 @@ struct AABB
     }
 
     AABB& pad() {
-        constexpr float delta = 0.001f;
-        if (surfaceArea() < delta)
-            expand(delta);
+        constexpr float delta = 0.0001f;
+        for (int i = 0; i < 3; ++i) {
+            if (max[i] - min[i] < delta) {
+                min[i] -= delta;
+                max[i] += delta;
+            }
+        }
         return *this;
     }
 };
 
 [[nodiscard]] AABB surroundingBox(const AABB& a, const AABB& b);
 [[nodiscard]] AABB computeAABB(const Sphere& s);
+[[nodiscard]] AABB computeAABB(const Triangle& t);
 [[nodiscard]] AABB computeAABB(const Quad& q);
+
+struct PrimitiveRef
+{
+    int type;  // 0 = sphere, 1 = triangle
+    int index; // index into the respective array
+};
 
 struct alignas(16) BVHNodeFlat
 {
     glm::vec4  aabbMin; // .xyz = min
     glm::vec4  aabbMax; // .xyz = max
-    glm::ivec4 meta;    // .x = left, .y = right, .z = primitiveIndex, .w = nextAfterSubtree
+    glm::ivec4 meta;    // interior: .x = left, .y = right, .z = -1, .w = skip
+                        // leaf:     .x = -1,   .y = primType (0=sphere,1=tri), .z = primIndex, .w = skip
 };
 
 class BVH
@@ -49,7 +61,7 @@ public:
     std::vector<BVHNodeFlat> nodes;
     int                      root = -1;
 
-    void build(const std::vector<Sphere>& spheres);
+    void build(const std::vector<Sphere>& spheres, const std::vector<Triangle>& triangles = {});
 
 private:
     struct Node
@@ -62,22 +74,15 @@ private:
         [[nodiscard]] bool isLeaf() const { return primitiveIndex != -1; }
     };
 
-    struct SplitResult
+    static constexpr int NUM_BINS = 16;
+
+    struct Bin
     {
-        int              splitIndex = 0;
-        std::vector<int> sorted;
+        AABB aabb{};
+        int  count = 0;
     };
 
-    [[nodiscard]] static float computeSAHCost(float numLeft, float leftArea, float numRight, float rightArea);
+    [[nodiscard]] static int buildR(std::vector<Node>& tree, const std::vector<AABB>& aabbs, int* begin, int* end);
 
-    [[nodiscard]] static SplitResult
-    findBestSplit(const std::vector<AABB>& aabbs, const std::vector<int>& indices, std::vector<AABB>& scratchLeft, std::vector<AABB>& scratchRight);
-
-    [[nodiscard]] static int buildR(std::vector<Node>&       tree,
-                                    const std::vector<AABB>& aabbs,
-                                    std::vector<int>         indices,
-                                    std::vector<AABB>&       scratchLeft,
-                                    std::vector<AABB>&       scratchRight);
-
-    [[nodiscard]] int flatten(int nodeIndex, const std::vector<Node>& tree, int nextAfterSubtree);
+    [[nodiscard]] int flatten(int nodeIndex, const std::vector<Node>& tree, const std::vector<PrimitiveRef>& primRefs, int nextAfterSubtree);
 };

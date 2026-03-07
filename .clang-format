@@ -78,6 +78,9 @@ SpaceAfterTemplateKeyword: false
 SortIncludes: Never
 IncludeBlocks: Preserve
 
+# Always insert braces after control statements
+InsertBraces: true
+
 # Misc spacing
 SpaceBeforeParens: ControlStatements
 SpaceAfterCStyleCast: false

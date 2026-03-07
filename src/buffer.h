@@ -38,8 +38,9 @@ public:
     void unbind() const { glBindBuffer(target, 0); }
 
     ~Buffer() {
-        if (id)
+        if (id) {
             glDeleteBuffers(1, &id);
+        }
     }
 
     // Non-copyable, movable
@@ -53,8 +54,9 @@ public:
     }
     Buffer& operator=(Buffer&& o) noexcept {
         if (this != &o) {
-            if (id)
+            if (id) {
                 glDeleteBuffers(1, &id);
+            }
             id = o.id;
             target = o.target;
             o.id = 0;

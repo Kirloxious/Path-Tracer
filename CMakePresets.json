@@ -13,7 +13,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_SYSTEM_NAME": "Windows",
-        "CMAKE_CXX_FLAGS_DEBUG": "-g" ,
+        "CMAKE_CXX_FLAGS_DEBUG": "-g",
         "CMAKE_C_COMPILER": "C:/msys64/ucrt64/bin/x86_64-w64-mingw32-gcc.exe",
         "CMAKE_CXX_COMPILER": "C:/msys64/ucrt64/bin/x86_64-w64-mingw32-g++.exe",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
@@ -95,6 +95,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_SYSTEM_NAME": "Linux",
+        "CMAKE_CXX_FLAGS_RELEASE": "-O3",
         "CMAKE_C_COMPILER": "/usr/bin/clang",
         "CMAKE_CXX_COMPILER": "/usr/bin/clang++"
       }
