@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 project(main LANGUAGES C CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -10,7 +10,7 @@ add_compile_options(-Wall -Wextra)
 # -----------------------------
 # GLAD (compile glad.c)
 # -----------------------------
-add_library(glad src/glad.c)
+add_library(glad external/glad/glad.c)
 target_include_directories(glad PUBLIC ${CMAKE_SOURCE_DIR}/external)
 
 # -----------------------------
@@ -22,7 +22,7 @@ add_executable(${PROJECT_NAME} ${SRC_FILES})
 
 target_include_directories(${PROJECT_NAME}
     PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src
 )
 
 # -----------------------------
@@ -36,7 +36,7 @@ target_link_libraries(${PROJECT_NAME} OpenGL::GL)
 # -----------------------------
 include(FetchContent)
 find_package(glfw3 QUIET)
-if (NOT glfw3_FOUND)
+if(NOT glfw3_FOUND)
     message(STATUS "GLFW not found, fetching...")
     FetchContent_Declare(
         glfw
@@ -51,7 +51,7 @@ target_link_libraries(${PROJECT_NAME} glfw)
 # GLM
 # -----------------------------
 find_package(glm QUIET)
-if (NOT glm_FOUND)
+if(NOT glm_FOUND)
     message(STATUS "GLM not found, fetching...")
     FetchContent_Declare(
         glm

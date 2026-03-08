@@ -23,10 +23,10 @@ struct KeyMappings
 class Window
 {
 public:
-    GLFWwindow*      m_Window = nullptr;
-    int              m_Width = 0;
-    int              m_Height = 0;
-    std::string_view m_Title;
+    GLFWwindow*      window = nullptr;
+    int              width = 0;
+    int              height = 0;
+    std::string_view title;
 
     Window(int width, int height, std::string_view title);
     ~Window();

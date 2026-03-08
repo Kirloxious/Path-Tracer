@@ -4,9 +4,7 @@
 #include <cmath>
 
 Camera::Camera(const CameraSettings& settings)
-    : settings(settings)
-    , image_width(settings.image_width)
-    , image_height(static_cast<int>(settings.image_width / settings.aspect_ratio)) {
+    : settings(settings), image_width(settings.image_width), image_height(static_cast<int>(settings.image_width / settings.aspect_ratio)) {
 
     data.lookfrom = settings.lookfrom;
     data.focus_distance = settings.focus_dist;

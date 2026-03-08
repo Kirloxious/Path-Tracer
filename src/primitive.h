@@ -10,10 +10,7 @@ struct alignas(16) Sphere
     uint32_t  material_index = 0;
 
     Sphere() = default;
-    Sphere(glm::vec3 position, float radius, uint32_t material_index)
-        : position(position)
-        , radius(radius)
-        , material_index(material_index) {}
+    Sphere(glm::vec3 position, float radius, uint32_t material_index) : position(position), radius(radius), material_index(material_index) {}
 };
 
 struct alignas(16) Triangle
@@ -34,24 +31,14 @@ struct alignas(16) Triangle
     Triangle() = default;
 
     // Flat shading: all vertex normals set to face normal
-    Triangle(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, uint32_t material_index)
-        : v0(v0)
-        , e1(v1 - v0)
-        , e2(v2 - v0)
-        , material_index(material_index) {
+    Triangle(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, uint32_t material_index) : v0(v0), e1(v1 - v0), e2(v2 - v0), material_index(material_index) {
         glm::vec3 fn = glm::normalize(glm::cross(e1, e2));
         n0 = n1 = n2 = fn;
     }
 
     // Smooth shading: per-vertex normals provided
     Triangle(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, uint32_t material_index, glm::vec3 n0, glm::vec3 n1, glm::vec3 n2)
-        : v0(v0)
-        , e1(v1 - v0)
-        , e2(v2 - v0)
-        , material_index(material_index)
-        , n0(n0)
-        , n1(n1)
-        , n2(n2) {}
+        : v0(v0), e1(v1 - v0), e2(v2 - v0), material_index(material_index), n0(n0), n1(n1), n2(n2) {}
 };
 
 struct alignas(16) Quad
@@ -63,8 +50,5 @@ struct alignas(16) Quad
 
     Quad() = default;
     Quad(glm::vec3 corner_point, glm::vec3 u, glm::vec3 v, uint32_t material_index)
-        : corner_point(corner_point)
-        , u(u)
-        , v(v)
-        , material_index(material_index) {}
+        : corner_point(corner_point), u(u), v(v), material_index(material_index) {}
 };

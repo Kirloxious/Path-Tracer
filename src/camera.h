@@ -7,9 +7,9 @@
 struct CameraSettings
 {
     float     aspect_ratio = 1.0f;
-    int       image_width = 100;
-    int       samples_per_pixel = 1;
-    int       max_bounces = 8;
+    int       image_width = 1200;
+    int       samples_per_pixel = 4;
+    int       max_bounces = 16;
     float     vfov = 90.0f;
     float     focus_dist = 10.0f;
     float     defocus_angle = 0.0f;

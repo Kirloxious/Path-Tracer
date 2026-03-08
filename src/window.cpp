@@ -2,10 +2,8 @@
 #include "log.h"
 #include <GLFW/glfw3.h>
 
-Window::Window(int width, int height, std::string_view title)
-    : m_Width(width)
-    , m_Height(height)
-    , m_Title(title) {
+Window::Window(int width, int height, std::string_view title) : width(width), height(height), title(title) {
+
     if (!glfwInit()) {
         Log::error("Failed to initialise GLFW");
         return;
@@ -13,24 +11,24 @@ Window::Window(int width, int height, std::string_view title)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-    m_Window = glfwCreateWindow(width, height, m_Title.data(), nullptr, nullptr);
+    window = glfwCreateWindow(width, height, title.data(), nullptr, nullptr);
 }
 
 Window::~Window() {
-    glfwDestroyWindow(m_Window);
+    glfwDestroyWindow(window);
     glfwTerminate();
 }
 
 bool Window::shouldClose() const {
-    return glfwWindowShouldClose(m_Window);
+    return glfwWindowShouldClose(window);
 }
 
 void Window::makeCurrentContext() {
-    glfwMakeContextCurrent(m_Window);
+    glfwMakeContextCurrent(window);
 }
 
 void Window::swapBuffers() {
-    glfwSwapBuffers(m_Window);
+    glfwSwapBuffers(window);
 }
 
 void Window::pollEvents() {
@@ -39,7 +37,7 @@ void Window::pollEvents() {
 
 InputState Window::pollInput(const KeyMappings& keys) const {
     auto pressed = [&](int key) {
-        return glfwGetKey(m_Window, key) == GLFW_PRESS;
+        return glfwGetKey(window, key) == GLFW_PRESS;
     };
     return InputState{
         .moveLeft = pressed(keys.moveLeft),
@@ -56,5 +54,5 @@ InputState Window::pollInput(const KeyMappings& keys) const {
 }
 
 void Window::getFrameBufferSize() {
-    glfwGetFramebufferSize(m_Window, &m_Width, &m_Height);
+    glfwGetFramebufferSize(window, &width, &height);
 }

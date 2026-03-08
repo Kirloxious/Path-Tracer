@@ -11,8 +11,7 @@ public:
 
     Buffer() = default;
 
-    Buffer(GLenum target, GLuint bindingPoint, const void* data, size_t byteSize, GLenum usage)
-        : target(target) {
+    Buffer(GLenum target, GLuint bindingPoint, const void* data, size_t byteSize, GLenum usage) : target(target) {
         glCreateBuffers(1, &id);
         glNamedBufferData(id, byteSize, data, usage);
         glBindBufferBase(target, bindingPoint, id);
@@ -25,8 +24,7 @@ public:
 
     // Convenience constructor for single structs
     template<typename T>
-    Buffer(GLenum target, GLuint bindingPoint, const T& data, GLenum usage)
-        : Buffer(target, bindingPoint, &data, sizeof(T), usage) {}
+    Buffer(GLenum target, GLuint bindingPoint, const T& data, GLenum usage) : Buffer(target, bindingPoint, &data, sizeof(T), usage) {}
 
     void update(const void* data, size_t byteSize, size_t offset = 0) { glNamedBufferSubData(id, offset, byteSize, data); }
 
@@ -47,11 +45,7 @@ public:
     Buffer(const Buffer&) = delete;
     Buffer& operator=(const Buffer&) = delete;
 
-    Buffer(Buffer&& o) noexcept
-        : id(o.id)
-        , target(o.target) {
-        o.id = 0;
-    }
+    Buffer(Buffer&& o) noexcept : id(o.id), target(o.target) { o.id = 0; }
     Buffer& operator=(Buffer&& o) noexcept {
         if (this != &o) {
             if (id) {

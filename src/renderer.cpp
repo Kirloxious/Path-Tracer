@@ -4,9 +4,7 @@
 
 // ----- Texture ---------------------------------------------------------------
 
-Texture::Texture(int width, int height)
-    : width(width)
-    , height(height) {
+Texture::Texture(int width, int height) : width(width), height(height) {
     glCreateTextures(GL_TEXTURE_2D, 1, &handle);
     glTextureStorage2D(handle, 1, GL_RGBA32F, width, height);
     glTextureParameteri(handle, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -21,10 +19,7 @@ Texture::~Texture() {
     }
 }
 
-Texture::Texture(Texture&& o) noexcept
-    : handle(o.handle)
-    , width(o.width)
-    , height(o.height) {
+Texture::Texture(Texture&& o) noexcept : handle(o.handle), width(o.width), height(o.height) {
     o.handle = 0;
 }
 
@@ -68,8 +63,7 @@ FrameBuffer::~FrameBuffer() {
     }
 }
 
-FrameBuffer::FrameBuffer(FrameBuffer&& o) noexcept
-    : handle(o.handle) {
+FrameBuffer::FrameBuffer(FrameBuffer&& o) noexcept : handle(o.handle) {
     o.handle = 0;
 }
 

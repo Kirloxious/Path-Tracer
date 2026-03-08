@@ -18,9 +18,7 @@ public:
 
     ComputeShader() = default;
 
-    explicit ComputeShader(const std::filesystem::path& path)
-        : ID(loadShader(path))
-        , m_path(path) {
+    explicit ComputeShader(const std::filesystem::path& path) : ID(loadShader(path)), m_path(path) {
         std::error_code ec;
         m_lastWriteTime = std::filesystem::last_write_time(path, ec);
     }

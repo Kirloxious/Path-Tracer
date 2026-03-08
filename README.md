@@ -1,5 +1,5 @@
-Next:
-- Triangles & model loading
-- Denoiser (Bilateral/Joint-bilateral filter or A-Trous wavelet filter) for when camera is moving.
+Next step:
+- Scene Class abstaction (add camera settings).
 - Gui for change scenes, variables, etc. (ImGui)
-- Interactive scene editor
+- Interactive scene editor.
+- Refactor renderer code in order to have possibility of vulkan backend.

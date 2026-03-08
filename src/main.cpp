@@ -6,10 +6,10 @@
 #include "renderer.h"
 #include "window.h"
 #include "compute_shader.h"
-#include "world.h"
 #include "camera.h"
 #include "buffer.h"
 #include "log.h"
+#include "scene.h"
 
 static const std::filesystem::path computeShaderPath = "shader/compute_shader.comp";
 static const std::filesystem::path denoiserShaderPath = "shader/denoiser.comp";
@@ -22,19 +22,11 @@ int main() {
 
     glfwSetErrorCallback(ErrorCallback);
 
-    CameraSettings camSettings{};
-    camSettings.aspect_ratio = 16.0f / 9.0f;
-    camSettings.image_width = 1200;
+    Scene scene = Scene::CornellBox();
 
-    camSettings.max_bounces = 16;
-    camSettings.samples_per_pixel = 4;
+    Camera camera(scene.cameraSettings);
 
-    camSettings.vfov = 40.0f;
-
-    camSettings.lookfrom = glm::vec3(27.75f, 27.75f, -75.0f);
-    camSettings.lookat = glm::vec3(27.75f, 27.75f, 27.75f);
-
-    Camera camera(camSettings);
+    World& world = scene.world;
 
     Window window(camera.image_width, camera.image_height, "window");
 
@@ -48,11 +40,6 @@ int main() {
 
     Log::info("OpenGL version: {}", reinterpret_cast<const char*>(glGetString(GL_VERSION)));
     Log::info("Image dimensions: {} x {}", camera.image_width, camera.image_height);
-
-    double startBuildTime = glfwGetTime();
-    World  world = World::buildCornellBox();
-    double endBuildTime = glfwGetTime();
-    Log::info("World build time: {:.2f} ms", (endBuildTime - startBuildTime) * 1000);
 
     Buffer spheres_ssbo(GL_SHADER_STORAGE_BUFFER, 0, world.spheres, GL_STATIC_DRAW);
     Buffer mats_ssbo(GL_SHADER_STORAGE_BUFFER, 1, world.materials, GL_STATIC_DRAW);
@@ -87,10 +74,10 @@ int main() {
     };
     uploadDenoiserUniforms();
 
-    Texture accum(window.m_Width, window.m_Height);
-    Texture normals_tex(window.m_Width, window.m_Height);
-    Texture denoised_ping(window.m_Width, window.m_Height);
-    Texture display(window.m_Width, window.m_Height);
+    Texture accum(window.width, window.height);
+    Texture normals_tex(window.width, window.height);
+    Texture denoised_ping(window.width, window.height);
+    Texture display(window.width, window.height);
 
     FrameBuffer fb(display);
 

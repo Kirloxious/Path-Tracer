@@ -1,6 +1,6 @@
 ---
 Language: Cpp
-Standard: c++20
+Standard: Latest
 
 # Base
 BasedOnStyle: LLVM
@@ -35,10 +35,9 @@ BraceWrapping:
   SplitEmptyRecord: false
   SplitEmptyNamespace: false
 
-# Constructor initializer lists — one member per line, comma before
-BreakConstructorInitializers: BeforeComma
+# Constructor initializer lists - BinPack
 ConstructorInitializerIndentWidth: 4
-PackConstructorInitializers: Never
+PackConstructorInitializers: BinPack
 
 # Short constructs
 AllowShortBlocksOnASingleLine: Empty
@@ -48,7 +47,7 @@ AllowShortLoopsOnASingleLine: false
 AllowShortLambdasOnASingleLine: Inline
 
 # Parameters / arguments — never bin-pack; align after open bracket
-BinPackParameters: false
+BinPackParameters: BinPack
 BinPackArguments: false
 AlignAfterOpenBracket: Align
 
