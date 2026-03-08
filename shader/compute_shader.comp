@@ -173,14 +173,29 @@ vec3 linear_to_srgb(vec3 linearColor) {
     return mix(linearColor * 12.92, pow(linearColor, vec3(1.0 / 2.4)) * 1.055 - 0.055, step(0.0031308, linearColor));
 }
 
-float halton(int index, int base) {
-    float f = 1.0;
+// Radical inverse base 2 — pure bitwise, no loops or integer division
+float halton_base2(uint bits) {
+    bits = (bits << 16u) | (bits >> 16u);
+    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+    return float(bits) * 2.3283064365386963e-10; // 1 / 2^32
+}
+
+// Radical inverse base 3 — unrolled 8 iterations (covers indices up to 3^8 = 6561)
+// Fixed iteration count eliminates warp divergence from variable-length loops
+float halton_base3(uint i) {
+    float f = 0.333333333;
     float r = 0.0;
-    while (index > 0) {
-        f /= float(base);
-        r += f * float(index % base);
-        index /= base;
-    }
+    r += f * float(i % 3u); i /= 3u;
+    f *= 0.333333333; r += f * float(i % 3u); i /= 3u;
+    f *= 0.333333333; r += f * float(i % 3u); i /= 3u;
+    f *= 0.333333333; r += f * float(i % 3u); i /= 3u;
+    f *= 0.333333333; r += f * float(i % 3u); i /= 3u;
+    f *= 0.333333333; r += f * float(i % 3u); i /= 3u;
+    f *= 0.333333333; r += f * float(i % 3u); i /= 3u;
+    f *= 0.333333333; r += f * float(i % 3u);
     return r;
 }
 
@@ -792,8 +807,8 @@ void main() {
     float primary_mat_type = 0.0;
 
     for (int s = 0; s < samples_per_pixel; ++s) {
-        int  halton_idx = (frameIndex - 1) * samples_per_pixel + s + 1;
-        vec2 offset = vec2(halton(halton_idx, 2), halton(halton_idx, 3)) - 0.5;
+        uint halton_idx = uint((frameIndex - 1) * samples_per_pixel + s + 1);
+        vec2 offset = vec2(halton_base2(halton_idx), halton_base3(halton_idx)) - 0.5;
         vec2 uv = (vec2(pixel_coords) + offset) * inv_resolution;
         vec2 ndc = uv * 2.0 - 1.0;
 

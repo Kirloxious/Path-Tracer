@@ -43,6 +43,8 @@ void main() {
         return;
     }
 
+    float inv_sigma_color_sq = 1.0 / (sigma_color * sigma_color + 1e-6);
+
     vec3  sum  = vec3(0.0);
     float wsum = 0.0;
 
@@ -52,7 +54,8 @@ void main() {
             vec3  c_q = imageLoad(src_image, q).rgb;
             vec3  n_q = imageLoad(normals_image, q).rgb * 2.0 - 1.0;
 
-            float w_c = exp(-dot(c_p - c_q, c_p - c_q) / (sigma_color * sigma_color + 1e-6));
+            vec3  diff = c_p - c_q;
+            float w_c = exp(-dot(diff, diff) * inv_sigma_color_sq);
             float w_n = pow(max(0.0, dot(n_p, n_q)), sigma_normal);
             float w   = w_c * w_n * h[i + 2] * h[j + 2];
 
