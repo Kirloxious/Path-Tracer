@@ -2,7 +2,12 @@
 #include "log.h"
 #include <GLFW/glfw3.h>
 
+static void glfwErrorCallback(int error, const char* description) {
+    Log::error("GLFW {}: {}", error, description);
+}
+
 Window::Window(int width, int height, std::string_view title) : width(width), height(height), title(title) {
+    glfwSetErrorCallback(glfwErrorCallback);
 
     if (!glfwInit()) {
         Log::error("Failed to initialise GLFW");
