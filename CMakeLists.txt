@@ -62,7 +62,27 @@ if(NOT glm_FOUND)
 endif()
 target_link_libraries(${PROJECT_NAME} glm::glm)
 
+
+target_sources(${PROJECT_NAME} PRIVATE
+    external/imgui/imgui.cpp
+    external/imgui/imgui_draw.cpp
+    external/imgui/imgui_tables.cpp
+    external/imgui/imgui_widgets.cpp
+    external/imgui/imgui_demo.cpp
+    external/imgui/backends/imgui_impl_glfw.cpp
+    external/imgui/backends/imgui_impl_opengl3.cpp
+)
+
+target_include_directories(${PROJECT_NAME} PRIVATE external/imgui external/imgui/backends)
+
+
+
+
+
+
 # -----------------------------
 # Link GLAD last
 # -----------------------------
 target_link_libraries(${PROJECT_NAME} glad)
+
+target_compile_definitions(main PRIVATE _ENABLE_EXTENDED_ALIGNED_STORAGE)

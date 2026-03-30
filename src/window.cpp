@@ -44,7 +44,8 @@ InputState Window::pollInput(const KeyMappings& keys) const {
     auto pressed = [&](int key) {
         return glfwGetKey(window, key) == GLFW_PRESS;
     };
-    return InputState{
+
+    auto inputState = InputState{
         .moveLeft = pressed(keys.moveLeft),
         .moveRight = pressed(keys.moveRight),
         .moveForward = pressed(keys.moveForward),
@@ -56,6 +57,8 @@ InputState Window::pollInput(const KeyMappings& keys) const {
         .lookUp = pressed(keys.lookUp),
         .lookDown = pressed(keys.lookDown),
     };
+
+    return inputState;
 }
 
 void Window::getFrameBufferSize() {

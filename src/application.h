@@ -8,6 +8,7 @@
 #include "buffer.h"
 #include "compute_shader.h"
 #include "renderer.h"
+#include "gui.h"
 
 class Application
 {
