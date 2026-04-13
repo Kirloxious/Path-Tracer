@@ -1,10 +1,13 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <glm/glm.hpp>
+#include <ratio>
 
 #include "bvh.h"
+#include "log.h"
 #include "material.h"
 #include "obj_loader.h"
 
@@ -52,7 +55,15 @@ public:
 
     void addMesh(const OBJMesh& mesh) { triangles.insert(triangles.end(), mesh.triangles.begin(), mesh.triangles.end()); }
 
-    void create() { bvh.build(spheres, triangles); }
+    void create() {
+
+        auto start = std::chrono::high_resolution_clock::now();
+        bvh.build(spheres, triangles);
+        auto end = std::chrono::high_resolution_clock::now();
+
+        std::chrono::duration<double, std::milli> duration = end - start;
+        Log::info("BVH Build time: {:.2f} ms", duration.count());
+    }
 
     int sortEmissiveFirst() {
         auto it =
