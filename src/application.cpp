@@ -9,9 +9,7 @@ static const std::filesystem::path computeShaderPath = "shader/compute_shader.co
 static const std::filesystem::path denoiserShaderPath = "shader/denoiser.comp";
 
 Application::Application(Scene scene)
-    : scene(std::move(scene))
-    , camera(this->scene.cameraSettings)
-    , window(camera.image_width, camera.image_height, this->scene.name.c_str()) {
+    : scene(std::move(scene)), camera(this->scene.cameraSettings), window(camera.image_width, camera.image_height, this->scene.name.c_str()) {
 
     window.makeCurrentContext();
 
@@ -27,10 +25,10 @@ Application::Application(Scene scene)
     compute = ComputeShader(computeShaderPath);
     denoiser = ComputeShader(denoiserShaderPath);
 
-    accum = Texture(window.width, window.height);
-    normals_tex = Texture(window.width, window.height);
-    denoised_ping = Texture(window.width, window.height);
-    display = Texture(window.width, window.height);
+    accum = Texture(camera.image_width, camera.image_height);
+    normals_tex = Texture(camera.image_width, camera.image_height, GL_RGBA16F);
+    denoised_ping = Texture(camera.image_width, camera.image_height);
+    display = Texture(camera.image_width, camera.image_height);
     fb = FrameBuffer(display);
 
     constexpr GLuint workGroupSize = 8;
@@ -96,24 +94,22 @@ void Application::uploadDenoiserUniforms() {
 
 int Application::run() {
     // Im gui init
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-
-    // Setup Platform/Renderer backends
-    ImGui_ImplGlfw_InitForOpenGL(window.window, true);          // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
-    ImGui_ImplOpenGL3_Init();
+    // IMGUI_CHECKVERSION();
+    // ImGui::CreateContext();
+    //
+    // // Setup Platform/Renderer backends
+    // ImGui_ImplGlfw_InitForOpenGL(window.window, true);          // Second param install_callback=true will install GLFW callbacks and chain to
+    // existing ones. ImGui_ImplOpenGL3_Init();
 
     while (!window.shouldClose()) {
 
-
         camera.update(window.pollInput(), deltaTime);
-        cam_ubo.update(camera.data);
 
         if (camera.moving) {
+            cam_ubo.update(camera.data);
             frameIndex = 0;
             camera.moving = false;
         }
-
 
         if (compute.reloadIfChanged()) {
             uploadStaticUniforms();
@@ -164,21 +160,19 @@ int Application::run() {
         glGetQueryObjectui64v(queryIDs[prevQuery], GL_QUERY_RESULT, &lastComputeTime);
         queryFrame = prevQuery;
 
-
-        
-        fb.blit(display);
-        
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-        ImGui::ShowDemoWindow(); // Show demo window! :)
-
-        ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
+        window.getFrameBufferSize();
+        fb.blit(display, window.width, window.height);
+        //
+        // ImGui_ImplOpenGL3_NewFrame();
+        // ImGui_ImplGlfw_NewFrame();
+        // ImGui::NewFrame();
+        // ImGui::ShowDemoWindow(); // Show demo window! :)
+        //
+        // ImGui::Render();
+        // ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        //
         window.pollEvents();
         window.swapBuffers();
- 
 
         double currentTime = glfwGetTime();
         deltaTime = currentTime - lastTime;
@@ -190,15 +184,11 @@ int Application::run() {
             frameCount = 0;
             timer = currentTime;
         }
-
-
-        
-
     }
-
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
+    //
+    // ImGui_ImplOpenGL3_Shutdown();
+    // ImGui_ImplGlfw_Shutdown();
+    // ImGui::DestroyContext();
 
     return 0;
 }

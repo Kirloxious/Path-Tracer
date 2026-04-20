@@ -8,9 +8,10 @@ public:
     GLuint handle = 0;
     int    width = 0;
     int    height = 0;
+    GLenum internalFormat = GL_RGBA32F;
 
     Texture() = default;
-    Texture(int width, int height);
+    Texture(int width, int height, GLenum internalFormat = GL_RGBA32F);
     ~Texture();
 
     void bindForAccumulation() const;
@@ -33,7 +34,7 @@ public:
     ~FrameBuffer();
 
     // Blits this framebuffer to the default (swapchain) framebuffer.
-    void blit(const Texture& texture) const;
+    void blit(const Texture& texture, int dstWidth, int dstHeight) const;
 
     // Non-copyable, movable
     FrameBuffer(const FrameBuffer&) = delete;

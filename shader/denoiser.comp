@@ -2,7 +2,7 @@
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(rgba32f, binding = 0) readonly  uniform image2D src_image;
-layout(rgba32f, binding = 1) readonly  uniform image2D normals_image;
+layout(rgba16f, binding = 1) readonly  uniform image2D normals_image;
 layout(rgba32f, binding = 2) writeonly uniform image2D dst_image;
 
 layout(location = 0) uniform int   step_size;

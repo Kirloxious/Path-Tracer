@@ -9,7 +9,7 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 //=============================================================================
 
 layout(rgba32f, binding = 0) uniform image2D accum_image;
-layout(rgba32f, binding = 2) writeonly uniform image2D normals_image;
+layout(rgba16f, binding = 2) writeonly uniform image2D normals_image;
 layout(location = 3) uniform int time;
 layout(location = 4) uniform int frameIndex;
 layout(location = 5) uniform vec2 imageDimensions;
@@ -34,19 +34,19 @@ struct Ray
 
 struct HitRecord
 {
-    vec3  point;
-    vec3  normal;
-    uint  mat_index;
-    uint  sphere_index;
+    vec3 point;
+    vec3 normal;
+    uint mat_index;
+    uint sphere_index;
     float t;
-    bool  front_face;
+    bool front_face;
 };
 
 struct Sphere
 {
-    vec3  position;
+    vec3 position;
     float radius;
-    uint  material_index;
+    uint material_index;
 };
 
 struct Triangle
@@ -71,19 +71,19 @@ struct Quad
 
 struct Material
 {
-    vec3  color;
+    vec3 color;
     float fuzz;
-    vec3  emission;
+    vec3 emission;
     float refractive_index;
     float type;
 };
 
 struct BVHNodeFlat
 {
-    vec4  aabbMin;
-    vec4  aabbMax;
+    vec4 aabbMin;
+    vec4 aabbMax;
     ivec4 meta; // interior: x=left, y=right, z=-1, w=skip
-                // leaf:     x=-1,  y=primType (0=sphere,1=tri), z=primIndex, w=skip
+    // leaf:     x=-1,  y=primType (0=sphere,1=tri), z=primIndex, w=skip
 };
 
 //=============================================================================
@@ -99,11 +99,11 @@ layout(std430, binding = 1) readonly buffer MatsBuffer {
 };
 
 layout(std140, binding = 2) uniform Camera {
-    mat4  viewMatrix;
-    mat4  projMatrix;
-    mat4  invViewMatrix;
-    mat4  invProjMatrix;
-    vec3  cameraPosition;
+    mat4 viewMatrix;
+    mat4 projMatrix;
+    mat4 invViewMatrix;
+    mat4 invProjMatrix;
+    vec3 cameraPosition;
     float focus_distance;
     float defocus_angle;
 };
@@ -188,14 +188,28 @@ float halton_base2(uint bits) {
 float halton_base3(uint i) {
     float f = 0.333333333;
     float r = 0.0;
-    r += f * float(i % 3u); i /= 3u;
-    f *= 0.333333333; r += f * float(i % 3u); i /= 3u;
-    f *= 0.333333333; r += f * float(i % 3u); i /= 3u;
-    f *= 0.333333333; r += f * float(i % 3u); i /= 3u;
-    f *= 0.333333333; r += f * float(i % 3u); i /= 3u;
-    f *= 0.333333333; r += f * float(i % 3u); i /= 3u;
-    f *= 0.333333333; r += f * float(i % 3u); i /= 3u;
-    f *= 0.333333333; r += f * float(i % 3u);
+    r += f * float(i % 3u);
+    i /= 3u;
+    f *= 0.333333333;
+    r += f * float(i % 3u);
+    i /= 3u;
+    f *= 0.333333333;
+    r += f * float(i % 3u);
+    i /= 3u;
+    f *= 0.333333333;
+    r += f * float(i % 3u);
+    i /= 3u;
+    f *= 0.333333333;
+    r += f * float(i % 3u);
+    i /= 3u;
+    f *= 0.333333333;
+    r += f * float(i % 3u);
+    i /= 3u;
+    f *= 0.333333333;
+    r += f * float(i % 3u);
+    i /= 3u;
+    f *= 0.333333333;
+    r += f * float(i % 3u);
     return r;
 }
 
@@ -238,7 +252,7 @@ void set_face_normal(in Ray ray, in vec3 outward_normal, inout HitRecord hit_rec
 
 // Ray direction is always normalized, so a = dot(d,d) = 1.0 — no division needed
 bool hit_sphere(in Ray r, in Sphere s, float ray_tmin, float ray_tmax, inout HitRecord hit_rec) {
-    vec3  oc = s.position - r.origin;
+    vec3 oc = s.position - r.origin;
     float h = dot(oc, r.direction);
     float c = dot(oc, oc) - s.radius * s.radius;
 
@@ -266,12 +280,12 @@ bool hit_sphere(in Ray r, in Sphere s, float ray_tmin, float ray_tmax, inout Hit
 }
 
 bool hit_quad(in Ray r, in Quad q, inout HitRecord hit_rec) {
-    vec3  u = q.u;
-    vec3  v = q.v;
-    vec3  n = cross(u, v);
-    vec3  normal = normalize(n);
+    vec3 u = q.u;
+    vec3 v = q.v;
+    vec3 n = cross(u, v);
+    vec3 normal = normalize(n);
     float D = dot(normal, q.corner_point);
-    vec3  w = n / dot(n, n);
+    vec3 w = n / dot(n, n);
 
     float denom = dot(normal, r.direction);
     if (denom < 0.00001) {
@@ -283,8 +297,8 @@ bool hit_quad(in Ray r, in Quad q, inout HitRecord hit_rec) {
         return false;
     }
 
-    vec3  intersection = r.origin + t * r.direction;
-    vec3  planar_hitpt_vector = intersection - q.corner_point;
+    vec3 intersection = r.origin + t * r.direction;
+    vec3 planar_hitpt_vector = intersection - q.corner_point;
     float alpha = dot(w, cross(planar_hitpt_vector, v));
     float beta = dot(w, cross(u, planar_hitpt_vector));
 
@@ -303,7 +317,7 @@ bool hit_quad(in Ray r, in Quad q, inout HitRecord hit_rec) {
 
 // Lightweight sphere intersection — a=1 since direction is normalized
 bool hit_sphere_any(in Ray r, in Sphere s, float ray_tmin, float ray_tmax) {
-    vec3  oc = s.position - r.origin;
+    vec3 oc = s.position - r.origin;
     float h = dot(oc, r.direction);
     float c = dot(oc, oc) - s.radius * s.radius;
 
@@ -326,7 +340,7 @@ bool hit_sphere_any(in Ray r, in Sphere s, float ray_tmin, float ray_tmax) {
 
 // Möller–Trumbore ray-triangle intersection
 bool hit_triangle(in Ray r, in Triangle tri, float ray_tmin, float ray_tmax, inout HitRecord hit_rec) {
-    vec3  h = cross(r.direction, tri.e2);
+    vec3 h = cross(r.direction, tri.e2);
     float a = dot(tri.e1, h);
 
     if (abs(a) < 1e-8) {
@@ -334,14 +348,14 @@ bool hit_triangle(in Ray r, in Triangle tri, float ray_tmin, float ray_tmax, ino
     }
 
     float f = 1.0 / a;
-    vec3  s = r.origin - tri.v0;
+    vec3 s = r.origin - tri.v0;
     float u = f * dot(s, h);
 
     if (u < 0.0 || u > 1.0) {
         return false;
     }
 
-    vec3  q = cross(s, tri.e1);
+    vec3 q = cross(s, tri.e1);
     float v = f * dot(r.direction, q);
 
     if (v < 0.0 || u + v > 1.0) {
@@ -366,7 +380,7 @@ bool hit_triangle(in Ray r, in Triangle tri, float ray_tmin, float ray_tmax, ino
 
 // Lightweight triangle intersection for shadow rays
 bool hit_triangle_any(in Ray r, in Triangle tri, float ray_tmin, float ray_tmax) {
-    vec3  h = cross(r.direction, tri.e2);
+    vec3 h = cross(r.direction, tri.e2);
     float a = dot(tri.e1, h);
 
     if (abs(a) < 1e-8) {
@@ -374,14 +388,14 @@ bool hit_triangle_any(in Ray r, in Triangle tri, float ray_tmin, float ray_tmax)
     }
 
     float f = 1.0 / a;
-    vec3  s = r.origin - tri.v0;
+    vec3 s = r.origin - tri.v0;
     float u = f * dot(s, h);
 
     if (u < 0.0 || u > 1.0) {
         return false;
     }
 
-    vec3  q = cross(s, tri.e1);
+    vec3 q = cross(s, tri.e1);
     float v = f * dot(r.direction, q);
 
     if (v < 0.0 || u + v > 1.0) {
@@ -392,9 +406,11 @@ bool hit_triangle_any(in Ray r, in Triangle tri, float ray_tmin, float ray_tmax)
     return (t >= ray_tmin && t <= ray_tmax);
 }
 
-bool intersect_aabb(in Ray r, in vec3 minB, in vec3 maxB, in vec3 inv_dir, in float tMin, in float tMax) {
-    vec3  t1 = (minB - r.origin) * inv_dir;
-    vec3  t2 = (maxB - r.origin) * inv_dir;
+// Precompute neg_ood = -origin * inv_dir outside the traversal loop.
+// This turns 6 SUB + 6 MUL per node into 6 FMA — saving ~50% ALU per AABB test.
+bool intersect_aabb(in vec3 minB, in vec3 maxB, in vec3 inv_dir, in vec3 neg_ood, in float tMin, in float tMax) {
+    vec3 t1 = minB * inv_dir + neg_ood;
+    vec3 t2 = maxB * inv_dir + neg_ood;
     float tNear = max(max(min(t1.x, t2.x), min(t1.y, t2.y)), min(t1.z, t2.z));
     float tFar = min(min(max(t1.x, t2.x), max(t1.y, t2.y)), max(t1.z, t2.z));
     return tNear < tFar && tFar > tMin && tNear < tMax;
@@ -407,8 +423,8 @@ bool intersect_aabb(in Ray r, in vec3 minB, in vec3 maxB, in vec3 inv_dir, in fl
 #ifdef DEBUG_BRUTE_FORCE
 bool world_hit(in Ray r, in float ray_tmin, in float ray_tmax, inout HitRecord hit_rec) {
     HitRecord temp_rec;
-    bool      hit_anything = false;
-    float     closest_so_far = ray_tmax;
+    bool hit_anything = false;
+    float closest_so_far = ray_tmax;
 
     for (int i = 0; i < num_objects; i++) {
         if (hit_sphere(r, spheres[i], ray_tmin, closest_so_far, temp_rec)) {
@@ -424,18 +440,19 @@ bool world_hit(in Ray r, in float ray_tmin, in float ray_tmax, inout HitRecord h
 
 // Stackless BVH traversal using skip pointers (meta.w)
 bool world_hit_aabb_stackless(in Ray r, in float tMin, in float tMax, inout HitRecord hit, in vec3 inv_dir) {
-    int   idx = root_index;
-    bool  hitSomething = false;
+    vec3 neg_ood = -r.origin * inv_dir;
+    int idx = root_index;
+    bool hitSomething = false;
     float closest = tMax;
 
     while (idx >= 0) {
         BVHNodeFlat node = nodes[idx];
 
-        if (intersect_aabb(r, node.aabbMin.xyz, node.aabbMax.xyz, inv_dir, tMin, closest)) {
+        if (intersect_aabb(node.aabbMin.xyz, node.aabbMax.xyz, inv_dir, neg_ood, tMin, closest)) {
             if (node.meta.x == -1) {
                 // Leaf node — meta.y = prim type, meta.z = prim index
                 HitRecord temp;
-                bool      leafHit = false;
+                bool leafHit = false;
 
                 if (node.meta.y == 0) {
                     leafHit = hit_sphere(r, spheres[node.meta.z], tMin, closest, temp);
@@ -465,10 +482,10 @@ bool world_hit_aabb_stackless(in Ray r, in float tMin, in float tMax, inout HitR
 
 // Shadow ray visibility test — skips emissive spheres (they are light sources, not occluders)
 bool is_visible(in vec3 origin, in vec3 target) {
-    vec3  dir = target - origin;
+    vec3 dir = target - origin;
     float dist2 = dot(dir, dir);
     float inv_dist = inversesqrt(dist2);
-    vec3  ndir = dir * inv_dist;
+    vec3 ndir = dir * inv_dist;
     float dist = dist2 * inv_dist;
 
     Ray shadow;
@@ -476,7 +493,8 @@ bool is_visible(in vec3 origin, in vec3 target) {
     shadow.direction = ndir;
 
     vec3 inv_dir = 1.0 / ndir;
-    int  idx = root_index;
+    vec3 neg_ood = -shadow.origin * inv_dir;
+    int idx = root_index;
 
     float tMin = 0.001;
     float tMax = dist - 0.001;
@@ -484,7 +502,7 @@ bool is_visible(in vec3 origin, in vec3 target) {
     while (idx >= 0) {
         BVHNodeFlat node = nodes[idx];
 
-        if (intersect_aabb(shadow, node.aabbMin.xyz, node.aabbMax.xyz, inv_dir, tMin, tMax)) {
+        if (intersect_aabb(node.aabbMin.xyz, node.aabbMax.xyz, inv_dir, neg_ood, tMin, tMax)) {
             if (node.meta.x == -1) {
                 if (node.meta.y == 0) {
                     // Skip emissive spheres — they are lights, not occluders
@@ -585,9 +603,9 @@ bool scatter(inout uint state, in Ray ray_in, in HitRecord hit_rec, inout vec3 m
 //=============================================================================
 
 vec3 sample_sphere(in Sphere s, in vec3 p, inout uint state, out float pdf) {
-    vec3  toCenter = s.position - p;
+    vec3 toCenter = s.position - p;
     float dist = length(toCenter);
-    vec3  dir = toCenter / dist;
+    vec3 dir = toCenter / dist;
 
     vec3 up = abs(dir.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
     vec3 right = normalize(cross(up, dir));
@@ -606,7 +624,7 @@ vec3 sample_sphere(in Sphere s, in vec3 p, inout uint state, out float pdf) {
 }
 
 float sphere_sample_PDF(in Sphere s, in vec3 p) {
-    vec3  toCenter = s.position - p;
+    vec3 toCenter = s.position - p;
     float dist2 = dot(toCenter, toCenter);
     float sinThetaMax2 = (s.radius * s.radius) / dist2;
     float cosThetaMax = sqrt(max(0.0, 1.0 - sinThetaMax2));
@@ -636,8 +654,8 @@ vec3 ray_color(in Ray ray, uint max_bounces, inout uint state) {
     for (int bounce = 0; bounce < max_bounces; bounce++) {
         HitRecord hit_rec;
         if (world_hit(current_ray, 0.001, infinity, hit_rec)) {
-            Ray      scattered;
-            vec3     matColor;
+            Ray scattered;
+            vec3 matColor;
             Material mat;
             if (scatter(state, current_ray, hit_rec, matColor, scattered, mat)) {
                 accumulated_color *= matColor;
@@ -647,7 +665,7 @@ vec3 ray_color(in Ray ray, uint max_bounces, inout uint state) {
                 break;
             }
         } else {
-            vec3  unit_direction = normalize(current_ray.direction);
+            vec3 unit_direction = normalize(current_ray.direction);
             float blend = 0.5 * (unit_direction.y + 1.0);
             radiance += accumulated_color * mix(vec3(1.0), vec3(0.5, 0.7, 1.0), blend);
             break;
@@ -667,12 +685,12 @@ vec3 ray_color(in Ray ray, uint max_bounces, inout uint state) {
     Ray current_ray = ray;
 
     for (int bounce = 0; bounce < max_bounces; bounce++) {
-        vec3      inv_dir = 1.0 / current_ray.direction;
+        vec3 inv_dir = 1.0 / current_ray.direction;
         HitRecord hit_rec;
 
         if (world_hit_aabb_stackless(current_ray, 0.001, infinity, hit_rec, inv_dir)) {
-            Ray      scattered;
-            vec3     mat_color;
+            Ray scattered;
+            vec3 mat_color;
             Material mat;
             if (scatter(state, current_ray, hit_rec, mat_color, scattered, mat)) {
                 accumulated_color *= mat_color;
@@ -681,12 +699,10 @@ vec3 ray_color(in Ray ray, uint max_bounces, inout uint state) {
                 if (max(accumulated_color.r, max(accumulated_color.g, accumulated_color.b)) < 0.0001) {
                     break;
                 }
-
             } else {
                 final_color += accumulated_color * mat_color * mat.emission;
                 break;
             }
-
         } else {
             final_color += accumulated_color * background_color;
             break;
@@ -704,15 +720,15 @@ vec3 ray_color_MIS(in Ray ray, uint max_bounces, inout uint state, out vec3 prim
     vec3 final_color = vec3(0.0);
     vec3 background_color = vec3(0.00);
 
-    Ray  current_ray = ray;
+    Ray current_ray = ray;
     bool first_hit = true;
 
-    int   num_emissive = emissive_last_index + 1;
+    int num_emissive = emissive_last_index + 1;
     float prev_bsdf_pdf = 1.0;
-    bool  prev_specular = true;
+    bool prev_specular = true;
 
     for (int bounce = 0; bounce < max_bounces; bounce++) {
-        vec3      inv_dir = 1.0 / current_ray.direction;
+        vec3 inv_dir = 1.0 / current_ray.direction;
         HitRecord hit_rec;
 
         if (world_hit_aabb_stackless(current_ray, 0.001, infinity, hit_rec, inv_dir)) {
@@ -721,28 +737,29 @@ vec3 ray_color_MIS(in Ray ray, uint max_bounces, inout uint state, out vec3 prim
                 primary_mat_type = mats[hit_rec.mat_index].type;
                 first_hit = false;
             }
-            Ray      scattered;
-            vec3     mat_color;
+            Ray scattered;
+            vec3 mat_color;
             Material mat;
             if (scatter(state, current_ray, hit_rec, mat_color, scattered, mat)) {
                 bool is_delta = (mat.type == MAT_METAL || mat.type == MAT_DIELECTRIC);
 
                 // NEE: sample a random emissive sphere directly
                 if (num_emissive > 0 && !is_delta) {
-                    int    light_i = int(RandomUnilateral(state) * float(num_emissive));
+                    int light_i = int(RandomUnilateral(state) * float(num_emissive));
                     Sphere light = spheres[light_i];
-                    float  light_pdf = 0.0;
-                    vec3   light_dir = sample_sphere(light, hit_rec.point, state, light_pdf);
-                    vec3   light_target = light.position + (-light_dir) * light.radius;
+                    float light_pdf = 0.0;
+                    vec3 light_dir = sample_sphere(light, hit_rec.point, state, light_pdf);
+                    vec3 light_target = light.position + light_dir * light.radius;
+                    // vec3 light_target = hit_rec.point + light.position * length(light.position - hit_rec.point);
 
                     if (is_visible(hit_rec.point, light_target)) {
                         Material light_mat = mats[light.material_index];
-                        float    bsdf_pdf = scatter_PDF(mat, hit_rec.normal, light_dir);
-                        float    cos_theta = max(0.0, dot(hit_rec.normal, light_dir));
-                        float    weight = mis_weight(light_pdf, bsdf_pdf);
+                        float bsdf_pdf = scatter_PDF(mat, hit_rec.normal, light_dir);
+                        float cos_theta = max(0.0, dot(hit_rec.normal, light_dir));
+                        float weight = mis_weight(light_pdf, bsdf_pdf);
 
                         final_color += accumulated_color * weight * mat_color * light_mat.color * light_mat.emission * cos_theta *
-                                       float(num_emissive) / light_pdf;
+                                float(num_emissive) / (light_pdf * PI);
                     }
                 }
 
@@ -765,7 +782,7 @@ vec3 ray_color_MIS(in Ray ray, uint max_bounces, inout uint state, out vec3 prim
 
                 if (!prev_specular && num_emissive > 0) {
                     Sphere hit_light = spheres[hit_rec.sphere_index];
-                    float  light_pdf = sphere_sample_PDF(hit_light, current_ray.origin);
+                    float light_pdf = sphere_sample_PDF(hit_light, current_ray.origin);
                     bsdf_weight = mis_weight(prev_bsdf_pdf, light_pdf);
                 }
 
@@ -789,21 +806,21 @@ vec3 ray_color_MIS(in Ray ray, uint max_bounces, inout uint state, out vec3 prim
 
 void main() {
     ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
-    uint  x = gl_GlobalInvocationID.x;
-    uint  y = gl_GlobalInvocationID.y;
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
 
     uint width = uint(imageDimensions.x);
     uint height = uint(imageDimensions.y);
 
     uint random_state = uint(time) * (x * 1973u + y * 9277u + 1u) | 1u;
 
-    vec2  inv_resolution = 1.0 / vec2(width, height);
-    vec3  camera_right = vec3(invViewMatrix[0].xyz);
-    vec3  camera_up = vec3(invViewMatrix[1].xyz);
+    vec2 inv_resolution = 1.0 / vec2(width, height);
+    vec3 camera_right = vec3(invViewMatrix[0].xyz);
+    vec3 camera_up = vec3(invViewMatrix[1].xyz);
     float lens_radius = tan(radians(defocus_angle * 0.5)) * focus_distance;
 
-    vec3  pixel_color = vec3(0.0);
-    vec3  primary_normal = vec3(0.0);
+    vec3 pixel_color = vec3(0.0);
+    vec3 primary_normal = vec3(0.0);
     float primary_mat_type = 0.0;
 
     for (int s = 0; s < samples_per_pixel; ++s) {
@@ -828,25 +845,31 @@ void main() {
         ray.origin = origin;
         ray.direction = dir;
 
-#ifdef DEBUG_BRUTE_FORCE
+        #ifdef DEBUG_BRUTE_FORCE
         pixel_color += ray_color(ray, max_bounces, random_state);
-#else
-        vec3  sample_normal;
+        #else
+        vec3 sample_normal;
         float sample_mat_type;
         pixel_color += ray_color_MIS(ray, max_bounces, random_state, sample_normal, sample_mat_type);
         if (s == 0) {
             primary_normal = sample_normal;
             primary_mat_type = sample_mat_type;
         }
-#endif
+        #endif
     }
 
-    vec3  prev_color = imageLoad(accum_image, pixel_coords).xyz;
+    vec3 prev_color = imageLoad(accum_image, pixel_coords).xyz;
     float scale_factor = 1.0 / float(samples_per_pixel);
-    pixel_color = max(pixel_color * scale_factor, vec3(0.0));
+    pixel_color = clamp(pixel_color * scale_factor, vec3(0.0), vec3(10.0));
+
+    if (any(isnan(pixel_color)) || any(isinf(pixel_color))) {
+        pixel_color = vec3(0.0);
+    }
 
     vec3 sum_color = prev_color * max(frameIndex - 1, 0);
     vec3 accum_color = (pixel_color + sum_color) / float(frameIndex);
+
+    // vec3 accum_color = prev_color + (pixel_color - prev_color) / float(frameIndex);
 
     imageStore(accum_image, pixel_coords, vec4(accum_color, 1.0));
     imageStore(normals_image, pixel_coords, vec4(primary_normal * 0.5 + 0.5, primary_mat_type));
