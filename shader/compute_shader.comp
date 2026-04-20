@@ -11,8 +11,8 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(rgba32f, binding = 0) uniform image2D accum_image;
 layout(rgba16f, binding = 2) writeonly uniform image2D normals_image;
 layout(location = 3) uniform int time;
-layout(location = 4) uniform int frameIndex;
-layout(location = 5) uniform vec2 imageDimensions;
+layout(location = 4) uniform int frame_index;
+layout(location = 5) uniform vec2 image_dimensions;
 layout(location = 6) uniform int num_objects;
 layout(location = 7) uniform int bvh_size;
 layout(location = 8) uniform int root_index;
@@ -80,8 +80,8 @@ struct Material
 
 struct BVHNodeFlat
 {
-    vec4 aabbMin;
-    vec4 aabbMax;
+    vec4 aabb_min;
+    vec4 aabb_max;
     ivec4 meta; // interior: x=left, y=right, z=-1, w=skip
     // leaf:     x=-1,  y=primType (0=sphere,1=tri), z=primIndex, w=skip
 };
@@ -99,11 +99,11 @@ layout(std430, binding = 1) readonly buffer MatsBuffer {
 };
 
 layout(std140, binding = 2) uniform Camera {
-    mat4 viewMatrix;
-    mat4 projMatrix;
-    mat4 invViewMatrix;
-    mat4 invProjMatrix;
-    vec3 cameraPosition;
+    mat4 view_matrix;
+    mat4 proj_matrix;
+    mat4 inv_view_matrix;
+    mat4 inv_proj_matrix;
+    vec3 camera_position;
     float focus_distance;
     float defocus_angle;
 };
@@ -132,7 +132,7 @@ const float PI = 3.14159265358979323846;
 // RNG Utilities
 //=============================================================================
 
-uint XOrShift32(inout uint state) {
+uint xor_shift32(inout uint state) {
     uint x = state;
     x ^= x << 13;
     x ^= x >> 17;
@@ -141,22 +141,22 @@ uint XOrShift32(inout uint state) {
     return x;
 }
 
-float RandomUnilateral(inout uint state) {
-    return uintBitsToFloat((XOrShift32(state) >> 9) | 0x3F800000u) - 1.0;
+float random_unilateral(inout uint state) {
+    return uintBitsToFloat((xor_shift32(state) >> 9) | 0x3F800000u) - 1.0;
 }
 
-float RandomBilateral(inout uint state) {
-    return 2.0 * RandomUnilateral(state) - 1.0;
+float random_bilateral(inout uint state) {
+    return 2.0 * random_unilateral(state) - 1.0;
 }
 
 vec3 random_vec3(inout uint state) {
-    return vec3(RandomBilateral(state), RandomBilateral(state), RandomBilateral(state));
+    return vec3(random_bilateral(state), random_bilateral(state), random_bilateral(state));
 }
 
 vec3 random_unit_vector(inout uint state) {
-    float z = RandomBilateral(state);
+    float z = random_bilateral(state);
     float r = sqrt(max(0.0, 1.0 - z * z));
-    float phi = 2.0 * PI * RandomUnilateral(state);
+    float phi = 2.0 * PI * random_unilateral(state);
     return vec3(r * cos(phi), r * sin(phi), z);
 }
 
@@ -169,8 +169,8 @@ vec3 random_on_hemisphere(inout uint state, vec3 normal) {
 // Math Utilities
 //=============================================================================
 
-vec3 linear_to_srgb(vec3 linearColor) {
-    return mix(linearColor * 12.92, pow(linearColor, vec3(1.0 / 2.4)) * 1.055 - 0.055, step(0.0031308, linearColor));
+vec3 linear_to_srgb(vec3 linear_color) {
+    return mix(linear_color * 12.92, pow(linear_color, vec3(1.0 / 2.4)) * 1.055 - 0.055, step(0.0031308, linear_color));
 }
 
 // Radical inverse base 2 — pure bitwise, no loops or integer division
@@ -218,12 +218,12 @@ float halton_base3(uint i) {
 //=============================================================================
 
 vec3 sample_square(inout uint state) {
-    return vec3(RandomBilateral(state) * 0.5, RandomBilateral(state) * 0.5, 0.0);
+    return vec3(random_bilateral(state) * 0.5, random_bilateral(state) * 0.5, 0.0);
 }
 
 vec2 sample_disk(inout uint state) {
-    float x = 2.0 * RandomUnilateral(state) - 1.0;
-    float y = 2.0 * RandomUnilateral(state) - 1.0;
+    float x = 2.0 * random_unilateral(state) - 1.0;
+    float y = 2.0 * random_unilateral(state) - 1.0;
 
     if (x == 0.0 && y == 0.0) {
         return vec2(0.0);
@@ -408,12 +408,12 @@ bool hit_triangle_any(in Ray r, in Triangle tri, float ray_tmin, float ray_tmax)
 
 // Precompute neg_ood = -origin * inv_dir outside the traversal loop.
 // This turns 6 SUB + 6 MUL per node into 6 FMA — saving ~50% ALU per AABB test.
-bool intersect_aabb(in vec3 minB, in vec3 maxB, in vec3 inv_dir, in vec3 neg_ood, in float tMin, in float tMax) {
-    vec3 t1 = minB * inv_dir + neg_ood;
-    vec3 t2 = maxB * inv_dir + neg_ood;
-    float tNear = max(max(min(t1.x, t2.x), min(t1.y, t2.y)), min(t1.z, t2.z));
-    float tFar = min(min(max(t1.x, t2.x), max(t1.y, t2.y)), max(t1.z, t2.z));
-    return tNear < tFar && tFar > tMin && tNear < tMax;
+bool intersect_aabb(in vec3 min_b, in vec3 max_b, in vec3 inv_dir, in vec3 neg_ood, in float t_min, in float t_max) {
+    vec3 t1 = min_b * inv_dir + neg_ood;
+    vec3 t2 = max_b * inv_dir + neg_ood;
+    float t_near = max(max(min(t1.x, t2.x), min(t1.y, t2.y)), min(t1.z, t2.z));
+    float t_far = min(min(max(t1.x, t2.x), max(t1.y, t2.y)), max(t1.z, t2.z));
+    return t_near < t_far && t_far > t_min && t_near < t_max;
 }
 
 //=============================================================================
@@ -439,34 +439,34 @@ bool world_hit(in Ray r, in float ray_tmin, in float ray_tmax, inout HitRecord h
 #endif
 
 // Stackless BVH traversal using skip pointers (meta.w)
-bool world_hit_aabb_stackless(in Ray r, in float tMin, in float tMax, inout HitRecord hit, in vec3 inv_dir) {
+bool world_hit_aabb_stackless(in Ray r, in float t_min, in float t_max, inout HitRecord hit, in vec3 inv_dir) {
     vec3 neg_ood = -r.origin * inv_dir;
     int idx = root_index;
-    bool hitSomething = false;
-    float closest = tMax;
+    bool hit_something = false;
+    float closest = t_max;
 
     while (idx >= 0) {
         BVHNodeFlat node = nodes[idx];
 
-        if (intersect_aabb(node.aabbMin.xyz, node.aabbMax.xyz, inv_dir, neg_ood, tMin, closest)) {
+        if (intersect_aabb(node.aabb_min.xyz, node.aabb_max.xyz, inv_dir, neg_ood, t_min, closest)) {
             if (node.meta.x == -1) {
                 // Leaf node — meta.y = prim type, meta.z = prim index
                 HitRecord temp;
-                bool leafHit = false;
+                bool leaf_hit = false;
 
                 if (node.meta.y == 0) {
-                    leafHit = hit_sphere(r, spheres[node.meta.z], tMin, closest, temp);
-                    if (leafHit) {
+                    leaf_hit = hit_sphere(r, spheres[node.meta.z], t_min, closest, temp);
+                    if (leaf_hit) {
                         temp.sphere_index = uint(node.meta.z);
                     }
                 } else {
-                    leafHit = hit_triangle(r, triangles[node.meta.z], tMin, closest, temp);
+                    leaf_hit = hit_triangle(r, triangles[node.meta.z], t_min, closest, temp);
                 }
 
-                if (leafHit) {
+                if (leaf_hit) {
                     closest = temp.t;
                     hit = temp;
-                    hitSomething = true;
+                    hit_something = true;
                 }
                 idx = node.meta.w;
             } else {
@@ -477,7 +477,7 @@ bool world_hit_aabb_stackless(in Ray r, in float tMin, in float tMax, inout HitR
         }
     }
 
-    return hitSomething;
+    return hit_something;
 }
 
 // Shadow ray visibility test — skips emissive spheres (they are light sources, not occluders)
@@ -496,23 +496,23 @@ bool is_visible(in vec3 origin, in vec3 target) {
     vec3 neg_ood = -shadow.origin * inv_dir;
     int idx = root_index;
 
-    float tMin = 0.001;
-    float tMax = dist - 0.001;
+    float t_min = 0.001;
+    float t_max = dist - 0.001;
 
     while (idx >= 0) {
         BVHNodeFlat node = nodes[idx];
 
-        if (intersect_aabb(node.aabbMin.xyz, node.aabbMax.xyz, inv_dir, neg_ood, tMin, tMax)) {
+        if (intersect_aabb(node.aabb_min.xyz, node.aabb_max.xyz, inv_dir, neg_ood, t_min, t_max)) {
             if (node.meta.x == -1) {
                 if (node.meta.y == 0) {
                     // Skip emissive spheres — they are lights, not occluders
                     if (mats[spheres[node.meta.z].material_index].type != MAT_EMISSIVE) {
-                        if (hit_sphere_any(shadow, spheres[node.meta.z], tMin, tMax)) {
+                        if (hit_sphere_any(shadow, spheres[node.meta.z], t_min, t_max)) {
                             return false;
                         }
                     }
                 } else {
-                    if (hit_triangle_any(shadow, triangles[node.meta.z], tMin, tMax)) {
+                    if (hit_triangle_any(shadow, triangles[node.meta.z], t_min, t_max)) {
                         return false;
                     }
                 }
@@ -542,20 +542,20 @@ float reflectance(float cosine, float ref_idx) {
     return r0 + (1.0 - r0) * x2 * x2 * x;
 }
 
-float scatter_PDF(in Material mat, in vec3 normal, in vec3 scatterDir) {
+float scatter_pdf(in Material mat, in vec3 normal, in vec3 scatter_dir) {
     if (mat.type == MAT_LAMBERTIAN) {
-        return max(0.0, dot(normal, scatterDir)) / PI;
+        return max(0.0, dot(normal, scatter_dir)) / PI;
     }
 
     return 1.0;
 }
 
-bool scatter(inout uint state, in Ray ray_in, in HitRecord hit_rec, inout vec3 matColor, inout Ray scattered, out Material mat) {
+bool scatter(inout uint state, in Ray ray_in, in HitRecord hit_rec, inout vec3 mat_color, inout Ray scattered, out Material mat) {
     mat = mats[hit_rec.mat_index];
     float type = mat.type;
 
     if (type == MAT_EMISSIVE) {
-        matColor = mat.color;
+        mat_color = mat.color;
         return false;
     }
 
@@ -566,7 +566,7 @@ bool scatter(inout uint state, in Ray ray_in, in HitRecord hit_rec, inout vec3 m
         }
 
         scattered = Ray(hit_rec.point, normalize(scatter_dir));
-        matColor = mat.color;
+        mat_color = mat.color;
         return true;
     }
 
@@ -574,18 +574,18 @@ bool scatter(inout uint state, in Ray ray_in, in HitRecord hit_rec, inout vec3 m
         vec3 reflected = reflect(ray_in.direction, hit_rec.normal);
         reflected += mat.fuzz * random_unit_vector(state);
         scattered = Ray(hit_rec.point, normalize(reflected));
-        matColor = mat.color;
+        mat_color = mat.color;
         return dot(scattered.direction, hit_rec.normal) > 0.0;
     }
 
     if (type == MAT_DIELECTRIC) {
-        matColor = vec3(1.0);
+        mat_color = vec3(1.0);
         float ri = hit_rec.front_face ? (1.0 / mat.refractive_index) : mat.refractive_index;
         float cos_theta = clamp(dot(-ray_in.direction, hit_rec.normal), 0.0, 1.0);
         float sin_theta = sqrt(1.0 - cos_theta * cos_theta);
 
         vec3 direction;
-        if (ri * sin_theta > 1.0 || reflectance(cos_theta, ri) > RandomUnilateral(state)) {
+        if (ri * sin_theta > 1.0 || reflectance(cos_theta, ri) > random_unilateral(state)) {
             direction = reflect(ray_in.direction, hit_rec.normal);
         } else {
             direction = refract(ray_in.direction, hit_rec.normal, ri);
@@ -603,40 +603,40 @@ bool scatter(inout uint state, in Ray ray_in, in HitRecord hit_rec, inout vec3 m
 //=============================================================================
 
 vec3 sample_sphere(in Sphere s, in vec3 p, inout uint state, out float pdf) {
-    vec3 toCenter = s.position - p;
-    float dist = length(toCenter);
-    vec3 dir = toCenter / dist;
+    vec3 to_center = s.position - p;
+    float dist = length(to_center);
+    vec3 dir = to_center / dist;
 
     vec3 up = abs(dir.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
     vec3 right = normalize(cross(up, dir));
     vec3 fwd = cross(dir, right);
 
-    float sinThetaMax2 = (s.radius * s.radius) / (dist * dist);
-    float cosThetaMax = sqrt(max(0.0, 1.0 - sinThetaMax2));
+    float sin_theta_max2 = (s.radius * s.radius) / (dist * dist);
+    float cos_theta_max = sqrt(max(0.0, 1.0 - sin_theta_max2));
 
-    float cosTheta = mix(cosThetaMax, 1.0, RandomUnilateral(state));
-    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
-    float phi = 2.0 * PI * RandomUnilateral(state);
+    float cos_theta = mix(cos_theta_max, 1.0, random_unilateral(state));
+    float sin_theta = sqrt(max(0.0, 1.0 - cos_theta * cos_theta));
+    float phi = 2.0 * PI * random_unilateral(state);
 
-    pdf = 1.0 / (2.0 * PI * (1.0 - cosThetaMax));
+    pdf = 1.0 / (2.0 * PI * (1.0 - cos_theta_max));
 
-    return right * sinTheta * cos(phi) + fwd * sinTheta * sin(phi) + dir * cosTheta;
+    return right * sin_theta * cos(phi) + fwd * sin_theta * sin(phi) + dir * cos_theta;
 }
 
-float sphere_sample_PDF(in Sphere s, in vec3 p) {
-    vec3 toCenter = s.position - p;
-    float dist2 = dot(toCenter, toCenter);
-    float sinThetaMax2 = (s.radius * s.radius) / dist2;
-    float cosThetaMax = sqrt(max(0.0, 1.0 - sinThetaMax2));
-    return 1.0 / (2.0 * PI * (1.0 - cosThetaMax));
+float sphere_sample_pdf(in Sphere s, in vec3 p) {
+    vec3 to_center = s.position - p;
+    float dist2 = dot(to_center, to_center);
+    float sin_theta_max2 = (s.radius * s.radius) / dist2;
+    float cos_theta_max = sqrt(max(0.0, 1.0 - sin_theta_max2));
+    return 1.0 / (2.0 * PI * (1.0 - cos_theta_max));
 }
 
 //=============================================================================
 // MIS Utilities
 //=============================================================================
 
-float mis_weight(float pdfA, float pdfB) {
-    return pdfA / (pdfA + pdfB);
+float mis_weight(float pdf_a, float pdf_b) {
+    return pdf_a / (pdf_a + pdf_b);
 }
 
 //=============================================================================
@@ -655,13 +655,13 @@ vec3 ray_color(in Ray ray, uint max_bounces, inout uint state) {
         HitRecord hit_rec;
         if (world_hit(current_ray, 0.001, infinity, hit_rec)) {
             Ray scattered;
-            vec3 matColor;
+            vec3 mat_color;
             Material mat;
-            if (scatter(state, current_ray, hit_rec, matColor, scattered, mat)) {
-                accumulated_color *= matColor;
+            if (scatter(state, current_ray, hit_rec, mat_color, scattered, mat)) {
+                accumulated_color *= mat_color;
                 current_ray = scattered;
             } else {
-                radiance += accumulated_color * matColor * mat.emission;
+                radiance += accumulated_color * mat_color * mat.emission;
                 break;
             }
         } else {
@@ -713,7 +713,7 @@ vec3 ray_color(in Ray ray, uint max_bounces, inout uint state) {
 }
 
 // Active integrator: BVH path tracer with MIS (NEE + BSDF) and Russian Roulette termination
-vec3 ray_color_MIS(in Ray ray, uint max_bounces, inout uint state, out vec3 primary_normal, out float primary_mat_type) {
+vec3 ray_color_mis(in Ray ray, uint max_bounces, inout uint state, out vec3 primary_normal, out float primary_mat_type) {
     primary_normal = vec3(0.0);
     primary_mat_type = 0.0;
     vec3 accumulated_color = vec3(1.0);
@@ -745,7 +745,7 @@ vec3 ray_color_MIS(in Ray ray, uint max_bounces, inout uint state, out vec3 prim
 
                 // NEE: sample a random emissive sphere directly
                 if (num_emissive > 0 && !is_delta) {
-                    int light_i = int(RandomUnilateral(state) * float(num_emissive));
+                    int light_i = int(random_unilateral(state) * float(num_emissive));
                     Sphere light = spheres[light_i];
                     float light_pdf = 0.0;
                     vec3 light_dir = sample_sphere(light, hit_rec.point, state, light_pdf);
@@ -754,7 +754,7 @@ vec3 ray_color_MIS(in Ray ray, uint max_bounces, inout uint state, out vec3 prim
 
                     if (is_visible(hit_rec.point, light_target)) {
                         Material light_mat = mats[light.material_index];
-                        float bsdf_pdf = scatter_PDF(mat, hit_rec.normal, light_dir);
+                        float bsdf_pdf = scatter_pdf(mat, hit_rec.normal, light_dir);
                         float cos_theta = max(0.0, dot(hit_rec.normal, light_dir));
                         float weight = mis_weight(light_pdf, bsdf_pdf);
 
@@ -765,13 +765,13 @@ vec3 ray_color_MIS(in Ray ray, uint max_bounces, inout uint state, out vec3 prim
 
                 accumulated_color *= mat_color;
                 current_ray = scattered;
-                prev_bsdf_pdf = scatter_PDF(mat, hit_rec.normal, scattered.direction);
+                prev_bsdf_pdf = scatter_pdf(mat, hit_rec.normal, scattered.direction);
                 prev_specular = is_delta;
 
                 // Russian Roulette
                 if (bounce > 2) {
                     float p = max(accumulated_color.r, max(accumulated_color.g, accumulated_color.b));
-                    if (p <= 0.0 || RandomUnilateral(state) > p) {
+                    if (p <= 0.0 || random_unilateral(state) > p) {
                         break;
                     }
                     accumulated_color /= p;
@@ -782,7 +782,7 @@ vec3 ray_color_MIS(in Ray ray, uint max_bounces, inout uint state, out vec3 prim
 
                 if (!prev_specular && num_emissive > 0) {
                     Sphere hit_light = spheres[hit_rec.sphere_index];
-                    float light_pdf = sphere_sample_PDF(hit_light, current_ray.origin);
+                    float light_pdf = sphere_sample_pdf(hit_light, current_ray.origin);
                     bsdf_weight = mis_weight(prev_bsdf_pdf, light_pdf);
                 }
 
@@ -809,14 +809,14 @@ void main() {
     uint x = gl_GlobalInvocationID.x;
     uint y = gl_GlobalInvocationID.y;
 
-    uint width = uint(imageDimensions.x);
-    uint height = uint(imageDimensions.y);
+    uint width = uint(image_dimensions.x);
+    uint height = uint(image_dimensions.y);
 
     uint random_state = uint(time) * (x * 1973u + y * 9277u + 1u) | 1u;
 
     vec2 inv_resolution = 1.0 / vec2(width, height);
-    vec3 camera_right = vec3(invViewMatrix[0].xyz);
-    vec3 camera_up = vec3(invViewMatrix[1].xyz);
+    vec3 camera_right = vec3(inv_view_matrix[0].xyz);
+    vec3 camera_up = vec3(inv_view_matrix[1].xyz);
     float lens_radius = tan(radians(defocus_angle * 0.5)) * focus_distance;
 
     vec3 pixel_color = vec3(0.0);
@@ -824,22 +824,25 @@ void main() {
     float primary_mat_type = 0.0;
 
     for (int s = 0; s < samples_per_pixel; ++s) {
-        uint halton_idx = uint((frameIndex - 1) * samples_per_pixel + s + 1);
+        uint halton_idx = uint((frame_index - 1) * samples_per_pixel + s + 1);
         vec2 offset = vec2(halton_base2(halton_idx), halton_base3(halton_idx)) - 0.5;
         vec2 uv = (vec2(pixel_coords) + offset) * inv_resolution;
         vec2 ndc = uv * 2.0 - 1.0;
 
-        vec4 view_pos = invProjMatrix * vec4(ndc, -1.0, 1.0);
+        vec4 view_pos = inv_proj_matrix * vec4(ndc, -1.0, 1.0);
         view_pos /= view_pos.w;
-        vec4 world_pos = invViewMatrix * view_pos;
-        vec3 dir = normalize(world_pos.xyz - cameraPosition);
+        vec4 world_pos = inv_view_matrix * view_pos;
+        vec3 dir = normalize(world_pos.xyz - camera_position);
 
         vec2 lens_sample = sample_disk(random_state) * lens_radius;
         vec3 lens_offset = camera_right * lens_sample.x + camera_up * lens_sample.y;
-        vec3 origin = cameraPosition + lens_offset;
+        vec3 origin = camera_position + lens_offset;
 
-        vec3 focal_point = cameraPosition + dir * focus_distance;
+        vec3 focal_point = camera_position + dir * focus_distance;
         dir = normalize(focal_point - origin);
+
+        // Protect from NAN
+        dir = mix(dir, vec3(1e-30), equal(dir, vec3(0.0)));
 
         Ray ray;
         ray.origin = origin;
@@ -850,7 +853,7 @@ void main() {
         #else
         vec3 sample_normal;
         float sample_mat_type;
-        pixel_color += ray_color_MIS(ray, max_bounces, random_state, sample_normal, sample_mat_type);
+        pixel_color += ray_color_mis(ray, max_bounces, random_state, sample_normal, sample_mat_type);
         if (s == 0) {
             primary_normal = sample_normal;
             primary_mat_type = sample_mat_type;
@@ -866,10 +869,10 @@ void main() {
         pixel_color = vec3(0.0);
     }
 
-    vec3 sum_color = prev_color * max(frameIndex - 1, 0);
-    vec3 accum_color = (pixel_color + sum_color) / float(frameIndex);
+    vec3 sum_color = prev_color * max(frame_index - 1, 0);
+    vec3 accum_color = (pixel_color + sum_color) / float(frame_index);
 
-    // vec3 accum_color = prev_color + (pixel_color - prev_color) / float(frameIndex);
+    // vec3 accum_color = prev_color + (pixel_color - prev_color) / float(frame_index);
 
     imageStore(accum_image, pixel_coords, vec4(accum_color, 1.0));
     imageStore(normals_image, pixel_coords, vec4(primary_normal * 0.5 + 0.5, primary_mat_type));

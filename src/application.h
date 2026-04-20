@@ -7,7 +7,8 @@
 #include "scene.h"
 #include "buffer.h"
 #include "compute_shader.h"
-#include "renderer.h"
+#include "texture.h"
+#include "frame_buffer.h"
 #include "gui.h"
 
 class Application

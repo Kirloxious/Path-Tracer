@@ -76,7 +76,7 @@ void Application::uploadStaticUniforms() {
 
     compute.use();
     compute.setInt("num_objects", static_cast<int>(world.spheres.size()));
-    compute.setVec2("imageDimensions", glm::vec2(camera.image_width, camera.image_height));
+    compute.setVec2("image_dimensions", glm::vec2(camera.image_width, camera.image_height));
     compute.setInt("bvh_size", static_cast<int>(world.bvh.nodes.size()));
     compute.setInt("root_index", world.bvh.root);
     compute.setInt("samples_per_pixel", camera.settings.samples_per_pixel);
@@ -124,7 +124,7 @@ int Application::run() {
             ++frameIndex;
             compute.use();
             compute.setInt("time", static_cast<int>(timeSeed++));
-            compute.setInt("frameIndex", frameIndex);
+            compute.setInt("frame_index", frameIndex);
 
             accum.bindForAccumulation();
             normals_tex.bind(2, GL_WRITE_ONLY);

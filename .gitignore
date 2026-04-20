@@ -1,4 +1,5 @@
 /out
+/docs
 .vscode
 .claude
 imgui.ini
