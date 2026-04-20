@@ -76,7 +76,7 @@
     },
     {
       "name": "debug-linux",
-      "description": "Debug build for Linux using GCC",
+      "description": "Debug build for Linux using Clang",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/out/build/debug-linux",
       "cacheVariables": {
@@ -88,13 +88,13 @@
     },
     {
       "name": "release-linux",
-      "description": "Release build for Linux using GCC",
+      "description": "Release build for Linux using Clang",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/out/build/release-linux",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_SYSTEM_NAME": "Linux",
-        "CMAKE_CXX_FLAGS_RELEASE": "-O3",
+        "CMAKE_CXX_FLAGS_RELEASE": "-O3", 
         "CMAKE_C_COMPILER": "/usr/bin/clang",
         "CMAKE_CXX_COMPILER": "/usr/bin/clang++"
       }
