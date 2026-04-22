@@ -6,7 +6,7 @@
 
 Renderer::Renderer(int w, int h) : targets(w, h) {
     Log::info("Renderer");
-    passes.reserve(sizeof(std::unique_ptr<RenderPass>) * 5);
+    passes.reserve(5);
 }
 
 void Renderer::loadScene(const Scene& scene, const Camera& camera) {
@@ -42,7 +42,7 @@ Texture& Renderer::render(RenderContext& ctx) {
 bool Renderer::reloadShadersIfChanged(RenderContext& ctx) {
     bool changed = false;
     for (auto& pass : passes) {
-        changed = pass->reloadIfChanged(ctx);
+        changed |= pass->reloadIfChanged(ctx);
     }
 
     return changed;
@@ -52,5 +52,5 @@ void Renderer::addRenderPass(std::unique_ptr<RenderPass> pass) {
 }
 
 void Renderer::blitToSwapChain(Texture& renderOutput, int width, int height) {
-    targets.fb.blit(targets.display, width, height);
+    targets.fb.blit(renderOutput, width, height);
 }

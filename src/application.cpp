@@ -1,8 +1,5 @@
 #include "application.h"
 
-#include <cmath>
-#include <glm/glm.hpp>
-#include <iterator>
 #include <memory>
 
 #include "log.h"
@@ -88,9 +85,16 @@ int Application::run() {
         RenderContext ctx{scene, camera, ++frameIndex, timeSeed++};
         if (renderer.reloadShadersIfChanged(ctx)) {
             frameIndex = 0;
+            ctx.frameIndex = 0;
         }
 
+        glBeginQuery(GL_TIME_ELAPSED, queryIDs[queryFrame]);
         Texture& output = renderer.render(ctx);
+        glEndQuery(GL_TIME_ELAPSED);
+
+        int prevQuery = 1 - queryFrame;
+        glGetQueryObjectui64v(queryIDs[prevQuery], GL_QUERY_RESULT, &lastComputeTime);
+        queryFrame = prevQuery;
 
         window.getFrameBufferSize();
         renderer.blitToSwapChain(output, window.width, window.height);
