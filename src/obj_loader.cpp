@@ -8,6 +8,14 @@
 OBJMesh loadOBJ(const std::filesystem::path& path, uint32_t material_index, float scale, glm::vec3 offset, float rotateY) {
     OBJMesh mesh;
 
+    if (!std::filesystem::exists(path)) {
+        Log::error("OBJ file does not exist: {}", path.string());
+        return mesh;
+    }
+    if (scale <= 0.0f) {
+        Log::warn("OBJ '{}' loaded with non-positive scale {} — mesh will be degenerate", path.filename().string(), scale);
+    }
+
     tinyobj::attrib_t                attrib;
     std::vector<tinyobj::shape_t>    shapes;
     std::vector<tinyobj::material_t> materials;
@@ -133,6 +141,10 @@ OBJMesh loadOBJ(const std::filesystem::path& path, uint32_t material_index, floa
         }
     }
 
-    Log::info("Loaded OBJ: {} — {} triangles", path.filename().string(), mesh.triangles.size());
+    if (mesh.triangles.empty()) {
+        Log::warn("OBJ '{}' loaded but produced 0 triangles", path.filename().string());
+    } else {
+        Log::info("Loaded OBJ: {} — {} triangles", path.filename().string(), mesh.triangles.size());
+    }
     return mesh;
 }

@@ -3,8 +3,13 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <cmath>
 
+#include "log.h"
+
 Camera::Camera(const CameraSettings& settings)
     : settings(settings), image_width(settings.image_width), image_height(static_cast<int>(settings.image_width / settings.aspect_ratio)) {
+
+    Log::info(
+        "Camera: {}x{}, vfov={}°, spp={}, bounces={}", image_width, image_height, settings.vfov, settings.samples_per_pixel, settings.max_bounces);
 
     data.lookfrom = settings.lookfrom;
     data.focus_distance = settings.focus_dist;

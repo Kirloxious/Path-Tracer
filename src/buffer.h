@@ -3,6 +3,8 @@
 #include <glad/glad.h>
 #include <vector>
 
+#include "log.h"
+
 class Buffer
 {
 public:
@@ -12,6 +14,12 @@ public:
     Buffer() = default;
 
     Buffer(GLenum target, GLuint bindingPoint, const void* data, size_t byteSize, GLenum usage) : target(target) {
+        // A zero-sized SSBO/UBO is legal but almost always a bug: the GPU shader will read
+        // garbage or the driver will silently bind a dummy buffer. Warn loudly so the empty
+        // container upstream gets caught immediately instead of producing a black image.
+        if (byteSize == 0) {
+            Log::warn("Buffer::Buffer called with byteSize=0 (target=0x{:x}, binding={})", target, bindingPoint);
+        }
         glCreateBuffers(1, &id);
         glNamedBufferData(id, byteSize, data, usage);
         glBindBufferBase(target, bindingPoint, id);

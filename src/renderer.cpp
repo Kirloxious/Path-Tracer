@@ -1,4 +1,5 @@
 #include "renderer.h"
+#include "buffer.h"
 #include "log.h"
 #include "render_pass.h"
 #include "render_targets.h"
@@ -10,11 +11,11 @@ Renderer::Renderer(int w, int h) : targets(w, h) {
 }
 
 void Renderer::loadScene(const Scene& scene, const Camera& camera) {
-    spheresSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 0, scene.world.spheres, GL_STATIC_DRAW);
-    matsSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 1, scene.world.materials, GL_STATIC_DRAW);
+    spheresSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 0, scene.world.spheres, GL_STREAM_COPY);
+    matsSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 1, scene.world.materials, GL_STREAM_COPY);
     camUBO = Buffer(GL_UNIFORM_BUFFER, 2, camera.data, GL_DYNAMIC_DRAW);
-    bvhNodesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 3, scene.world.bvh.nodes, GL_STATIC_DRAW);
-    trianglesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 4, scene.world.triangles, GL_STATIC_DRAW);
+    bvhNodesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 3, scene.world.bvh.nodes, GL_STREAM_COPY);
+    trianglesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 4, scene.world.triangles, GL_STREAM_COPY);
 
     Log::info("Renderer: Buffers created");
     for (auto& pass : passes) {

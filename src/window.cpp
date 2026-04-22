@@ -32,6 +32,7 @@ static void requestFloatingOnHyprland(int width, int height) {
 }
 
 Window::Window(int width, int height, std::string_view title) : width(width), height(height), title(title) {
+    Log::info("Creating window: {} x {} — '{}'", width, height, title);
     glfwSetErrorCallback(glfwErrorCallback);
 
     if (!glfwInit()) {
@@ -41,6 +42,9 @@ Window::Window(int width, int height, std::string_view title) : width(width), he
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+#ifndef NDEBUG
+    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
+#endif
 
     // Cross-platform: these hints are no-ops on platforms where the backend doesn't match.
     glfwWindowHintString(GLFW_X11_CLASS_NAME, kAppId);
@@ -64,6 +68,9 @@ Window::Window(int width, int height, std::string_view title) : width(width), he
         return;
     }
     glfwSwapInterval(0);
+
+    Log::info("GL vendor: {}", reinterpret_cast<const char*>(glGetString(GL_VENDOR)));
+    Log::info("GL renderer: {}", reinterpret_cast<const char*>(glGetString(GL_RENDERER)));
 }
 
 Window::~Window() {

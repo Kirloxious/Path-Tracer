@@ -7,6 +7,7 @@
 Scene Scene::CornellBox() {
     Scene scene;
     scene.name = "Cornell Box";
+    Log::info("Building scene: {}", scene.name);
 
     scene.cameraSettings.aspect_ratio = 16.0f / 9.0f;
     scene.cameraSettings.image_width = 1200;
@@ -96,6 +97,7 @@ Scene Scene::CornellBox() {
 Scene Scene::SphereWorld() {
     Scene scene;
     scene.name = "Sphere World";
+    Log::info("Building scene: {}", scene.name);
 
     scene.cameraSettings.aspect_ratio = 16.0f / 9.0f;
     scene.cameraSettings.image_width = 1200;
@@ -152,6 +154,7 @@ Scene Scene::SphereWorld() {
 Scene Scene::Showcase() {
     Scene scene;
     scene.name = "Showcase";
+    Log::info("Building scene: {}", scene.name);
 
     scene.cameraSettings.aspect_ratio = 16.0f / 9.0f;
     scene.cameraSettings.image_width = 1200;

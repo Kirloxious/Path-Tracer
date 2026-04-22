@@ -57,12 +57,61 @@ public:
 
     void create() {
 
+        validate();
+
         auto start = std::chrono::high_resolution_clock::now();
         bvh.build(spheres, triangles);
         auto end = std::chrono::high_resolution_clock::now();
 
         std::chrono::duration<double, std::milli> duration = end - start;
         Log::info("BVH Build time: {:.2f} ms", duration.count());
+    }
+
+    // Catches the most common silent failure modes before they reach the GPU:
+    // empty scenes, dangling material indices, or forgetting to call sortEmissiveFirst().
+    void validate() const {
+        if (spheres.empty() && triangles.empty()) {
+            Log::error("World::create() called with no geometry — BVH will be empty");
+            return;
+        }
+        if (materials.empty()) {
+            Log::error("World has no materials — every primitive's material_index is invalid");
+            return;
+        }
+
+        const uint32_t numMats = static_cast<uint32_t>(materials.size());
+        size_t         badSpheres = 0;
+        size_t         badTris = 0;
+        for (const auto& s : spheres) {
+            if (s.material_index >= numMats) {
+                ++badSpheres;
+            }
+        }
+        for (const auto& t : triangles) {
+            if (t.material_index >= numMats) {
+                ++badTris;
+            }
+        }
+        if (badSpheres > 0) {
+            Log::error("{} sphere(s) reference out-of-range material_index (max = {})", badSpheres, numMats - 1);
+        }
+        if (badTris > 0) {
+            Log::error("{} triangle(s) reference out-of-range material_index (max = {})", badTris, numMats - 1);
+        }
+
+        // NEE light sampling walks spheres[0 .. emissiveLastIndex]. If any emissive sphere exists
+        // but emissiveLastIndex is 0 (the default), sortEmissiveFirst() was never called and
+        // direct-light sampling will silently miss lights or sample non-emissive spheres as lights.
+        bool hasEmissive = false;
+        for (const auto& s : spheres) {
+            if (s.material_index < numMats && materials[s.material_index].isEmissive()) {
+                hasEmissive = true;
+                break;
+            }
+        }
+        if (hasEmissive && emissiveLastIndex <= 0 && !spheres.empty() && !materials[spheres[0].material_index].isEmissive()) {
+            Log::warn("World has emissive spheres but emissiveLastIndex={} — did you forget sortEmissiveFirst()?", emissiveLastIndex);
+        }
     }
 
     int sortEmissiveFirst() {

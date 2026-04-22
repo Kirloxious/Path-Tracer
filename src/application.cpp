@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "gl_debug.h"
 #include "log.h"
 #include "render_pass.h"
 #include "renderer.h"
@@ -19,21 +20,13 @@ Application::Application(Scene scene)
     Log::info("OpenGL version: {}", reinterpret_cast<const char*>(glGetString(GL_VERSION)));
     Log::info("Image dimensions: {} x {}", camera.image_width, camera.image_height);
 
+    GLDebug::enable();
+
     Log::info("Adding render passes");
     renderer.addRenderPass(std::make_unique<PathTracerPass>(computeShaderPath));
     renderer.addRenderPass(std::make_unique<DenoiserPass>(denoiserShaderPath));
 
     loadScene(std::move(this->scene));
-
-    // Move into timer class
-    lastTime = glfwGetTime();
-    timer = lastTime;
-
-    glGenQueries(2, queryIDs);
-    for (int i = 0; i < 2; ++i) {
-        glBeginQuery(GL_TIME_ELAPSED, queryIDs[i]);
-        glEndQuery(GL_TIME_ELAPSED);
-    }
 }
 
 void Application::loadScene(Scene newScene) {
@@ -43,38 +36,13 @@ void Application::loadScene(Scene newScene) {
     frameIndex = 0;
 }
 
-Application::~Application() {
-    if (queryIDs[0]) {
-        glDeleteQueries(2, queryIDs);
-    }
-}
-
-// void Application::uploadStaticUniforms() {
-//     World& world = scene.world;
-//
-//     compute.use();
-//     compute.setInt("num_objects", static_cast<int>(world.spheres.size()));
-//     compute.setVec2("image_dimensions", glm::vec2(camera.image_width, camera.image_height));
-//     compute.setInt("bvh_size", static_cast<int>(world.bvh.nodes.size()));
-//     compute.setInt("root_index", world.bvh.root);
-//     compute.setInt("samples_per_pixel", camera.settings.samples_per_pixel);
-//     compute.setInt("max_bounces", camera.settings.max_bounces);
-//     compute.setInt("emissive_last_index", world.emissiveLastIndex);
-//     compute.setInt("num_spheres", static_cast<int>(world.spheres.size()));
-//     compute.setInt("num_triangles", static_cast<int>(world.triangles.size()));
-// }
-//
-// void Application::uploadDenoiserUniforms() {
-//     denoiser.use();
-//     denoiser.setVec2("image_size", glm::vec2(camera.image_width, camera.image_height));
-//     denoiser.setFloat("sigma_normal", 64.0f);
-// }
+Application::~Application() {}
 
 int Application::run() {
 
     while (!window.shouldClose()) {
 
-        camera.update(window.pollInput(), deltaTime);
+        camera.update(window.pollInput(), fpsTimer.deltaTime);
 
         if (camera.moving) {
             renderer.updateCameraUbo(camera);
@@ -88,13 +56,9 @@ int Application::run() {
             ctx.frameIndex = 0;
         }
 
-        glBeginQuery(GL_TIME_ELAPSED, queryIDs[queryFrame]);
+        gpuTimer.start();
         Texture& output = renderer.render(ctx);
-        glEndQuery(GL_TIME_ELAPSED);
-
-        int prevQuery = 1 - queryFrame;
-        glGetQueryObjectui64v(queryIDs[prevQuery], GL_QUERY_RESULT, &lastComputeTime);
-        queryFrame = prevQuery;
+        gpuTimer.end();
 
         window.getFrameBufferSize();
         renderer.blitToSwapChain(output, window.width, window.height);
@@ -102,16 +66,11 @@ int Application::run() {
         window.pollEvents();
         window.swapBuffers();
 
-        double currentTime = glfwGetTime();
-        deltaTime = currentTime - lastTime;
-        lastTime = currentTime;
-        ++frameCount;
+        fpsTimer.end();
 
-        if (currentTime - timer >= 1.0) {
-            Log::info("FPS: {} | Frame: {:.2f} ms | Compute: {:.2f} ms", frameCount, 1000.0 / frameCount, lastComputeTime / 1e6);
-            frameCount = 0;
-            timer = currentTime;
-            Log::info("Image size: {} x {}", window.width, window.height);
+        if (fpsTimer.currentTime - fpsTimer.timer >= 1.0) {
+            Log::info("{} | {}", fpsTimer.formatted(), gpuTimer.formatted());
+            fpsTimer.frameCountReset();
         }
     }
 

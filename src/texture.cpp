@@ -1,6 +1,12 @@
 #include "texture.h"
 
+#include "log.h"
+
 Texture::Texture(int width, int height, GLenum internalFormat) : width(width), height(height), internalFormat(internalFormat) {
+    if (width <= 0 || height <= 0) {
+        Log::error("Texture created with invalid dimensions: {} x {}", width, height);
+        return;
+    }
     glCreateTextures(GL_TEXTURE_2D, 1, &handle);
     glTextureStorage2D(handle, 1, internalFormat, width, height);
     glTextureParameteri(handle, GL_TEXTURE_MIN_FILTER, GL_NEAREST);

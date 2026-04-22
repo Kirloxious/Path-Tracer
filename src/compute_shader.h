@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "log.h"
@@ -56,19 +57,32 @@ public:
         return true;
     }
 
-    void setBool(const std::string& name, bool value) const { glUniform1i(glGetUniformLocation(ID, name.c_str()), static_cast<int>(value)); }
+    void setBool(const std::string& name, bool value) const { glUniform1i(getLocation(name), static_cast<int>(value)); }
 
-    void setInt(const std::string& name, int value) const { glUniform1i(glGetUniformLocation(ID, name.c_str()), value); }
+    void setInt(const std::string& name, int value) const { glUniform1i(getLocation(name), value); }
 
-    void setFloat(const std::string& name, float value) const { glUniform1f(glGetUniformLocation(ID, name.c_str()), value); }
+    void setFloat(const std::string& name, float value) const { glUniform1f(getLocation(name), value); }
 
-    void setVec2(const std::string& name, const glm::vec2& value) const { glUniform2fv(glGetUniformLocation(ID, name.c_str()), 1, &value[0]); }
+    void setVec2(const std::string& name, const glm::vec2& value) const { glUniform2fv(getLocation(name), 1, &value[0]); }
 
-    void setVec3(const std::string& name, const glm::vec3& value) const { glUniform3fv(glGetUniformLocation(ID, name.c_str()), 1, &value[0]); }
+    void setVec3(const std::string& name, const glm::vec3& value) const { glUniform3fv(getLocation(name), 1, &value[0]); }
 
 private:
     std::filesystem::path           m_path;
     std::filesystem::file_time_type m_lastWriteTime{};
+
+    // Warns once per missing uniform. A -1 location silently no-ops on `glUniformX`, which makes
+    // typos or shader-stripped-unused-uniforms invisible unless logged.
+    GLint getLocation(const std::string& name) const {
+        GLint loc = glGetUniformLocation(ID, name.c_str());
+        if (loc == -1) {
+            static thread_local std::unordered_set<std::string> warned;
+            if (warned.insert(m_path.filename().string() + ":" + name).second) {
+                Log::warn("Uniform '{}' not found in {} (unused or typo)", name, m_path.filename().string());
+            }
+        }
+        return loc;
+    }
 
     static GLuint loadShader(const std::filesystem::path& path) {
         std::ifstream file(path);

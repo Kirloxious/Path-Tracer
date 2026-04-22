@@ -7,9 +7,8 @@
 #include "camera.h"
 #include "scene.h"
 #include "buffer.h"
-#include "compute_shader.h"
-#include "texture.h"
-#include "frame_buffer.h"
+#include "timer.h"
+
 #include "gui.h"
 
 class Application
@@ -33,14 +32,9 @@ private:
     Window   window;
     Renderer renderer;
 
-    GLuint   queryIDs[2]{};
-    int      queryFrame = 0;
-    GLuint64 lastComputeTime = 0;
+    GPUTimer gpuTimer;
+    FPSTimer fpsTimer;
 
-    int      frameIndex = 0;
-    int      frameCount = 0;
     uint32_t timeSeed = 0;
-    double   deltaTime = 0;
-    double   lastTime = 0;
-    double   timer = 0;
+    int      frameIndex = 0;
 };

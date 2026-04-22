@@ -1,10 +1,10 @@
-#pragma once
-
 #include "denoiser_pass.h"
 #include "render_pass.h"
 #include "compute_shader.h"
+#include "log.h"
 
 DenoiserPass::DenoiserPass(const std::filesystem::path& shaderPath) {
+    Log::info("DenoiserPass: loading '{}'", shaderPath.string());
     shader = ComputeShader(shaderPath);
 }
 
@@ -20,8 +20,6 @@ bool DenoiserPass::reloadIfChanged(const RenderContext&) {
 
 void DenoiserPass::execute(const RenderContext& ctx, RenderTargets& targets) {
 
-    shader.use();
-
     // A-Trous denoiser: 4 ping-pong passes, result ends in display
     Texture* srcs[4] = {&targets.accum, &targets.denoised_ping, &targets.display, &targets.denoised_ping};
     Texture* dsts[4] = {&targets.denoised_ping, &targets.display, &targets.denoised_ping, &targets.display};
@@ -33,8 +31,8 @@ void DenoiserPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     constexpr float kSigmaColorScale = 0.5f;
     const float     adaptiveSigmaColor = kSigmaColorScale / std::sqrt(static_cast<float>(ctx.frameIndex));
 
+    shader.use();
     shader.setFloat("sigma_color", adaptiveSigmaColor);
-    shader.setInt("bypass_filter", 0);
     for (int pass = 0; pass < 4; ++pass) {
         srcs[pass]->bind(0, GL_READ_ONLY);
         targets.normals.bind(1, GL_READ_ONLY);
