@@ -3,6 +3,8 @@
 #include <memory>
 
 #include "gl_debug.h"
+#include "gui.h"
+#include "gui_pass.h"
 #include "log.h"
 #include "render_pass.h"
 #include "renderer.h"
@@ -22,9 +24,12 @@ Application::Application(Scene scene)
 
     GLDebug::enable();
 
+    Gui::init(window);
+
     Log::info("Adding render passes");
     renderer.addRenderPass(std::make_unique<PathTracerPass>(computeShaderPath));
     renderer.addRenderPass(std::make_unique<DenoiserPass>(denoiserShaderPath));
+    renderer.addRenderPass(std::make_unique<GuiPass>(fpsTimer, gpuTimer));
 
     loadScene(std::move(this->scene));
 }
@@ -36,11 +41,15 @@ void Application::loadScene(Scene newScene) {
     frameIndex = 0;
 }
 
-Application::~Application() {}
+Application::~Application() {
+    Gui::shutdown();
+}
 
 int Application::run() {
 
     while (!window.shouldClose()) {
+
+        Gui::beginFrame();
 
         camera.update(window.pollInput(), fpsTimer.deltaTime);
 
@@ -63,15 +72,12 @@ int Application::run() {
         window.getFrameBufferSize();
         renderer.blitToSwapChain(output, window.width, window.height);
 
+        Gui::endFrame();
+
         window.pollEvents();
         window.swapBuffers();
 
         fpsTimer.end();
-
-        if (fpsTimer.currentTime - fpsTimer.timer >= 1.0) {
-            Log::info("{} | {}", fpsTimer.formatted(), gpuTimer.formatted());
-            fpsTimer.frameCountReset();
-        }
     }
 
     return 0;
