@@ -6,7 +6,6 @@
 #include "window.h"
 #include "camera.h"
 #include "scene.h"
-#include "buffer.h"
 #include "timer.h"
 
 #include "gui.h"
@@ -17,8 +16,7 @@ public:
     explicit Application(Scene scene);
     ~Application();
 
-    void loadScene(Scene scene);
-    int  run();
+    int run();
 
     Application(const Application&) = delete;
     Application& operator=(const Application&) = delete;

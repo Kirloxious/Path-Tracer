@@ -3,7 +3,7 @@
 #include "scene.h"
 
 int main() {
-    Log::info("path-tracer starting");
+    Log::info("Starting Application");
     Application app(Scene::CornellBox());
     return app.run();
 }

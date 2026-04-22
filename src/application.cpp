@@ -15,10 +15,9 @@
 static const std::filesystem::path computeShaderPath = "shader/compute_shader.comp";
 static const std::filesystem::path denoiserShaderPath = "shader/denoiser.comp";
 
-Application::Application(Scene scene)
-    : scene(std::move(scene)), camera(this->scene.cameraSettings), window(camera.image_width, camera.image_height, this->scene.name.c_str()),
+Application::Application(Scene initialScene)
+    : scene(std::move(initialScene)), camera(this->scene.cameraSettings), window(camera.image_width, camera.image_height, this->scene.name.c_str()),
       renderer(camera.image_width, camera.image_height) {
-
     Log::info("OpenGL version: {}", reinterpret_cast<const char*>(glGetString(GL_VERSION)));
     Log::info("Image dimensions: {} x {}", camera.image_width, camera.image_height);
 
@@ -29,24 +28,13 @@ Application::Application(Scene scene)
     Log::info("Adding render passes");
     renderer.addRenderPass(std::make_unique<PathTracerPass>(computeShaderPath));
     renderer.addRenderPass(std::make_unique<DenoiserPass>(denoiserShaderPath));
-    renderer.addRenderPass(std::make_unique<GuiPass>(fpsTimer, gpuTimer));
 
-    loadScene(std::move(this->scene));
-}
+    renderer.addRenderPass(std::make_unique<GuiPass>(fpsTimer, gpuTimer)); // keep last
 
-void Application::loadScene(Scene newScene) {
-    scene = std::move(newScene);
-    camera = Camera(scene.cameraSettings);
     renderer.loadScene(scene, camera);
-    frameIndex = 0;
-}
-
-Application::~Application() {
-    Gui::shutdown();
 }
 
 int Application::run() {
-
     while (!window.shouldClose()) {
 
         Gui::beginFrame();
@@ -81,4 +69,8 @@ int Application::run() {
     }
 
     return 0;
+}
+
+Application::~Application() {
+    Gui::shutdown();
 }
