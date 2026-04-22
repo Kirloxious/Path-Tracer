@@ -14,11 +14,11 @@ void DenoiserPass::uploadUniforms(const RenderContext& ctx) {
     shader.setFloat("sigma_normal", 64.0f);
 }
 
-bool DenoiserPass::reloadIfChanged(RenderContext& ctx) {
+bool DenoiserPass::reloadIfChanged(const RenderContext&) {
     return shader.reloadIfChanged();
 }
 
-void DenoiserPass::execute(RenderContext& ctx, RenderTargets& targets) {
+void DenoiserPass::execute(const RenderContext& ctx, RenderTargets& targets) {
 
     // A-Trous denoiser: 4 ping-pong passes, result ends in display
     Texture* srcs[4] = {&targets.accum, &targets.denoised_ping, &targets.display, &targets.denoised_ping};

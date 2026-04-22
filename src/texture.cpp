@@ -7,6 +7,12 @@ Texture::Texture(int width, int height, GLenum internalFormat) : width(width), h
     glTextureParameteri(handle, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTextureParameteri(handle, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTextureParameteri(handle, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    // Zero-initialise. Without this, imageLoad on the accumulation target in the first frame
+    // can return NaN/Inf (driver-dependent), and the shader's `prev_color * 0` term on frame 1
+    // propagates that into every subsequent frame.
+    const float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    glClearTexImage(handle, 0, GL_RGBA, GL_FLOAT, zero);
 }
 
 Texture::~Texture() {

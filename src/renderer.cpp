@@ -1,24 +1,28 @@
 #include "renderer.h"
+#include "log.h"
 #include "render_pass.h"
 #include "render_targets.h"
 #include <memory>
 
-Renderer::Renderer(int w, int h) : targets(w, h), spheresSSBO(), matsSSBO(), camUBO(), bvhNodesSSBO(), trianglesSSBO() {
+Renderer::Renderer(int w, int h) : targets(w, h) {
+    Log::info("Renderer");
     passes.reserve(sizeof(std::unique_ptr<RenderPass>) * 5);
 }
 
-void Renderer::loadScene(RenderContext& ctx) {
-    spheresSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 0, ctx.scene.world.spheres, GL_STATIC_DRAW);
-    matsSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 1, ctx.scene.world.materials, GL_STATIC_DRAW);
-    camUBO = Buffer(GL_UNIFORM_BUFFER, 2, ctx.camera.data, GL_DYNAMIC_DRAW);
-    bvhNodesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 3, ctx.scene.world.bvh.nodes, GL_STATIC_DRAW);
-    trianglesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 4, ctx.scene.world.triangles, GL_STATIC_DRAW);
+void Renderer::loadScene(const Scene& scene, const Camera& camera) {
+    spheresSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 0, scene.world.spheres, GL_STATIC_DRAW);
+    matsSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 1, scene.world.materials, GL_STATIC_DRAW);
+    camUBO = Buffer(GL_UNIFORM_BUFFER, 2, camera.data, GL_DYNAMIC_DRAW);
+    bvhNodesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 3, scene.world.bvh.nodes, GL_STATIC_DRAW);
+    trianglesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 4, scene.world.triangles, GL_STATIC_DRAW);
 
+    Log::info("Renderer: Buffers created");
     for (auto& pass : passes) {
-        pass->uploadUniforms(ctx);
+        // hack: passing temp render ctx
+        pass->uploadUniforms({scene, camera, 1, 0});
     }
 
-    ctx.resetFrameIndex();
+    Log::info("Renderer: Scene loaded.");
 }
 
 void resize(int w, int h);
@@ -45,4 +49,8 @@ bool Renderer::reloadShadersIfChanged(RenderContext& ctx) {
 }
 void Renderer::addRenderPass(std::unique_ptr<RenderPass> pass) {
     passes.push_back(std::move(pass));
+}
+
+void Renderer::blitToSwapChain(Texture& renderOutput, int width, int height) {
+    targets.fb.blit(targets.display, width, height);
 }

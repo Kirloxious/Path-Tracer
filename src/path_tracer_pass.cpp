@@ -19,19 +19,17 @@ void PathTracerPass::uploadUniforms(const RenderContext& ctx) {
     shader.setInt("num_triangles", static_cast<int>(ctx.scene.world.triangles.size()));
 }
 
-bool PathTracerPass::reloadIfChanged(RenderContext& ctx) {
+bool PathTracerPass::reloadIfChanged(const RenderContext& ctx) {
     bool changed = shader.reloadIfChanged();
     if (changed) {
         uploadUniforms(ctx);
-        ctx.resetFrameIndex();
     }
     return changed;
 }
 
-void PathTracerPass::execute(RenderContext& ctx, RenderTargets& targets) {
-    ctx.frameIndex++;
+void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     shader.use();
-    shader.setInt("time", static_cast<int>(ctx.timeSeed++));
+    shader.setInt("time", static_cast<int>(ctx.timeSeed));
     shader.setInt("frame_index", ctx.frameIndex);
 
     targets.accum.bindForAccumulation();

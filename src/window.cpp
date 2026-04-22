@@ -52,6 +52,18 @@ Window::Window(int width, int height, std::string_view title) : width(width), he
     requestFloatingOnHyprland(width, height);
 
     window = glfwCreateWindow(width, height, title.data(), nullptr, nullptr);
+    if (!window) {
+        Log::error("Failed to create GLFW window");
+        return;
+    }
+
+    glfwMakeContextCurrent(window);
+
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        Log::error("Failed to initialize GLAD");
+        return;
+    }
+    glfwSwapInterval(0);
 }
 
 Window::~Window() {

@@ -21,9 +21,9 @@ public:
 
     virtual void uploadUniforms(const RenderContext&) {}
 
-    virtual bool reloadIfChanged(RenderContext&) { return false; }
+    virtual bool reloadIfChanged(const RenderContext&) { return false; }
 
-    virtual void execute(RenderContext&, RenderTargets&) = 0;
+    virtual void execute(const RenderContext&, RenderTargets&) = 0;
 
     RenderPass() = default;
     RenderPass(const RenderPass&) = delete;

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "renderer.h"
 #include "window.h"
 #include "camera.h"
 #include "scene.h"
@@ -24,30 +25,13 @@ public:
     Application& operator=(const Application&) = delete;
 
 private:
-    void uploadStaticUniforms();
-    void uploadDenoiserUniforms();
+    // void uploadStaticUniforms();
+    // void uploadDenoiserUniforms();
 
-    Scene  scene;
-    Camera camera;
-    Window window;
-
-    Buffer spheres_ssbo;
-    Buffer mats_ssbo;
-    Buffer cam_ubo;
-    Buffer bvhnodes_ssbo;
-    Buffer triangles_ssbo;
-
-    ComputeShader compute;
-    ComputeShader denoiser;
-
-    Texture     accum;
-    Texture     normals_tex;
-    Texture     denoised_ping;
-    Texture     display;
-    FrameBuffer fb;
-
-    GLuint numGroupsX = 0;
-    GLuint numGroupsY = 0;
+    Scene    scene;
+    Camera   camera;
+    Window   window;
+    Renderer renderer;
 
     GLuint   queryIDs[2]{};
     int      queryFrame = 0;
