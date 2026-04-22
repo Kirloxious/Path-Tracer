@@ -3,4 +3,4 @@
 rm out/build/debug-linux/main
 cmake --preset=debug-linux
 cmake --build --preset=debug-linux
-./out/build/debug-linux/main
+./out/build/debug-linux/path-tracer

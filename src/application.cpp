@@ -43,6 +43,7 @@ Application::Application(Scene scene)
 
     loadScene(std::move(this->scene));
 
+    Log::info("Image dimensions after load scence: {} x {}", camera.image_width, camera.image_height);
     lastTime = glfwGetTime();
     timer = lastTime;
 }
@@ -183,6 +184,7 @@ int Application::run() {
             Log::info("FPS: {} | Frame: {:.2f} ms | Compute: {:.2f} ms", frameCount, 1000.0 / frameCount, lastComputeTime / 1e6);
             frameCount = 0;
             timer = currentTime;
+            Log::info("Image size: {} x {}", window.width, window.height);
         }
     }
     //

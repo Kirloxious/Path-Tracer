@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(main LANGUAGES C CXX)
+project(path-tracer LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -85,4 +85,4 @@ target_include_directories(${PROJECT_NAME} PRIVATE external/imgui external/imgui
 # -----------------------------
 target_link_libraries(${PROJECT_NAME} glad)
 
-target_compile_definitions(main PRIVATE _ENABLE_EXTENDED_ALIGNED_STORAGE)
+target_compile_definitions(${PROJECT_NAME} PRIVATE _ENABLE_EXTENDED_ALIGNED_STORAGE)

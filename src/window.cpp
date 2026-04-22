@@ -1,9 +1,34 @@
 #include "window.h"
 #include "log.h"
 #include <GLFW/glfw3.h>
+#include <cstdlib>
+#include <string>
 
 static void glfwErrorCallback(int error, const char* description) {
     Log::error("GLFW {}: {}", error, description);
+}
+
+static constexpr const char* kAppId = "main";
+
+// Hyprland (and most tiling Wayland compositors) will tile any toplevel by default,
+// overriding the size requested at creation. If we're inside a Hyprland session,
+// push a runtime windowrule that floats this app_id at the requested size. The rule
+// lives only for the current session — nothing is written to hyprland.conf.
+static void requestFloatingOnHyprland(int width, int height) {
+#ifdef __linux__
+    if (!std::getenv("HYPRLAND_INSTANCE_SIGNATURE")) {
+        return;
+    }
+    const std::string klass = std::string("^(") + kAppId + ")$";
+    const std::string floatRule = "hyprctl keyword windowrulev2 'float, class:" + klass + "' >/dev/null 2>&1";
+    const std::string sizeRule =
+        "hyprctl keyword windowrulev2 'size " + std::to_string(width) + " " + std::to_string(height) + ", class:" + klass + "' >/dev/null 2>&1";
+    std::system(floatRule.c_str());
+    std::system(sizeRule.c_str());
+#else
+    (void)width;
+    (void)height;
+#endif
 }
 
 Window::Window(int width, int height, std::string_view title) : width(width), height(height), title(title) {
@@ -16,6 +41,16 @@ Window::Window(int width, int height, std::string_view title) : width(width), he
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+
+    // Cross-platform: these hints are no-ops on platforms where the backend doesn't match.
+    glfwWindowHintString(GLFW_X11_CLASS_NAME, kAppId);
+    glfwWindowHintString(GLFW_X11_INSTANCE_NAME, kAppId);
+#ifdef GLFW_WAYLAND_APP_ID
+    glfwWindowHintString(GLFW_WAYLAND_APP_ID, kAppId);
+#endif
+
+    requestFloatingOnHyprland(width, height);
+
     window = glfwCreateWindow(width, height, title.data(), nullptr, nullptr);
 }
 
