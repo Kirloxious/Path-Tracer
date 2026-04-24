@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <vector>
 #include <glm/glm.hpp>
 
@@ -51,7 +52,7 @@ struct alignas(16) BVHNodeFlat
 {
     glm::vec4  aabbMin; // .xyz = min
     glm::vec4  aabbMax; // .xyz = max
-    glm::ivec4 meta;    // interior: .x = left, .y = right, .z = -1, .w = skip
+    glm::ivec4 meta;    // interior: .x = left, .y = right,                     .z = -1,        .w = skip
                         // leaf:     .x = -1,   .y = primType (0=sphere,1=tri), .z = primIndex, .w = skip
 };
 
@@ -70,6 +71,7 @@ private:
         int  left = -1;
         int  right = -1;
         int  primitiveIndex = -1;
+        int  subtreeSize = 1;
 
         [[nodiscard]] bool isLeaf() const { return primitiveIndex != -1; }
     };
@@ -82,7 +84,8 @@ private:
         int  count = 0;
     };
 
-    [[nodiscard]] static int buildR(std::vector<Node>& tree, const std::vector<AABB>& aabbs, int* begin, int* end);
+    [[nodiscard]] static int buildR(std::vector<Node>& tree, std::atomic<int>& nextSlot, const std::vector<AABB>& aabbs,
+                                    const std::vector<glm::vec3>& centroids, int* begin, int* end);
 
     [[nodiscard]] int flatten(int nodeIndex, const std::vector<Node>& tree, const std::vector<PrimitiveRef>& primRefs, int nextAfterSubtree);
 };

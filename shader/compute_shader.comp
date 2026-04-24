@@ -79,8 +79,8 @@ struct BVHNodeFlat
 {
     vec4 aabb_min;
     vec4 aabb_max;
-    ivec4 meta; // interior: x=left, y=right, z=-1, w=skip
-    // leaf:     x=-1,  y=primType (0=sphere,1=tri), z=primIndex, w=skip
+    ivec4 meta; // interior: x=left, y=right,                     z=-1,        w=skip
+    // leaf:     x=-1,  y=primType (0=sphere,1=tri),  z=primIndex, w=skip
 };
 
 //=============================================================================

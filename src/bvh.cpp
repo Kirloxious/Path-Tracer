@@ -1,8 +1,18 @@
 #include "bvh.h"
 #include "log.h"
 #include <algorithm>
+#include <atomic>
 #include <cassert>
+#include <future>
 #include <numeric>
+
+namespace {
+// Minimum primitive count at which buildR parallelizes its two recursive calls.
+// Above this, left subtree is spawned on std::async, right runs on the current thread.
+// Chosen so only the top few levels parallelize; deeper levels stay serial to amortize
+// thread creation cost.
+constexpr int PAR_THRESHOLD = 16384;
+} // namespace
 
 AABB computeAABB(const Sphere& s) {
     glm::vec3 rvec(s.radius);
@@ -30,7 +40,8 @@ AABB surroundingBox(const AABB& a, const AABB& b) {
     return {glm::min(a.min, b.min), glm::max(a.max, b.max)};
 }
 
-int BVH::buildR(std::vector<Node>& tree, const std::vector<AABB>& aabbs, int* begin, int* end) {
+int BVH::buildR(std::vector<Node>& tree, std::atomic<int>& nextSlot, const std::vector<AABB>& aabbs, const std::vector<glm::vec3>& centroids,
+                int* begin, int* end) {
     assert(begin < end);
 
     Node node;
@@ -45,20 +56,24 @@ int BVH::buildR(std::vector<Node>& tree, const std::vector<AABB>& aabbs, int* be
     // Leaf — single primitive
     if (n == 1) {
         node.primitiveIndex = *begin;
-        tree.push_back(std::move(node));
-        return static_cast<int>(tree.size()) - 1;
+        node.subtreeSize = 1;
+        int idx = nextSlot.fetch_add(1, std::memory_order_relaxed);
+        tree[idx] = std::move(node);
+        return idx;
     }
 
     // Small node — midpoint split on longest axis
     if (n <= 4) {
         glm::vec3 extent = node.aabb.max - node.aabb.min;
         int       axis = (extent.y > extent.x) ? ((extent.z > extent.y) ? 2 : 1) : ((extent.z > extent.x) ? 2 : 0);
-        std::sort(begin, end, [&](int a, int b) { return aabbs[a].center()[axis] < aabbs[b].center()[axis]; });
-        int mid = n / 2;
-        node.left = buildR(tree, aabbs, begin, begin + mid);
-        node.right = buildR(tree, aabbs, begin + mid, end);
-        tree.push_back(std::move(node));
-        return static_cast<int>(tree.size()) - 1;
+        int       mid = n / 2;
+        std::nth_element(begin, begin + mid, end, [&](int a, int b) { return centroids[a][axis] < centroids[b][axis]; });
+        node.left = buildR(tree, nextSlot, aabbs, centroids, begin, begin + mid);
+        node.right = buildR(tree, nextSlot, aabbs, centroids, begin + mid, end);
+        node.subtreeSize = 1 + tree[node.left].subtreeSize + tree[node.right].subtreeSize;
+        int idx = nextSlot.fetch_add(1, std::memory_order_relaxed);
+        tree[idx] = std::move(node);
+        return idx;
     }
 
     // Binned SAH
@@ -67,15 +82,30 @@ int BVH::buildR(std::vector<Node>& tree, const std::vector<AABB>& aabbs, int* be
     int   bestBinSplit = 1;
 
     AABB centroidBounds{};
-    centroidBounds.min = aabbs[*begin].center();
+    centroidBounds.min = centroids[*begin];
     centroidBounds.max = centroidBounds.min;
     for (int* p = begin + 1; p < end; ++p) {
-        glm::vec3 c = aabbs[*p].center();
+        glm::vec3 c = centroids[*p];
         centroidBounds.min = glm::min(centroidBounds.min, c);
         centroidBounds.max = glm::max(centroidBounds.max, c);
     }
 
     glm::vec3 centroidExtent = centroidBounds.max - centroidBounds.min;
+
+    // All centroids coincide — no axis carries spatial information. Split the range
+    // in its current order to keep recursion bounded.
+    if (centroidExtent.x < 1e-6f && centroidExtent.y < 1e-6f && centroidExtent.z < 1e-6f) {
+        int* mid = begin + n / 2;
+        node.left = buildR(tree, nextSlot, aabbs, centroids, begin, mid);
+        node.right = buildR(tree, nextSlot, aabbs, centroids, mid, end);
+        node.subtreeSize = 1 + tree[node.left].subtreeSize + tree[node.right].subtreeSize;
+        int idx = nextSlot.fetch_add(1, std::memory_order_relaxed);
+        tree[idx] = std::move(node);
+        return idx;
+    }
+
+    const float     invParentArea = 1.0f / std::max(node.aabb.surfaceArea(), 1e-12f);
+    constexpr float T_TRAV = 0.125f;
 
     for (int axis = 0; axis < 3; ++axis) {
         if (centroidExtent[axis] < 1e-6f) {
@@ -86,7 +116,7 @@ int BVH::buildR(std::vector<Node>& tree, const std::vector<AABB>& aabbs, int* be
         float scale = static_cast<float>(NUM_BINS) / centroidExtent[axis];
 
         for (int* p = begin; p < end; ++p) {
-            int b = static_cast<int>((aabbs[*p].center()[axis] - centroidBounds.min[axis]) * scale);
+            int b = static_cast<int>((centroids[*p][axis] - centroidBounds.min[axis]) * scale);
             b = std::clamp(b, 0, NUM_BINS - 1);
             bins[b].count++;
             if (bins[b].count == 1) {
@@ -120,7 +150,7 @@ int BVH::buildR(std::vector<Node>& tree, const std::vector<AABB>& aabbs, int* be
                 continue;
             }
             float rightArea = sweepBox.surfaceArea();
-            float cost = 1.0f + leftAreas[i] * static_cast<float>(leftCounts[i]) + rightArea * static_cast<float>(sweepCount);
+            float cost = T_TRAV + (leftAreas[i] * static_cast<float>(leftCounts[i]) + rightArea * static_cast<float>(sweepCount)) * invParentArea;
             if (cost < bestCost) {
                 bestCost = cost;
                 bestAxis = axis;
@@ -135,26 +165,40 @@ int BVH::buildR(std::vector<Node>& tree, const std::vector<AABB>& aabbs, int* be
 
     float splitScale = static_cast<float>(NUM_BINS) / centroidExtent[bestAxis];
     int*  mid = std::partition(begin, end, [&](int idx) {
-        int b = static_cast<int>((aabbs[idx].center()[bestAxis] - centroidBounds.min[bestAxis]) * splitScale);
+        int b = static_cast<int>((centroids[idx][bestAxis] - centroidBounds.min[bestAxis]) * splitScale);
         b = std::clamp(b, 0, NUM_BINS - 1);
         return b < bestBinSplit;
     });
 
     if (mid == begin || mid == end) {
         mid = begin + n / 2;
+        std::nth_element(begin, mid, end, [&](int a, int b) { return centroids[a][bestAxis] < centroids[b][bestAxis]; });
     }
 
-    node.left = buildR(tree, aabbs, begin, mid);
-    node.right = buildR(tree, aabbs, mid, end);
+    int leftIdx;
+    int rightIdx;
+    if (n > PAR_THRESHOLD) {
+        auto leftFuture = std::async(std::launch::async, [&] { return buildR(tree, nextSlot, aabbs, centroids, begin, mid); });
+        rightIdx = buildR(tree, nextSlot, aabbs, centroids, mid, end);
+        leftIdx = leftFuture.get();
+    } else {
+        leftIdx = buildR(tree, nextSlot, aabbs, centroids, begin, mid);
+        rightIdx = buildR(tree, nextSlot, aabbs, centroids, mid, end);
+    }
+    node.left = leftIdx;
+    node.right = rightIdx;
+    node.subtreeSize = 1 + tree[leftIdx].subtreeSize + tree[rightIdx].subtreeSize;
 
-    tree.push_back(std::move(node));
-    return static_cast<int>(tree.size()) - 1;
+    int idx = nextSlot.fetch_add(1, std::memory_order_relaxed);
+    tree[idx] = std::move(node);
+    return idx;
 }
 
 void BVH::build(const std::vector<Sphere>& spheres, const std::vector<Triangle>& triangles) {
     assert(!spheres.empty() || !triangles.empty());
 
     std::vector<AABB>         aabbs;
+    std::vector<glm::vec3>    centroids;
     std::vector<PrimitiveRef> primRefs;
 
     const auto numSpheres = spheres.size();
@@ -162,14 +206,17 @@ void BVH::build(const std::vector<Sphere>& spheres, const std::vector<Triangle>&
     const auto totalPrims = numSpheres + numTriangles;
 
     aabbs.reserve(totalPrims);
+    centroids.reserve(totalPrims);
     primRefs.reserve(totalPrims);
 
     for (int i = 0; i < static_cast<int>(numSpheres); ++i) {
         aabbs.push_back(computeAABB(spheres[i]));
+        centroids.push_back(aabbs.back().center());
         primRefs.push_back({0, i});
     }
     for (int i = 0; i < static_cast<int>(numTriangles); ++i) {
         aabbs.push_back(computeAABB(triangles[i]));
+        centroids.push_back(aabbs.back().center());
         primRefs.push_back({1, i});
     }
 
@@ -179,13 +226,15 @@ void BVH::build(const std::vector<Sphere>& spheres, const std::vector<Triangle>&
     std::vector<int> indices(static_cast<std::size_t>(n));
     std::iota(indices.begin(), indices.end(), 0);
 
-    std::vector<Node> tree;
-    tree.reserve(static_cast<std::size_t>(2 * n));
+    // Binary tree with n single-prim leaves has exactly 2n - 1 nodes. Pre-size so
+    // concurrent buildR calls can claim slots via nextSlot without reallocation.
+    std::vector<Node> tree(static_cast<std::size_t>(2 * n - 1));
+    std::atomic<int>  nextSlot{0};
 
-    const int treeRoot = buildR(tree, aabbs, indices.data(), indices.data() + n);
+    const int treeRoot = buildR(tree, nextSlot, aabbs, centroids, indices.data(), indices.data() + n);
 
     nodes.clear();
-    nodes.reserve(tree.size());
+    nodes.reserve(static_cast<std::size_t>(tree[treeRoot].subtreeSize));
     root = flatten(treeRoot, tree, primRefs, -1);
 
     Log::info("BVH: {} nodes", nodes.size());
@@ -207,9 +256,16 @@ int BVH::flatten(int nodeIndex, const std::vector<Node>& tree, const std::vector
         return currentIndex;
     }
 
-    // Internal node — meta: x=left, y=right, z=-1, w=skip
+    // Interior — lay out [self, left-subtree, right-subtree] so near-child cache locality
+    // follows parent. Left-subtree size is known from the build phase.
+    const int leftSubtreeSize = tree[node.left].subtreeSize;
+    const int rightStart = currentIndex + 1 + leftSubtreeSize;
+
+    int leftFlat = flatten(node.left, tree, primRefs, rightStart);
     int rightFlat = flatten(node.right, tree, primRefs, nextAfterSubtree);
-    int leftFlat = flatten(node.left, tree, primRefs, rightFlat);
+
+    assert(leftFlat == currentIndex + 1);
+    assert(rightFlat == rightStart);
 
     nodes[currentIndex] = {glm::vec4(node.aabb.min, 0.0f), glm::vec4(node.aabb.max, 0.0f), glm::ivec4(leftFlat, rightFlat, -1, nextAfterSubtree)};
 
