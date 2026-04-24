@@ -14,4 +14,9 @@ struct InputState
     bool lookRight = false;
     bool lookUp = false;
     bool lookDown = false;
+
+    // Debug visualizations — show G-buffer attachments instead of the final image.
+    bool debugGBufferNormal = false;
+    bool debugGBufferPosition = false;
+    bool debugGBufferMotion = false;
 };

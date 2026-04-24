@@ -19,6 +19,7 @@ public:
     bool     reloadShadersIfChanged(RenderContext&);
     void     addRenderPass(std::unique_ptr<RenderPass> pass);
     void     blitToSwapChain(Texture&, int width, int height);
+    void     blitGBufferAttachmentToSwapChain(int attachmentIndex, int width, int height);
 
 private:
     RenderTargets targets;

@@ -19,6 +19,10 @@ struct KeyMappings
     int lookRight = GLFW_KEY_RIGHT;
     int lookUp = GLFW_KEY_UP;
     int lookDown = GLFW_KEY_DOWN;
+
+    int debugGBufferNormal = GLFW_KEY_F1;
+    int debugGBufferPosition = GLFW_KEY_F2;
+    int debugGBufferMotion = GLFW_KEY_F3;
 };
 
 class Window

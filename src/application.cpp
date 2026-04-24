@@ -2,18 +2,21 @@
 
 #include <memory>
 
+#include "denoiser_pass.h"
 #include "gl_debug.h"
 #include "gui.h"
 #include "gui_pass.h"
 #include "log.h"
+#include "path_tracer_pass.h"
+#include "raster_gbuffer_pass.h"
 #include "render_pass.h"
 #include "renderer.h"
-#include "path_tracer_pass.h"
-#include "denoiser_pass.h"
 #include "texture.h"
 
 static const std::filesystem::path computeShaderPath = "shader/compute_shader.comp";
 static const std::filesystem::path denoiserShaderPath = "shader/denoiser.comp";
+static const std::filesystem::path gbufferVertPath = "shader/gbuffer.vert";
+static const std::filesystem::path gbufferFragPath = "shader/gbuffer.frag";
 
 Application::Application(Scene initialScene)
     : scene(std::move(initialScene)), camera(this->scene.cameraSettings), window(camera.image_width, camera.image_height, this->scene.name.c_str()),
@@ -26,6 +29,7 @@ Application::Application(Scene initialScene)
     Gui::init(window);
 
     Log::info("Adding render passes");
+    renderer.addRenderPass(std::make_unique<RasterGBufferPass>(gbufferVertPath, gbufferFragPath));
     renderer.addRenderPass(std::make_unique<PathTracerPass>(computeShaderPath));
     renderer.addRenderPass(std::make_unique<DenoiserPass>(denoiserShaderPath));
 
@@ -39,7 +43,8 @@ int Application::run() {
 
         Gui::beginFrame();
 
-        camera.update(window.pollInput(), fpsTimer.deltaTime);
+        const InputState input = window.pollInput();
+        camera.update(input, fpsTimer.deltaTime);
 
         if (camera.moving) {
             renderer.updateCameraUbo(camera);
@@ -58,7 +63,15 @@ int Application::run() {
         gpuTimer.end();
 
         window.getFrameBufferSize();
-        renderer.blitToSwapChain(output, window.width, window.height);
+        if (input.debugGBufferNormal) {
+            renderer.blitGBufferAttachmentToSwapChain(GBuffer::ATTACH_NORMAL, window.width, window.height);
+        } else if (input.debugGBufferPosition) {
+            renderer.blitGBufferAttachmentToSwapChain(GBuffer::ATTACH_POS_MATID, window.width, window.height);
+        } else if (input.debugGBufferMotion) {
+            renderer.blitGBufferAttachmentToSwapChain(GBuffer::ATTACH_MOTION, window.width, window.height);
+        } else {
+            renderer.blitToSwapChain(output, window.width, window.height);
+        }
 
         Gui::endFrame();
 

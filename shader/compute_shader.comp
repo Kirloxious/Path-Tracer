@@ -10,6 +10,14 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(rgba32f, binding = 0) uniform image2D accum_image;
 layout(rgba16f, binding = 2) writeonly uniform image2D normals_image;
+
+// Primary visibility comes from the raster G-buffer pass — we no longer
+// generate camera rays here. The first hit is always (pos, normal, matid)
+// sampled at the pixel; BVH traversal is reserved for secondary bounces
+// and NEE shadow rays.
+layout(binding = 5) uniform sampler2D gbuf_pos_matid_tex;
+layout(binding = 6) uniform sampler2D gbuf_normal_tex;
+
 layout(location = 3) uniform int time;
 layout(location = 4) uniform int frame_index;
 layout(location = 5) uniform vec2 image_dimensions;

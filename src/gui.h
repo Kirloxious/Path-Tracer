@@ -10,15 +10,14 @@ class FPSTimer;
 class GPUTimer;
 struct Scene;
 
-namespace Gui
-{
-    void init(Window&);
-    void shutdown();
-    void beginFrame();
-    void endFrame();
+namespace Gui {
+void init(Window&);
+void shutdown();
+void beginFrame();
+void endFrame();
 
-    void drawPerformance(const FPSTimer&, const GPUTimer&);
-    void drawScene(const Scene&);
-    void drawCamera(const Camera&);
-    void drawStats(const FPSTimer&, const GPUTimer&, const Scene&, const Camera&);
+void drawPerformance(const FPSTimer&, const GPUTimer&);
+void drawScene(const Scene&);
+void drawCamera(const Camera&);
+void drawStats(const FPSTimer&, const GPUTimer&, const Scene&, const Camera&);
 }; // namespace Gui

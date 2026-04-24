@@ -39,7 +39,7 @@ void endFrame() {
 }
 
 void drawPerformance(const FPSTimer& fps, const GPUTimer& gpu) {
-    ImVec4 fpsColor = fps.fps() >= 60.0 ? ImVec4(0.4f, 1.0f, 0.4f, 1.0f)
+    ImVec4 fpsColor = fps.fps() >= 60.0   ? ImVec4(0.4f, 1.0f, 0.4f, 1.0f)
                       : fps.fps() >= 30.0 ? ImVec4(1.0f, 0.85f, 0.3f, 1.0f)
                                           : ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
     ImGui::TextColored(fpsColor, "%3.0f FPS", fps.fps());
@@ -48,14 +48,10 @@ void drawPerformance(const FPSTimer& fps, const GPUTimer& gpu) {
 
     const ImVec2 plotSize(220.0f, 36.0f);
 
-    ImGui::PlotLines("##frametime",
-                     fps.historyData(), FPSTimer::HISTORY, fps.historyOffsetIndex(),
-                     nullptr, 0.0f, 33.33f, plotSize);
+    ImGui::PlotLines("##frametime", fps.historyData(), FPSTimer::HISTORY, fps.historyOffsetIndex(), nullptr, 0.0f, 33.33f, plotSize);
 
     ImGui::Text("Compute  %6.2f ms", gpu.computeTimeMs());
-    ImGui::PlotLines("##compute",
-                     gpu.historyData(), GPUTimer::HISTORY, gpu.historyOffsetIndex(),
-                     nullptr, 0.0f, 33.33f, plotSize);
+    ImGui::PlotLines("##compute", gpu.historyData(), GPUTimer::HISTORY, gpu.historyOffsetIndex(), nullptr, 0.0f, 33.33f, plotSize);
 }
 
 void drawScene(const Scene& scene) {
@@ -74,8 +70,8 @@ void drawCamera(const Camera& camera) {
 }
 
 void drawStats(const FPSTimer& fps, const GPUTimer& gpu, const Scene& scene, const Camera& camera) {
-    const float           pad = 10.0f;
-    const ImGuiViewport*  vp = ImGui::GetMainViewport();
+    const float          pad = 10.0f;
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + pad, vp->WorkPos.y + pad), ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.40f);
 

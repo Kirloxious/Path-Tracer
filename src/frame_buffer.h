@@ -2,19 +2,26 @@
 
 #include <glad/glad.h>
 
+#include <vector>
+
 #include "texture.h"
 
 class FrameBuffer
 {
 public:
     GLuint handle = 0;
+    int    numColorAttachments = 0;
 
     FrameBuffer() = default;
     explicit FrameBuffer(const Texture& texture);
+    FrameBuffer(const std::vector<const Texture*>& colorAttachments, const Texture* depthAttachment);
     ~FrameBuffer();
 
-    // Blits this framebuffer to the default (swapchain) framebuffer.
+    // Blits color attachment 0 to the default (swapchain) framebuffer.
     void blit(const Texture& texture, int dstWidth, int dstHeight) const;
+
+    // Blits a specific color attachment to the default framebuffer.
+    void blitAttachment(int attachmentIndex, int srcWidth, int srcHeight, int dstWidth, int dstHeight) const;
 
     // Non-copyable, movable
     FrameBuffer(const FrameBuffer&) = delete;

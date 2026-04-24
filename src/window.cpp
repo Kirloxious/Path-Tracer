@@ -110,6 +110,9 @@ InputState Window::pollInput(const KeyMappings& keys) const {
         .lookRight = pressed(keys.lookRight),
         .lookUp = pressed(keys.lookUp),
         .lookDown = pressed(keys.lookDown),
+        .debugGBufferNormal = pressed(keys.debugGBufferNormal),
+        .debugGBufferPosition = pressed(keys.debugGBufferPosition),
+        .debugGBufferMotion = pressed(keys.debugGBufferMotion),
     };
 
     return inputState;

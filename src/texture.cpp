@@ -18,7 +18,25 @@ Texture::Texture(int width, int height, GLenum internalFormat) : width(width), h
     // can return NaN/Inf (driver-dependent), and the shader's `prev_color * 0` term on frame 1
     // propagates that into every subsequent frame.
     const float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    glClearTexImage(handle, 0, GL_RGBA, GL_FLOAT, zero);
+    GLenum      format = GL_RGBA;
+    switch (internalFormat) {
+    case GL_RG16F:
+    case GL_RG32F:
+        format = GL_RG;
+        break;
+    case GL_R16F:
+    case GL_R32F:
+        format = GL_RED;
+        break;
+    case GL_DEPTH_COMPONENT16:
+    case GL_DEPTH_COMPONENT24:
+    case GL_DEPTH_COMPONENT32F:
+        format = GL_DEPTH_COMPONENT;
+        break;
+    default:
+        break;
+    }
+    glClearTexImage(handle, 0, format, GL_FLOAT, zero);
 }
 
 Texture::~Texture() {

@@ -55,3 +55,7 @@ void Renderer::addRenderPass(std::unique_ptr<RenderPass> pass) {
 void Renderer::blitToSwapChain(Texture& renderOutput, int width, int height) {
     targets.fb.blit(renderOutput, width, height);
 }
+
+void Renderer::blitGBufferAttachmentToSwapChain(int attachmentIndex, int width, int height) {
+    targets.gbuf.blitAttachmentToSwapChain(attachmentIndex, width, height);
+}
