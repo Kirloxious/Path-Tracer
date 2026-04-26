@@ -1,7 +1,9 @@
 
 #include "path_tracer_pass.h"
 #include "compute_shader.h"
+#include "frame_buffer.h"
 #include "log.h"
+#include "shader_program.h"
 
 PathTracerPass::PathTracerPass(const std::filesystem::path& shaderPath) {
     Log::info("PathTracerPass: loading '{}'", shaderPath.string());
@@ -15,6 +17,7 @@ void PathTracerPass::uploadUniforms(const RenderContext& ctx) {
     shader.setInt("samples_per_pixel", ctx.camera.settings.samples_per_pixel);
     shader.setInt("max_bounces", ctx.camera.settings.max_bounces);
     shader.setInt("emissive_last_index", ctx.scene.world.emissiveLastIndex);
+    shader.setInt("num_light_groups", static_cast<int>(ctx.scene.world.lightGroups.size()));
 }
 
 bool PathTracerPass::reloadIfChanged(const RenderContext& ctx) {
@@ -32,6 +35,9 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
 
     targets.accum.bindForAccumulation();
     targets.normals.bind(2, GL_WRITE_ONLY);
+
+    glBindTextureUnit(5, targets.gbuf.pos_matid.handle);
+    glBindTextureUnit(6, targets.gbuf.normal.handle);
 
     glDispatchCompute(targets.numGroupsX, targets.numGroupsY, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);

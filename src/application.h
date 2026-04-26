@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "renderer.h"
 #include "window.h"
@@ -22,8 +23,7 @@ public:
     Application& operator=(const Application&) = delete;
 
 private:
-    // void uploadStaticUniforms();
-    // void uploadDenoiserUniforms();
+    void applyPendingSceneSwitch();
 
     Scene    scene;
     Camera   camera;
@@ -32,6 +32,9 @@ private:
 
     GPUTimer gpuTimer;
     FPSTimer fpsTimer;
+
+    std::vector<SceneEntry> sceneEntries;
+    Gui::SceneSwitchState   sceneSwitch;
 
     uint32_t timeSeed = 0;
     int      frameIndex = 0;

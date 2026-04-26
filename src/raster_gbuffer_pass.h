@@ -1,7 +1,6 @@
 #pragma once
 
 #include <filesystem>
-#include <glm/glm.hpp>
 
 #include "raster_shader.h"
 #include "render_pass.h"
@@ -19,10 +18,9 @@ public:
 private:
     RasterShader shader;
 
-    GLuint    vao = 0;
-    GLuint    vbo = 0;
-    GLsizei   vertexCount = 0;
-    glm::mat4 prevViewProj = glm::mat4(1.0f);
+    GLuint  vao = 0;
+    GLuint  vbo = 0;
+    GLsizei vertexCount = 0;
 
     void buildGeometry(const class World& world);
     void releaseGeometry();

@@ -15,6 +15,14 @@ struct Scene
     static Scene CornellBox();
     static Scene SphereWorld();
     static Scene Showcase();
-
-    static std::vector<Scene> all();
 };
+
+using SceneFactory = Scene (*)();
+
+struct SceneEntry
+{
+    std::string  name;
+    SceneFactory factory;
+};
+
+std::vector<SceneEntry> sceneRegistry();

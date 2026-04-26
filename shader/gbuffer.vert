@@ -15,23 +15,14 @@ layout(std140, binding = 2) uniform CameraData
     float defocus_angle;
 } camera;
 
-// Previous-frame view-projection for screen-space motion vectors.
-// Will be identity on the first frame; motion vectors are unused in phase 1.
-uniform mat4 u_prev_view_proj;
-
 out vec3 v_world_pos;
 out vec3 v_world_normal;
 flat out uint v_matid;
-out vec4 v_curr_clip;
-out vec4 v_prev_clip;
 
 void main() {
     v_world_pos = a_pos;
     v_world_normal = a_normal;
     v_matid = a_matid;
 
-    vec4 clip = camera.projection * camera.view * vec4(a_pos, 1.0);
-    v_curr_clip = clip;
-    v_prev_clip = u_prev_view_proj * vec4(a_pos, 1.0);
-    gl_Position = clip;
+    gl_Position = camera.projection * camera.view * vec4(a_pos, 1.0);
 }

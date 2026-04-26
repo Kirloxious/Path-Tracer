@@ -4,6 +4,8 @@
 #include <GLFW/glfw3.h>
 #include <string_view>
 
+#include <string>
+
 #include "input.h"
 
 // GLFW key bindings used to populate an InputState via Window::pollInput().
@@ -22,7 +24,6 @@ struct KeyMappings
 
     int debugGBufferNormal = GLFW_KEY_F1;
     int debugGBufferPosition = GLFW_KEY_F2;
-    int debugGBufferMotion = GLFW_KEY_F3;
 };
 
 class Window
@@ -43,4 +44,5 @@ public:
     void swapBuffers();
     void pollEvents();
     void getFrameBufferSize();
+    void setTitle(const std::string& newTitle);
 };

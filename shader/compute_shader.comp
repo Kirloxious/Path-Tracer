@@ -1,7 +1,5 @@
 #version 460 core
 
-// #define DEBUG_BRUTE_FORCE
-
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 //=============================================================================
@@ -21,11 +19,11 @@ layout(binding = 6) uniform sampler2D gbuf_normal_tex;
 layout(location = 3) uniform int time;
 layout(location = 4) uniform int frame_index;
 layout(location = 5) uniform vec2 image_dimensions;
-// layout(location = 6) uniform int num_objects;
 layout(location = 8) uniform int root_index;
 layout(location = 9) uniform int samples_per_pixel;
 layout(location = 10) uniform int max_bounces;
 layout(location = 11) uniform int emissive_last_index;
+layout(location = 12) uniform int num_light_groups;
 
 //=============================================================================
 // Structs
@@ -42,36 +40,21 @@ struct HitRecord
     vec3 point;
     vec3 normal;
     uint mat_index;
-    uint sphere_index;
+    uint triangle_index;
     float t;
     bool front_face;
-};
-
-struct Sphere
-{
-    vec3 position;
-    float radius;
-    uint material_index;
 };
 
 struct Triangle
 {
     vec3 v0;
-    vec3 e1; // v1 - v0
-    vec3 e2; // v2 - v0
+    float area;            // 0.5 * |e1 x e2|, precomputed on CPU
+    vec3 e1;               // v1 - v0
+    vec3 e2;               // v2 - v0
     uint material_index;
-    vec3 n0; // vertex normal at v0
-    vec3 n1; // vertex normal at v1
-    vec3 n2; // vertex normal at v2
-};
-
-struct Quad
-{
-    vec3 corner_point;
-    vec3 u;
-    vec3 v;
-    vec3 w;
-    uint material_index;
+    vec3 n0;               // vertex normal at v0
+    vec3 n1;               // vertex normal at v1
+    vec3 n2;               // vertex normal at v2
 };
 
 struct Material
@@ -87,16 +70,17 @@ struct BVHNodeFlat
 {
     vec4 aabb_min;
     vec4 aabb_max;
-    ivec4 meta; // interior: x=left, y=right,                     z=-1,        w=skip
-    // leaf:     x=-1,  y=primType (0=sphere,1=tri),  z=primIndex, w=skip
+    ivec4 meta; // interior: x=left, y=right, z=-1,           w=skip
+                // leaf:     x=-1,   y=0,     z=triangleIdx,  w=skip
 };
 
 //=============================================================================
 // Buffers
 //=============================================================================
 
-layout(std430, binding = 0) readonly buffer SpheresBuffer {
-    Sphere spheres[];
+// (begin_triangle_index, triangle_count) — one entry per source emissive primitive.
+layout(std430, binding = 0) readonly buffer LightGroupsBuffer {
+    ivec2 light_groups[];
 };
 
 layout(std430, binding = 1) readonly buffer MatsBuffer {
@@ -255,94 +239,6 @@ void set_face_normal(in Ray ray, in vec3 outward_normal, inout HitRecord hit_rec
     hit_rec.normal = hit_rec.front_face ? outward_normal : -outward_normal;
 }
 
-// Ray direction is always normalized, so a = dot(d,d) = 1.0 — no division needed
-bool hit_sphere(in Ray r, in Sphere s, float ray_tmin, float ray_tmax, inout HitRecord hit_rec) {
-    vec3 oc = s.position - r.origin;
-    float h = dot(oc, r.direction);
-    float c = dot(oc, oc) - s.radius * s.radius;
-
-    float discriminant = h * h - c;
-    if (discriminant < 0.0) {
-        return false;
-    }
-
-    float sqrtd = sqrt(discriminant);
-    float root = h - sqrtd;
-    if (root < ray_tmin || root > ray_tmax) {
-        root = h + sqrtd;
-        if (root < ray_tmin || root > ray_tmax) {
-            return false;
-        }
-    }
-
-    hit_rec.t = root;
-    hit_rec.point = r.origin + root * r.direction;
-    hit_rec.normal = (hit_rec.point - s.position) / s.radius;
-    hit_rec.mat_index = s.material_index;
-    set_face_normal(r, hit_rec.normal, hit_rec);
-
-    return true;
-}
-
-bool hit_quad(in Ray r, in Quad q, inout HitRecord hit_rec) {
-    vec3 u = q.u;
-    vec3 v = q.v;
-    vec3 n = cross(u, v);
-    vec3 normal = normalize(n);
-    float D = dot(normal, q.corner_point);
-    vec3 w = n / dot(n, n);
-
-    float denom = dot(normal, r.direction);
-    if (denom < 0.00001) {
-        return false;
-    }
-
-    float t = (D - dot(normal, r.origin)) / denom;
-    if (t < 0.00001) {
-        return false;
-    }
-
-    vec3 intersection = r.origin + t * r.direction;
-    vec3 planar_hitpt_vector = intersection - q.corner_point;
-    float alpha = dot(w, cross(planar_hitpt_vector, v));
-    float beta = dot(w, cross(u, planar_hitpt_vector));
-
-    if (alpha < 0.0 || alpha > 1.0 || beta < 0.0 || beta > 1.0) {
-        return false;
-    }
-
-    hit_rec.t = t;
-    hit_rec.point = intersection;
-    hit_rec.normal = normal;
-    hit_rec.mat_index = q.material_index;
-    set_face_normal(r, hit_rec.normal, hit_rec);
-
-    return true;
-}
-
-// Lightweight sphere intersection — a=1 since direction is normalized
-bool hit_sphere_any(in Ray r, in Sphere s, float ray_tmin, float ray_tmax) {
-    vec3 oc = s.position - r.origin;
-    float h = dot(oc, r.direction);
-    float c = dot(oc, oc) - s.radius * s.radius;
-
-    float discriminant = h * h - c;
-    if (discriminant < 0.0) {
-        return false;
-    }
-
-    float sqrtd = sqrt(discriminant);
-    float root = h - sqrtd;
-    if (root < ray_tmin || root > ray_tmax) {
-        root = h + sqrtd;
-        if (root < ray_tmin || root > ray_tmax) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 // Möller–Trumbore ray-triangle intersection
 bool hit_triangle(in Ray r, in Triangle tri, float ray_tmin, float ray_tmax, inout HitRecord hit_rec) {
     vec3 h = cross(r.direction, tri.e2);
@@ -425,25 +321,7 @@ bool intersect_aabb(in vec3 min_b, in vec3 max_b, in vec3 inv_dir, in vec3 neg_o
 // World Traversal
 //=============================================================================
 
-#ifdef DEBUG_BRUTE_FORCE
-bool world_hit(in Ray r, in float ray_tmin, in float ray_tmax, inout HitRecord hit_rec) {
-    HitRecord temp_rec;
-    bool hit_anything = false;
-    float closest_so_far = ray_tmax;
-
-    for (int i = 0; i < num_objects; i++) {
-        if (hit_sphere(r, spheres[i], ray_tmin, closest_so_far, temp_rec)) {
-            hit_anything = true;
-            closest_so_far = temp_rec.t;
-            hit_rec = temp_rec;
-        }
-    }
-
-    return hit_anything;
-}
-#endif
-
-// Stackless BVH traversal using skip pointers (meta.w)
+// Stackless BVH traversal using skip pointers (meta.w). Triangles only.
 bool world_hit_aabb_stackless(in Ray r, in float t_min, in float t_max, inout HitRecord hit, in vec3 inv_dir) {
     vec3 neg_ood = -r.origin * inv_dir;
     int idx = root_index;
@@ -455,20 +333,9 @@ bool world_hit_aabb_stackless(in Ray r, in float t_min, in float t_max, inout Hi
 
         if (intersect_aabb(node.aabb_min.xyz, node.aabb_max.xyz, inv_dir, neg_ood, t_min, closest)) {
             if (node.meta.x == -1) {
-                // Leaf node — meta.y = prim type, meta.z = prim index
                 HitRecord temp;
-                bool leaf_hit = false;
-
-                if (node.meta.y == 0) {
-                    leaf_hit = hit_sphere(r, spheres[node.meta.z], t_min, closest, temp);
-                    if (leaf_hit) {
-                        temp.sphere_index = uint(node.meta.z);
-                    }
-                } else {
-                    leaf_hit = hit_triangle(r, triangles[node.meta.z], t_min, closest, temp);
-                }
-
-                if (leaf_hit) {
+                if (hit_triangle(r, triangles[node.meta.z], t_min, closest, temp)) {
+                    temp.triangle_index = uint(node.meta.z);
                     closest = temp.t;
                     hit = temp;
                     hit_something = true;
@@ -485,7 +352,7 @@ bool world_hit_aabb_stackless(in Ray r, in float t_min, in float t_max, inout Hi
     return hit_something;
 }
 
-// Shadow ray visibility test — skips emissive spheres (they are light sources, not occluders)
+// Shadow ray visibility test — skips emissive triangles (they are light sources, not occluders).
 bool is_visible(in vec3 origin, in vec3 target) {
     vec3 dir = target - origin;
     float dist2 = dot(dir, dir);
@@ -509,15 +376,9 @@ bool is_visible(in vec3 origin, in vec3 target) {
 
         if (intersect_aabb(node.aabb_min.xyz, node.aabb_max.xyz, inv_dir, neg_ood, t_min, t_max)) {
             if (node.meta.x == -1) {
-                if (node.meta.y == 0) {
-                    // Skip emissive spheres — they are lights, not occluders
-                    if (mats[spheres[node.meta.z].material_index].type != MAT_EMISSIVE) {
-                        if (hit_sphere_any(shadow, spheres[node.meta.z], t_min, t_max)) {
-                            return false;
-                        }
-                    }
-                } else {
-                    if (hit_triangle_any(shadow, triangles[node.meta.z], t_min, t_max)) {
+                Triangle tri = triangles[node.meta.z];
+                if (mats[tri.material_index].type != MAT_EMISSIVE) {
+                    if (hit_triangle_any(shadow, tri, t_min, t_max)) {
                         return false;
                     }
                 }
@@ -604,36 +465,36 @@ bool scatter(inout uint state, in Ray ray_in, in HitRecord hit_rec, inout vec3 m
 }
 
 //=============================================================================
-// Light Sampling
+// Light Sampling — triangle area lights
 //=============================================================================
 
-vec3 sample_sphere(in Sphere s, in vec3 p, inout uint state, out float pdf) {
-    vec3 to_center = s.position - p;
-    float dist = length(to_center);
-    vec3 dir = to_center / dist;
-
-    vec3 up = abs(dir.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-    vec3 right = normalize(cross(up, dir));
-    vec3 fwd = cross(dir, right);
-
-    float sin_theta_max2 = (s.radius * s.radius) / (dist * dist);
-    float cos_theta_max = sqrt(max(0.0, 1.0 - sin_theta_max2));
-
-    float cos_theta = mix(cos_theta_max, 1.0, random_unilateral(state));
-    float sin_theta = sqrt(max(0.0, 1.0 - cos_theta * cos_theta));
-    float phi = 2.0 * PI * random_unilateral(state);
-
-    pdf = 1.0 / (2.0 * PI * (1.0 - cos_theta_max));
-
-    return right * sin_theta * cos(phi) + fwd * sin_theta * sin(phi) + dir * cos_theta;
+// Uniform area sample on a triangle; returns barycentric (b1, b2) so b0 = 1 - b1 - b2.
+vec2 sample_triangle_bary(inout uint state) {
+    float r1 = random_unilateral(state);
+    float r2 = random_unilateral(state);
+    float u = sqrt(r1);
+    return vec2(u * (1.0 - r2), u * r2);
 }
 
-float sphere_sample_pdf(in Sphere s, in vec3 p) {
-    vec3 to_center = s.position - p;
-    float dist2 = dot(to_center, to_center);
-    float sin_theta_max2 = (s.radius * s.radius) / dist2;
-    float cos_theta_max = sqrt(max(0.0, 1.0 - sin_theta_max2));
-    return 1.0 / (2.0 * PI * (1.0 - cos_theta_max));
+// Solid-angle pdf at receiver point p of an area sample on `tri`.
+// Returns 0 when the light face is back-facing relative to the shadow ray
+// (the sample contributes no radiance in that direction).
+// Uses precomputed `tri.area` to skip the length() of `cross(e1, e2)`.
+float triangle_light_pdf(in Triangle tri, in vec3 p, in vec3 sample_point, in vec3 light_dir) {
+    if (tri.area <= 0.0) {
+        return 0.0;
+    }
+
+    // |cross(e1, e2)| = 2 * area, so dot(cross(e1,e2), light_dir) / (2*area) = dot(unit_n, light_dir).
+    float cross_dot = dot(cross(tri.e1, tri.e2), light_dir);
+    if (cross_dot >= 0.0) {
+        return 0.0; // light face is back-facing
+    }
+
+    // pdf = dist^2 / (cos_theta_light * area), with cos_theta_light = -cross_dot / (2 * area).
+    // Simplifies to -2 * dist^2 / cross_dot.
+    vec3 d = sample_point - p;
+    return -2.0 * dot(d, d) / cross_dot;
 }
 
 //=============================================================================
@@ -645,165 +506,132 @@ float mis_weight(float pdf_a, float pdf_b) {
 }
 
 //=============================================================================
-// Integrators
+// Integrator
 //=============================================================================
 
-#ifdef DEBUG_BRUTE_FORCE
-
-vec3 ray_color(in Ray ray, uint max_bounces, inout uint state) {
-    vec3 accumulated_color = vec3(1.0);
-    vec3 radiance = vec3(0.0);
-
-    Ray current_ray = ray;
-
-    for (int bounce = 0; bounce < max_bounces; bounce++) {
-        HitRecord hit_rec;
-        if (world_hit(current_ray, 0.001, infinity, hit_rec)) {
-            Ray scattered;
-            vec3 mat_color;
-            Material mat;
-            if (scatter(state, current_ray, hit_rec, mat_color, scattered, mat)) {
-                accumulated_color *= mat_color;
-                current_ray = scattered;
-            } else {
-                radiance += accumulated_color * mat_color * mat.emission;
-                break;
-            }
-        } else {
-            vec3 unit_direction = normalize(current_ray.direction);
-            float blend = 0.5 * (unit_direction.y + 1.0);
-            radiance += accumulated_color * mix(vec3(1.0), vec3(0.5, 0.7, 1.0), blend);
-            break;
-        }
-    }
-
-    return radiance;
-}
-
-#else
-
-vec3 ray_color(in Ray ray, uint max_bounces, inout uint state) {
+// MIS path tracer starting from a pre-resolved primary surface (from the raster G-buffer).
+// First iteration uses (P, N, matid) directly — no BVH primary ray. Secondary bounces and
+// NEE traverse the triangle BVH.
+vec3 ray_color_mis_from_surface(in vec3 P, in vec3 N, in uint matid, in vec3 view_dir, uint max_bounces, inout uint state) {
     vec3 accumulated_color = vec3(1.0);
     vec3 final_color = vec3(0.0);
     vec3 background_color = vec3(0.0);
 
-    Ray current_ray = ray;
+    HitRecord hit_rec;
+    hit_rec.point = P;
+    hit_rec.normal = N;
+    hit_rec.mat_index = matid;
+    // Raster pass culls back faces, so primary hits are always front-face.
+    // Limitation: cameras placed inside a dielectric volume won't refract correctly on
+    // the primary — acceptable for phase 2 since none of the scenes exercise that.
+    hit_rec.front_face = true;
+    hit_rec.t = 0.0;
+    hit_rec.triangle_index = 0u;
 
-    for (int bounce = 0; bounce < max_bounces; bounce++) {
-        vec3 inv_dir = 1.0 / current_ray.direction;
-        HitRecord hit_rec;
+    Ray current_ray;
+    current_ray.origin = P - view_dir;
+    current_ray.direction = view_dir;
 
-        if (world_hit_aabb_stackless(current_ray, 0.001, infinity, hit_rec, inv_dir)) {
-            Ray scattered;
-            vec3 mat_color;
-            Material mat;
-            if (scatter(state, current_ray, hit_rec, mat_color, scattered, mat)) {
-                accumulated_color *= mat_color;
-                current_ray = scattered;
-
-                if (max(accumulated_color.r, max(accumulated_color.g, accumulated_color.b)) < 0.0001) {
-                    break;
-                }
-            } else {
-                final_color += accumulated_color * mat_color * mat.emission;
-                break;
-            }
-        } else {
-            final_color += accumulated_color * background_color;
-            break;
-        }
-    }
-
-    return final_color;
-}
-
-// Active integrator: BVH path tracer with MIS (NEE + BSDF) and Russian Roulette termination
-vec3 ray_color_mis(in Ray ray, uint max_bounces, inout uint state, out vec3 primary_normal, out float primary_mat_type) {
-    primary_normal = vec3(0.0);
-    primary_mat_type = 0.0;
-    vec3 accumulated_color = vec3(1.0);
-    vec3 final_color = vec3(0.0);
-    vec3 background_color = vec3(0.00);
-
-    Ray current_ray = ray;
-    bool first_hit = true;
-
-    int num_emissive = emissive_last_index + 1;
     float prev_bsdf_pdf = 1.0;
     bool prev_specular = true;
+    bool first = true;
 
     for (int bounce = 0; bounce < max_bounces; bounce++) {
-        vec3 inv_dir = 1.0 / current_ray.direction;
-        HitRecord hit_rec;
-
-        if (world_hit_aabb_stackless(current_ray, 0.001, infinity, hit_rec, inv_dir)) {
-            if (first_hit) {
-                primary_normal = hit_rec.normal;
-                primary_mat_type = mats[hit_rec.mat_index].type;
-                first_hit = false;
-            }
-            Ray scattered;
-            vec3 mat_color;
-            Material mat;
-            if (scatter(state, current_ray, hit_rec, mat_color, scattered, mat)) {
-                bool is_delta = (mat.type == MAT_METAL || mat.type == MAT_DIELECTRIC);
-
-                // NEE: sample a random emissive sphere directly
-                if (num_emissive > 0 && !is_delta) {
-                    int light_i = int(random_unilateral(state) * float(num_emissive));
-                    Sphere light = spheres[light_i];
-                    float light_pdf = 0.0;
-                    vec3 light_dir = sample_sphere(light, hit_rec.point, state, light_pdf);
-                    vec3 light_target = light.position + light_dir * light.radius;
-                    // vec3 light_target = hit_rec.point + light.position * length(light.position - hit_rec.point);
-
-                    if (is_visible(hit_rec.point, light_target)) {
-                        Material light_mat = mats[light.material_index];
-                        float bsdf_pdf = scatter_pdf(mat, hit_rec.normal, light_dir);
-                        float cos_theta = max(0.0, dot(hit_rec.normal, light_dir));
-                        float weight = mis_weight(light_pdf, bsdf_pdf);
-
-                        final_color += accumulated_color * weight * mat_color * light_mat.color * light_mat.emission * cos_theta *
-                                float(num_emissive) / (light_pdf * PI);
-                    }
-                }
-
-                accumulated_color *= mat_color;
-                current_ray = scattered;
-                prev_bsdf_pdf = scatter_pdf(mat, hit_rec.normal, scattered.direction);
-                prev_specular = is_delta;
-
-                // Russian Roulette
-                if (bounce > 2) {
-                    float p = max(accumulated_color.r, max(accumulated_color.g, accumulated_color.b));
-                    if (p <= 0.0 || random_unilateral(state) > p) {
-                        break;
-                    }
-                    accumulated_color /= p;
-                }
-            } else {
-                // Hit emissive — apply MIS weight
-                float bsdf_weight = 1.0;
-
-                if (!prev_specular && num_emissive > 0) {
-                    Sphere hit_light = spheres[hit_rec.sphere_index];
-                    float light_pdf = sphere_sample_pdf(hit_light, current_ray.origin);
-                    bsdf_weight = mis_weight(prev_bsdf_pdf, light_pdf);
-                }
-
-                final_color += accumulated_color * mat_color * mat.emission * bsdf_weight;
+        if (!first) {
+            vec3 inv_dir = 1.0 / current_ray.direction;
+            if (!world_hit_aabb_stackless(current_ray, 0.001, infinity, hit_rec, inv_dir)) {
+                final_color += accumulated_color * background_color;
                 break;
             }
+        }
+        first = false;
+
+        Ray scattered;
+        vec3 mat_color;
+        Material mat;
+        if (scatter(state, current_ray, hit_rec, mat_color, scattered, mat)) {
+            bool is_delta = (mat.type == MAT_METAL || mat.type == MAT_DIELECTRIC);
+
+            // NEE: pick a light group (one per source emissive primitive), then a triangle
+            // within it. The combined area-pdf factor is (num_groups * group.count).
+            if (num_light_groups > 0 && !is_delta) {
+                int group_i = int(random_unilateral(state) * float(num_light_groups));
+                ivec2 group = light_groups[group_i];
+                int t_in_group = int(random_unilateral(state) * float(group.y));
+                int light_i = group.x + t_in_group;
+
+                Triangle light_tri = triangles[light_i];
+
+                vec2 bary = sample_triangle_bary(state);
+                vec3 sample_point = light_tri.v0 + bary.x * light_tri.e1 + bary.y * light_tri.e2;
+
+                vec3 d = sample_point - hit_rec.point;
+                float inv_dist = inversesqrt(dot(d, d));
+                vec3 light_dir = d * inv_dist;
+
+                float light_pdf_tri = triangle_light_pdf(light_tri, hit_rec.point, sample_point, light_dir);
+
+                if (light_pdf_tri > 0.0 && is_visible(hit_rec.point, sample_point)) {
+                    Material light_mat = mats[light_tri.material_index];
+                    float bsdf_pdf = scatter_pdf(mat, hit_rec.normal, light_dir);
+                    float cos_theta = max(0.0, dot(hit_rec.normal, light_dir));
+
+                    // Combined NEE pdf in solid angle: light_pdf_tri / (num_groups * group.count).
+                    float light_pdf_combined = light_pdf_tri / float(num_light_groups * group.y);
+                    float weight = mis_weight(light_pdf_combined, bsdf_pdf);
+
+                    // Lambertian BRDF = mat_color / PI.
+                    final_color += accumulated_color * weight * mat_color * light_mat.color * light_mat.emission * cos_theta /
+                            (light_pdf_combined * PI);
+                }
+            }
+
+            accumulated_color *= mat_color;
+            current_ray = scattered;
+            prev_bsdf_pdf = scatter_pdf(mat, hit_rec.normal, scattered.direction);
+            prev_specular = is_delta;
+
+            // Russian Roulette
+            if (bounce > 2) {
+                float p = max(accumulated_color.r, max(accumulated_color.g, accumulated_color.b));
+                if (p <= 0.0 || random_unilateral(state) > p) {
+                    break;
+                }
+                accumulated_color /= p;
+            }
         } else {
-            final_color += accumulated_color * background_color;
+            // Hit emissive — apply MIS weight (primary hit: prev_specular=true → weight=1)
+            float bsdf_weight = 1.0;
+
+            if (!prev_specular && num_light_groups > 0) {
+                // Find which group owns this triangle (small linear scan — num_light_groups
+                // is one per source emissive primitive, typically <10).
+                int group_count = 0;
+                for (int g = 0; g < num_light_groups; ++g) {
+                    ivec2 grp = light_groups[g];
+                    if (int(hit_rec.triangle_index) >= grp.x && int(hit_rec.triangle_index) < grp.x + grp.y) {
+                        group_count = grp.y;
+                        break;
+                    }
+                }
+
+                if (group_count > 0) {
+                    Triangle hit_light = triangles[hit_rec.triangle_index];
+                    float light_pdf_tri = triangle_light_pdf(hit_light, current_ray.origin, hit_rec.point, current_ray.direction);
+                    if (light_pdf_tri > 0.0) {
+                        float light_pdf_combined = light_pdf_tri / float(num_light_groups * group_count);
+                        bsdf_weight = mis_weight(prev_bsdf_pdf, light_pdf_combined);
+                    }
+                }
+            }
+
+            final_color += accumulated_color * mat_color * mat.emission * bsdf_weight;
             break;
         }
     }
 
     return final_color;
 }
-
-#endif // DEBUG_BRUTE_FORCE
 
 //=============================================================================
 // Main
@@ -814,71 +642,54 @@ void main() {
     uint x = gl_GlobalInvocationID.x;
     uint y = gl_GlobalInvocationID.y;
 
-    uint width = uint(image_dimensions.x);
-    uint height = uint(image_dimensions.y);
-
     uint random_state = uint(time) * (x * 1973u + y * 9277u + 1u) | 1u;
 
-    vec2 inv_resolution = 1.0 / vec2(width, height);
-    vec3 camera_right = vec3(inv_view_matrix[0].xyz);
-    vec3 camera_up = vec3(inv_view_matrix[1].xyz);
-    float lens_radius = tan(radians(defocus_angle * 0.5)) * focus_distance;
+    // Fetch primary surface from the raster G-buffer.
+    vec4 pm = texelFetch(gbuf_pos_matid_tex, pixel_coords, 0);
+    vec3 raw_normal = texelFetch(gbuf_normal_tex, pixel_coords, 0).xyz;
+
+    // Miss detection: raster left the cleared value (zero vector). Any hit writes a
+    // unit normal, so length² separates hit from sky cleanly without a sentinel.
+    bool is_sky = dot(raw_normal, raw_normal) < 0.5;
 
     vec3 pixel_color = vec3(0.0);
     vec3 primary_normal = vec3(0.0);
     float primary_mat_type = 0.0;
 
-    for (int s = 0; s < samples_per_pixel; ++s) {
-        uint halton_idx = uint((frame_index - 1) * samples_per_pixel + s + 1);
-        vec2 offset = vec2(halton_base2(halton_idx), halton_base3(halton_idx)) - 0.5;
-        vec2 uv = (vec2(pixel_coords) + offset) * inv_resolution;
-        vec2 ndc = uv * 2.0 - 1.0;
+    if (!is_sky) {
+        vec3 P = pm.xyz;
+        uint matid = floatBitsToUint(pm.w);
+        vec3 N = normalize(raw_normal);
+        vec3 view_dir = normalize(P - camera_position);
 
-        vec4 view_pos = inv_proj_matrix * vec4(ndc, -1.0, 1.0);
-        view_pos /= view_pos.w;
-        vec4 world_pos = inv_view_matrix * view_pos;
-        vec3 dir = normalize(world_pos.xyz - camera_position);
+        primary_normal = N;
+        primary_mat_type = mats[matid].type;
 
-        vec2 lens_sample = sample_disk(random_state) * lens_radius;
-        vec3 lens_offset = camera_right * lens_sample.x + camera_up * lens_sample.y;
-        vec3 origin = camera_position + lens_offset;
-
-        vec3 focal_point = camera_position + dir * focus_distance;
-        dir = normalize(focal_point - origin);
-
-        // Protect from NAN
-        dir = mix(dir, vec3(1e-30), equal(dir, vec3(0.0)));
-
-        Ray ray;
-        ray.origin = origin;
-        ray.direction = dir;
-
-        #ifdef DEBUG_BRUTE_FORCE
-        pixel_color += ray_color(ray, max_bounces, random_state);
-        #else
-        vec3 sample_normal;
-        float sample_mat_type;
-        pixel_color += ray_color_mis(ray, max_bounces, random_state, sample_normal, sample_mat_type);
-        if (s == 0) {
-            primary_normal = sample_normal;
-            primary_mat_type = sample_mat_type;
+        // Multiple samples no longer give AA — that's the raster's job.
+        // They still reduce NEE / indirect-bounce variance.
+        for (int s = 0; s < samples_per_pixel; ++s) {
+            pixel_color += ray_color_mis_from_surface(P, N, matid, view_dir, max_bounces, random_state);
         }
-        #endif
     }
 
-    vec3 prev_color = imageLoad(accum_image, pixel_coords).xyz;
-    float scale_factor = 1.0 / float(samples_per_pixel);
-    pixel_color = clamp(pixel_color * scale_factor, vec3(0.0), vec3(10.0));
-
+    // Average over samples_per_pixel and clamp fireflies.
+    pixel_color = clamp(pixel_color / float(samples_per_pixel), vec3(0.0), vec3(10.0));
     if (any(isnan(pixel_color)) || any(isinf(pixel_color))) {
         pixel_color = vec3(0.0);
     }
 
-    vec3 sum_color = prev_color * max(frame_index - 1, 0);
-    vec3 accum_color = (pixel_color + sum_color) / float(frame_index);
+    // Progressive cross-frame accumulation: running average. frame_index==1 is the
+    // first sample after a reset (camera motion / shader reload), so weight=1 fully
+    // overwrites the stale buffer contents.
+    vec3 accumulated;
+    if (frame_index <= 1) {
+        accumulated = pixel_color;
+    } else {
+        vec3 prev = imageLoad(accum_image, pixel_coords).rgb;
+        float w = 1.0 / float(frame_index);
+        accumulated = mix(prev, pixel_color, w);
+    }
 
-    // vec3 accum_color = prev_color + (pixel_color - prev_color) / float(frame_index);
-
-    imageStore(accum_image, pixel_coords, vec4(accum_color, 1.0));
+    imageStore(accum_image, pixel_coords, vec4(accumulated, 1.0));
     imageStore(normals_image, pixel_coords, vec4(primary_normal * 0.5 + 0.5, primary_mat_type));
 }

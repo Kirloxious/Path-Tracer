@@ -11,7 +11,10 @@ Renderer::Renderer(int w, int h) : targets(w, h) {
 }
 
 void Renderer::loadScene(const Scene& scene, const Camera& camera) {
-    spheresSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 0, scene.world.spheres, GL_STREAM_COPY);
+    // Empty SSBOs warn loudly in Buffer::Buffer; an unlit scene is legal so we elide upload.
+    if (!scene.world.lightGroups.empty()) {
+        lightGroupsSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 0, scene.world.lightGroups, GL_STREAM_COPY);
+    }
     matsSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 1, scene.world.materials, GL_STREAM_COPY);
     camUBO = Buffer(GL_UNIFORM_BUFFER, 2, camera.data, GL_DYNAMIC_DRAW);
     bvhNodesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 3, scene.world.bvh.nodes, GL_STREAM_COPY);

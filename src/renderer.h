@@ -23,7 +23,7 @@ public:
 
 private:
     RenderTargets targets;
-    Buffer        spheresSSBO, matsSSBO, camUBO, bvhNodesSSBO, trianglesSSBO;
+    Buffer        lightGroupsSSBO, matsSSBO, camUBO, bvhNodesSSBO, trianglesSSBO;
 
     std::vector<std::unique_ptr<RenderPass>> passes;
 };

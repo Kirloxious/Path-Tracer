@@ -14,24 +14,12 @@ namespace {
 constexpr int PAR_THRESHOLD = 16384;
 } // namespace
 
-AABB computeAABB(const Sphere& s) {
-    glm::vec3 rvec(s.radius);
-    return {s.position - rvec, s.position + rvec};
-}
-
 AABB computeAABB(const Triangle& t) {
     glm::vec3 v1 = t.v0 + t.e1;
     glm::vec3 v2 = t.v0 + t.e2;
     AABB      aabb{};
     aabb.min = glm::min(glm::min(t.v0, v1), v2);
     aabb.max = glm::max(glm::max(t.v0, v1), v2);
-    aabb.pad();
-    return aabb;
-}
-
-AABB computeAABB(const Quad& q) {
-    AABB aabb{};
-    aabb = {q.corner_point, q.corner_point + q.u + q.v};
     aabb.pad();
     return aabb;
 }
@@ -194,35 +182,26 @@ int BVH::buildR(std::vector<Node>& tree, std::atomic<int>& nextSlot, const std::
     return idx;
 }
 
-void BVH::build(const std::vector<Sphere>& spheres, const std::vector<Triangle>& triangles) {
-    assert(!spheres.empty() || !triangles.empty());
+void BVH::build(const std::vector<Triangle>& triangles) {
+    assert(!triangles.empty());
 
-    std::vector<AABB>         aabbs;
-    std::vector<glm::vec3>    centroids;
-    std::vector<PrimitiveRef> primRefs;
+    const int n = static_cast<int>(triangles.size());
 
-    const auto numSpheres = spheres.size();
-    const auto numTriangles = triangles.size();
-    const auto totalPrims = numSpheres + numTriangles;
+    std::vector<AABB>      aabbs;
+    std::vector<glm::vec3> centroids;
+    std::vector<int>       triangleIndices(static_cast<std::size_t>(n));
 
-    aabbs.reserve(totalPrims);
-    centroids.reserve(totalPrims);
-    primRefs.reserve(totalPrims);
+    aabbs.reserve(n);
+    centroids.reserve(n);
 
-    for (int i = 0; i < static_cast<int>(numSpheres); ++i) {
-        aabbs.push_back(computeAABB(spheres[i]));
-        centroids.push_back(aabbs.back().center());
-        primRefs.push_back({0, i});
-    }
-    for (int i = 0; i < static_cast<int>(numTriangles); ++i) {
+    for (int i = 0; i < n; ++i) {
         aabbs.push_back(computeAABB(triangles[i]));
         centroids.push_back(aabbs.back().center());
-        primRefs.push_back({1, i});
+        triangleIndices[i] = i;
     }
 
-    Log::info("Building BVH over {} spheres + {} triangles", numSpheres, numTriangles);
+    Log::info("Building BVH over {} triangles", n);
 
-    const int        n = static_cast<int>(totalPrims);
     std::vector<int> indices(static_cast<std::size_t>(n));
     std::iota(indices.begin(), indices.end(), 0);
 
@@ -235,12 +214,12 @@ void BVH::build(const std::vector<Sphere>& spheres, const std::vector<Triangle>&
 
     nodes.clear();
     nodes.reserve(static_cast<std::size_t>(tree[treeRoot].subtreeSize));
-    root = flatten(treeRoot, tree, primRefs, -1);
+    root = flatten(treeRoot, tree, triangleIndices, -1);
 
     Log::info("BVH: {} nodes", nodes.size());
 }
 
-int BVH::flatten(int nodeIndex, const std::vector<Node>& tree, const std::vector<PrimitiveRef>& primRefs, int nextAfterSubtree) {
+int BVH::flatten(int nodeIndex, const std::vector<Node>& tree, const std::vector<int>& triangleIndices, int nextAfterSubtree) {
     if (nodeIndex < 0) {
         return nextAfterSubtree;
     }
@@ -249,10 +228,10 @@ int BVH::flatten(int nodeIndex, const std::vector<Node>& tree, const std::vector
     int         currentIndex = static_cast<int>(nodes.size());
     nodes.emplace_back();
 
-    // Leaf node — meta: x=-1, y=primType, z=primIndex, w=skip
+    // Leaf node — meta: x=-1, y=0 (reserved), z=triangleIndex, w=skip
     if (node.isLeaf()) {
-        const auto& ref = primRefs[node.primitiveIndex];
-        nodes[currentIndex] = {glm::vec4(node.aabb.min, 0.0f), glm::vec4(node.aabb.max, 0.0f), glm::ivec4(-1, ref.type, ref.index, nextAfterSubtree)};
+        const int triIdx = triangleIndices[node.primitiveIndex];
+        nodes[currentIndex] = {glm::vec4(node.aabb.min, 0.0f), glm::vec4(node.aabb.max, 0.0f), glm::ivec4(-1, 0, triIdx, nextAfterSubtree)};
         return currentIndex;
     }
 
@@ -261,8 +240,8 @@ int BVH::flatten(int nodeIndex, const std::vector<Node>& tree, const std::vector
     const int leftSubtreeSize = tree[node.left].subtreeSize;
     const int rightStart = currentIndex + 1 + leftSubtreeSize;
 
-    int leftFlat = flatten(node.left, tree, primRefs, rightStart);
-    int rightFlat = flatten(node.right, tree, primRefs, nextAfterSubtree);
+    int leftFlat = flatten(node.left, tree, triangleIndices, rightStart);
+    int rightFlat = flatten(node.right, tree, triangleIndices, nextAfterSubtree);
 
     assert(leftFlat == currentIndex + 1);
     assert(rightFlat == rightStart);

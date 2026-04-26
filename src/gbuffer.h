@@ -4,7 +4,7 @@
 #include "texture.h"
 
 // Raster primary-visibility pass writes into these targets each frame.
-// The path tracer will later sample them in place of casting primary rays.
+// The path tracer samples them in place of casting primary rays.
 class GBuffer
 {
 public:
@@ -12,14 +12,11 @@ public:
     // the debug blit, and the consumer (path tracer) can't drift.
     static constexpr int ATTACH_POS_MATID = 0;
     static constexpr int ATTACH_NORMAL = 1;
-    static constexpr int ATTACH_MOTION = 2;
 
     // xyz = world-space hit position, w = floatBitsToUint(material_index)
     Texture pos_matid;
     // xyz = world-space surface normal (normalized)
     Texture normal;
-    // rg  = screen-space motion vector in NDC units (unused in phase 1)
-    Texture motion;
     // hardware depth — enables depth test during the raster pass
     Texture depth;
 

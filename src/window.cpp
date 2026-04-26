@@ -8,7 +8,7 @@ static void glfwErrorCallback(int error, const char* description) {
     Log::error("GLFW {}: {}", error, description);
 }
 
-static constexpr const char* kAppId = "main";
+static constexpr const char* appId = "main";
 
 // Hyprland (and most tiling Wayland compositors) will tile any toplevel by default,
 // overriding the size requested at creation. If we're inside a Hyprland session,
@@ -19,7 +19,7 @@ static void requestFloatingOnHyprland(int width, int height) {
     if (!std::getenv("HYPRLAND_INSTANCE_SIGNATURE")) {
         return;
     }
-    const std::string klass = std::string("^(") + kAppId + ")$";
+    const std::string klass = std::string("^(") + appId + ")$";
     const std::string floatRule = "hyprctl keyword windowrulev2 'float, class:" + klass + "' >/dev/null 2>&1";
     const std::string sizeRule =
         "hyprctl keyword windowrulev2 'size " + std::to_string(width) + " " + std::to_string(height) + ", class:" + klass + "' >/dev/null 2>&1";
@@ -47,10 +47,10 @@ Window::Window(int width, int height, std::string_view title) : width(width), he
 #endif
 
     // Cross-platform: these hints are no-ops on platforms where the backend doesn't match.
-    glfwWindowHintString(GLFW_X11_CLASS_NAME, kAppId);
-    glfwWindowHintString(GLFW_X11_INSTANCE_NAME, kAppId);
+    glfwWindowHintString(GLFW_X11_CLASS_NAME, appId);
+    glfwWindowHintString(GLFW_X11_INSTANCE_NAME, appId);
 #ifdef GLFW_WAYLAND_APP_ID
-    glfwWindowHintString(GLFW_WAYLAND_APP_ID, kAppId);
+    glfwWindowHintString(GLFW_WAYLAND_APP_ID, appId);
 #endif
 
     requestFloatingOnHyprland(width, height);
@@ -112,7 +112,6 @@ InputState Window::pollInput(const KeyMappings& keys) const {
         .lookDown = pressed(keys.lookDown),
         .debugGBufferNormal = pressed(keys.debugGBufferNormal),
         .debugGBufferPosition = pressed(keys.debugGBufferPosition),
-        .debugGBufferMotion = pressed(keys.debugGBufferMotion),
     };
 
     return inputState;
@@ -120,4 +119,8 @@ InputState Window::pollInput(const KeyMappings& keys) const {
 
 void Window::getFrameBufferSize() {
     glfwGetFramebufferSize(window, &width, &height);
+}
+
+void Window::setTitle(const std::string& newTitle) {
+    glfwSetWindowTitle(window, newTitle.c_str());
 }

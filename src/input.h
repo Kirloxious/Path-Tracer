@@ -18,5 +18,4 @@ struct InputState
     // Debug visualizations — show G-buffer attachments instead of the final image.
     bool debugGBufferNormal = false;
     bool debugGBufferPosition = false;
-    bool debugGBufferMotion = false;
 };

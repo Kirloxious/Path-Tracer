@@ -54,10 +54,28 @@ void drawPerformance(const FPSTimer& fps, const GPUTimer& gpu) {
     ImGui::PlotLines("##compute", gpu.historyData(), GPUTimer::HISTORY, gpu.historyOffsetIndex(), nullptr, 0.0f, 33.33f, plotSize);
 }
 
+void drawSceneSwitcher(const std::vector<SceneEntry>& entries, SceneSwitchState& state) {
+    if (entries.empty()) {
+        return;
+    }
+
+    std::vector<const char*> names;
+    names.reserve(entries.size());
+    for (const auto& e : entries) {
+        names.push_back(e.name.c_str());
+    }
+
+    ImGui::SetNextItemWidth(180.0f);
+    int displayIdx = (state.requested >= 0) ? state.requested : state.current;
+    if (ImGui::Combo("Scene", &displayIdx, names.data(), static_cast<int>(names.size()))) {
+        if (displayIdx != state.current) {
+            state.requested = displayIdx;
+        }
+    }
+}
+
 void drawScene(const Scene& scene) {
-    ImGui::Text("Scene      %s", scene.name.c_str());
     ImGui::Text("Triangles  %zu", scene.world.triangles.size());
-    ImGui::Text("Spheres    %zu", scene.world.spheres.size());
 }
 
 void drawCamera(const Camera& camera) {
@@ -69,7 +87,8 @@ void drawCamera(const Camera& camera) {
     ImGui::Text("FOV        %6.1f", camera.settings.vfov);
 }
 
-void drawStats(const FPSTimer& fps, const GPUTimer& gpu, const Scene& scene, const Camera& camera) {
+void drawStats(const FPSTimer& fps, const GPUTimer& gpu, const Scene& scene, const Camera& camera, const std::vector<SceneEntry>& sceneEntries,
+               SceneSwitchState& sceneSwitch) {
     const float          pad = 10.0f;
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + pad, vp->WorkPos.y + pad), ImGuiCond_Always);
@@ -84,6 +103,7 @@ void drawStats(const FPSTimer& fps, const GPUTimer& gpu, const Scene& scene, con
     if (ImGui::Begin("##perf-overlay", nullptr, flags)) {
         drawPerformance(fps, gpu);
         ImGui::Separator();
+        drawSceneSwitcher(sceneEntries, sceneSwitch);
         drawScene(scene);
         ImGui::Separator();
         drawCamera(camera);

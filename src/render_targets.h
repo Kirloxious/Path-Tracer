@@ -9,10 +9,10 @@ struct RenderTargets
 {
     static constexpr int WORK_GROUP_SIZE = 8;
 
-    Texture accum;
-    Texture normals;
-    Texture denoised_ping;
-    Texture display;
+    Texture accum;         // path tracer output — single-frame noisy sample
+    Texture normals;       // primary normals + material type, consumed by the denoiser
+    Texture denoised_ping; // A-Trous ping-pong
+    Texture display;       // final image blitted to the swap chain
 
     GBuffer gbuf;
 

@@ -113,21 +113,25 @@ Scene Scene::SphereWorld() {
     w.addSphere(glm::vec3(0.0f, -1000.0f, 0.0f), 1000.0f, ground);
     w.addSphere(glm::vec3(0.0f, 100.0f, 50.0f), 30.0f, Material::Emissive(glm::vec3(1.0f), glm::vec3(4.0f)));
 
+    // Tiny radius-0.2 spheres are mostly sub-pixel — drop tessellation to 4x6
+    // (16 tris each) instead of the 224-tri default to keep the BVH manageable.
+    constexpr int tinyLat = 4;
+    constexpr int tinyLon = 6;
     for (int a = -11; a < 11; a++) {
         for (int b = -11; b < 11; b++) {
             float     choose_mat = randomFloat();
             glm::vec3 center = glm::vec3(a + 0.9f * randomFloat(), 0.2f, b + 0.9f * randomFloat());
             if (choose_mat < 0.8f) {
                 glm::vec3 color = glm::vec3(randomFloat(), randomFloat(), randomFloat());
-                w.addSphere(center, 0.2f, Material::Lambertian(color));
+                w.addSphere(center, 0.2f, Material::Lambertian(color), tinyLat, tinyLon);
             } else if (choose_mat < 0.95f) {
                 glm::vec3 color = glm::vec3(randomFloat(), randomFloat(), randomFloat());
                 float     fuzz = 0.5f * randomFloat();
-                w.addSphere(center, 0.2f, Material::Metal(color, fuzz));
+                w.addSphere(center, 0.2f, Material::Metal(color, fuzz), tinyLat, tinyLon);
             } else if (choose_mat < 0.99f) {
-                w.addSphere(center, 0.2f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(4.0f, 6.0f, 2.0f)));
+                w.addSphere(center, 0.2f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(4.0f, 6.0f, 2.0f)), tinyLat, tinyLon);
             } else {
-                w.addSphere(center, 0.2f, Material::Dielectric(1.5f));
+                w.addSphere(center, 0.2f, Material::Dielectric(1.5f), tinyLat, tinyLon);
             }
         }
     }
@@ -191,6 +195,10 @@ Scene Scene::Showcase() {
     return scene;
 }
 
-std::vector<Scene> Scene::all() {
-    return {CornellBox(), SphereWorld(), Showcase()};
+std::vector<SceneEntry> sceneRegistry() {
+    return {
+        {"Cornell Box", &Scene::CornellBox},
+        {"Sphere World", &Scene::SphereWorld},
+        {"Showcase", &Scene::Showcase},
+    };
 }

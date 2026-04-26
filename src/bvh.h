@@ -38,22 +38,14 @@ struct AABB
 };
 
 [[nodiscard]] AABB surroundingBox(const AABB& a, const AABB& b);
-[[nodiscard]] AABB computeAABB(const Sphere& s);
 [[nodiscard]] AABB computeAABB(const Triangle& t);
-[[nodiscard]] AABB computeAABB(const Quad& q);
-
-struct PrimitiveRef
-{
-    int type;  // 0 = sphere, 1 = triangle
-    int index; // index into the respective array
-};
 
 struct alignas(16) BVHNodeFlat
 {
     glm::vec4  aabbMin; // .xyz = min
     glm::vec4  aabbMax; // .xyz = max
-    glm::ivec4 meta;    // interior: .x = left, .y = right,                     .z = -1,        .w = skip
-                        // leaf:     .x = -1,   .y = primType (0=sphere,1=tri), .z = primIndex, .w = skip
+    glm::ivec4 meta;    // interior: .x = left, .y = right, .z = -1,         .w = skip
+                        // leaf:     .x = -1,   .y = 0,     .z = triangleIdx, .w = skip
 };
 
 class BVH
@@ -62,7 +54,7 @@ public:
     std::vector<BVHNodeFlat> nodes;
     int                      root = -1;
 
-    void build(const std::vector<Sphere>& spheres, const std::vector<Triangle>& triangles = {});
+    void build(const std::vector<Triangle>& triangles);
 
 private:
     struct Node
@@ -87,5 +79,5 @@ private:
     [[nodiscard]] static int buildR(std::vector<Node>& tree, std::atomic<int>& nextSlot, const std::vector<AABB>& aabbs,
                                     const std::vector<glm::vec3>& centroids, int* begin, int* end);
 
-    [[nodiscard]] int flatten(int nodeIndex, const std::vector<Node>& tree, const std::vector<PrimitiveRef>& primRefs, int nextAfterSubtree);
+    [[nodiscard]] int flatten(int nodeIndex, const std::vector<Node>& tree, const std::vector<int>& triangleIndices, int nextAfterSubtree);
 };
