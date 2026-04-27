@@ -47,14 +47,26 @@ struct HitRecord
 
 struct Triangle
 {
-    vec3 v0;
-    float area;            // 0.5 * |e1 x e2|, precomputed on CPU
-    vec3 e1;               // v1 - v0
-    vec3 e2;               // v2 - v0
-    uint material_index;
-    vec3 n0;               // vertex normal at v0
-    vec3 n1;               // vertex normal at v1
-    vec3 n2;               // vertex normal at v2
+    uvec3 indices;          // into vertices[]
+    uint  material_index;
+    vec3  e1;               // v1 - v0
+    float area;             // 0.5 * |e1 x e2|, precomputed on CPU
+    vec3  e2;               // v2 - v0
+    float cdf_in_group;     // emissive: cumulative-area CDF within group; 1.0 at last; 0.0 elsewhere
+};
+
+struct LightGroup
+{
+    int   begin;
+    int   count;
+    float total_area;
+    float _pad;
+};
+
+struct Vertex
+{
+    vec3 position;
+    vec3 normal;
 };
 
 struct Material
@@ -78,9 +90,9 @@ struct BVHNodeFlat
 // Buffers
 //=============================================================================
 
-// (begin_triangle_index, triangle_count) — one entry per source emissive primitive.
+// One entry per source emissive primitive.
 layout(std430, binding = 0) readonly buffer LightGroupsBuffer {
-    ivec2 light_groups[];
+    LightGroup light_groups[];
 };
 
 layout(std430, binding = 1) readonly buffer MatsBuffer {
@@ -103,6 +115,10 @@ layout(std430, binding = 3) readonly buffer BVHBuffer {
 
 layout(std430, binding = 4) readonly buffer TrianglesBuffer {
     Triangle triangles[];
+};
+
+layout(std430, binding = 5) readonly buffer VerticesBuffer {
+    Vertex vertices[];
 };
 
 //=============================================================================
@@ -248,8 +264,9 @@ bool hit_triangle(in Ray r, in Triangle tri, float ray_tmin, float ray_tmax, ino
         return false;
     }
 
+    vec3 v0 = vertices[tri.indices.x].position;
     float f = 1.0 / a;
-    vec3 s = r.origin - tri.v0;
+    vec3 s = r.origin - v0;
     float u = f * dot(s, h);
 
     if (u < 0.0 || u > 1.0) {
@@ -272,7 +289,10 @@ bool hit_triangle(in Ray r, in Triangle tri, float ray_tmin, float ray_tmax, ino
     hit_rec.t = t;
     hit_rec.point = r.origin + t * r.direction;
     // Interpolate vertex normals using barycentric coords (u, v)
-    hit_rec.normal = normalize((1.0 - u - v) * tri.n0 + u * tri.n1 + v * tri.n2);
+    vec3 n0 = vertices[tri.indices.x].normal;
+    vec3 n1 = vertices[tri.indices.y].normal;
+    vec3 n2 = vertices[tri.indices.z].normal;
+    hit_rec.normal = normalize((1.0 - u - v) * n0 + u * n1 + v * n2);
     hit_rec.mat_index = tri.material_index;
     set_face_normal(r, hit_rec.normal, hit_rec);
 
@@ -288,8 +308,9 @@ bool hit_triangle_any(in Ray r, in Triangle tri, float ray_tmin, float ray_tmax)
         return false;
     }
 
+    vec3 v0 = vertices[tri.indices.x].position;
     float f = 1.0 / a;
-    vec3 s = r.origin - tri.v0;
+    vec3 s = r.origin - v0;
     float u = f * dot(s, h);
 
     if (u < 0.0 || u > 1.0) {
@@ -476,25 +497,56 @@ vec2 sample_triangle_bary(inout uint state) {
     return vec2(u * (1.0 - r2), u * r2);
 }
 
-// Solid-angle pdf at receiver point p of an area sample on `tri`.
-// Returns 0 when the light face is back-facing relative to the shadow ray
-// (the sample contributes no radiance in that direction).
-// Uses precomputed `tri.area` to skip the length() of `cross(e1, e2)`.
-float triangle_light_pdf(in Triangle tri, in vec3 p, in vec3 sample_point, in vec3 light_dir) {
-    if (tri.area <= 0.0) {
+// Solid-angle pdf at receiver `p` of an area sample on `tri`, treating the whole light
+// group (of which `tri` is one face) as a single uniform area light of total surface area
+// `group_total_area`. Returns 0 when the light face at this triangle is back-facing.
+//
+// Derivation: prob of picking this triangle in NEE = tri.area / total_area; prob of point
+// given triangle = 1 / tri.area; so area-domain pdf = 1 / total_area. Solid-angle pdf =
+// dist^2 / (cos_theta_light * total_area), with cos_theta_light = -dot(unit_n, light_dir)
+// and unit_n = cross(e1, e2) / (2 * tri.area). Folding in |cross| = 2 * tri.area gives
+// the closed form below.
+float light_group_pdf(in Triangle tri, in vec3 p, in vec3 sample_point, in vec3 light_dir, in float group_total_area) {
+    if (group_total_area <= 0.0 || tri.area <= 0.0) {
         return 0.0;
     }
 
-    // |cross(e1, e2)| = 2 * area, so dot(cross(e1,e2), light_dir) / (2*area) = dot(unit_n, light_dir).
     float cross_dot = dot(cross(tri.e1, tri.e2), light_dir);
     if (cross_dot >= 0.0) {
-        return 0.0; // light face is back-facing
+        return 0.0; // back-facing
     }
 
-    // pdf = dist^2 / (cos_theta_light * area), with cos_theta_light = -cross_dot / (2 * area).
-    // Simplifies to -2 * dist^2 / cross_dot.
     vec3 d = sample_point - p;
-    return -2.0 * dot(d, d) / cross_dot;
+    return -2.0 * tri.area * dot(d, d) / (cross_dot * group_total_area);
+}
+
+// Area-weighted triangle pick within a light group via binary search on cdf_in_group.
+// Random `r` is in [0, 1); the last triangle's CDF is anchored at 1.0 on the CPU so the
+// search always lands inside the group.
+int sample_triangle_in_group(in LightGroup group, in float r) {
+    int lo = group.begin;
+    int hi = group.begin + group.count - 1;
+    while (lo < hi) {
+        int mid = (lo + hi) >> 1;
+        if (triangles[mid].cdf_in_group < r) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo;
+}
+
+// Linear scan over groups (typically <10) to find which group owns `tri_idx`.
+// Returns -1 if not found (i.e. the hit triangle is not emissive).
+int find_owning_group(in int tri_idx) {
+    for (int g = 0; g < num_light_groups; ++g) {
+        LightGroup grp = light_groups[g];
+        if (tri_idx >= grp.begin && tri_idx < grp.begin + grp.count) {
+            return g;
+        }
+    }
+    return -1;
 }
 
 //=============================================================================
@@ -552,32 +604,33 @@ vec3 ray_color_mis_from_surface(in vec3 P, in vec3 N, in uint matid, in vec3 vie
         if (scatter(state, current_ray, hit_rec, mat_color, scattered, mat)) {
             bool is_delta = (mat.type == MAT_METAL || mat.type == MAT_DIELECTRIC);
 
-            // NEE: pick a light group (one per source emissive primitive), then a triangle
-            // within it. The combined area-pdf factor is (num_groups * group.count).
+            // NEE: pick a light group (one per source emissive primitive), area-weighted
+            // pick a triangle within the group, then a uniform point on it. The whole
+            // group is treated as one uniform area light of surface area `total_area`.
             if (num_light_groups > 0 && !is_delta) {
                 int group_i = int(random_unilateral(state) * float(num_light_groups));
-                ivec2 group = light_groups[group_i];
-                int t_in_group = int(random_unilateral(state) * float(group.y));
-                int light_i = group.x + t_in_group;
+                LightGroup group = light_groups[group_i];
 
+                int light_i = sample_triangle_in_group(group, random_unilateral(state));
                 Triangle light_tri = triangles[light_i];
 
                 vec2 bary = sample_triangle_bary(state);
-                vec3 sample_point = light_tri.v0 + bary.x * light_tri.e1 + bary.y * light_tri.e2;
+                vec3 light_v0 = vertices[light_tri.indices.x].position;
+                vec3 sample_point = light_v0 + bary.x * light_tri.e1 + bary.y * light_tri.e2;
 
                 vec3 d = sample_point - hit_rec.point;
                 float inv_dist = inversesqrt(dot(d, d));
                 vec3 light_dir = d * inv_dist;
 
-                float light_pdf_tri = triangle_light_pdf(light_tri, hit_rec.point, sample_point, light_dir);
+                float light_pdf_group = light_group_pdf(light_tri, hit_rec.point, sample_point, light_dir, group.total_area);
 
-                if (light_pdf_tri > 0.0 && is_visible(hit_rec.point, sample_point)) {
+                if (light_pdf_group > 0.0 && is_visible(hit_rec.point, sample_point)) {
                     Material light_mat = mats[light_tri.material_index];
                     float bsdf_pdf = scatter_pdf(mat, hit_rec.normal, light_dir);
                     float cos_theta = max(0.0, dot(hit_rec.normal, light_dir));
 
-                    // Combined NEE pdf in solid angle: light_pdf_tri / (num_groups * group.count).
-                    float light_pdf_combined = light_pdf_tri / float(num_light_groups * group.y);
+                    // Combined NEE pdf factors in 1/num_groups for the group pick.
+                    float light_pdf_combined = light_pdf_group / float(num_light_groups);
                     float weight = mis_weight(light_pdf_combined, bsdf_pdf);
 
                     // Lambertian BRDF = mat_color / PI.
@@ -604,22 +657,13 @@ vec3 ray_color_mis_from_surface(in vec3 P, in vec3 N, in uint matid, in vec3 vie
             float bsdf_weight = 1.0;
 
             if (!prev_specular && num_light_groups > 0) {
-                // Find which group owns this triangle (small linear scan — num_light_groups
-                // is one per source emissive primitive, typically <10).
-                int group_count = 0;
-                for (int g = 0; g < num_light_groups; ++g) {
-                    ivec2 grp = light_groups[g];
-                    if (int(hit_rec.triangle_index) >= grp.x && int(hit_rec.triangle_index) < grp.x + grp.y) {
-                        group_count = grp.y;
-                        break;
-                    }
-                }
-
-                if (group_count > 0) {
+                int group_i = find_owning_group(int(hit_rec.triangle_index));
+                if (group_i >= 0) {
+                    LightGroup grp = light_groups[group_i];
                     Triangle hit_light = triangles[hit_rec.triangle_index];
-                    float light_pdf_tri = triangle_light_pdf(hit_light, current_ray.origin, hit_rec.point, current_ray.direction);
-                    if (light_pdf_tri > 0.0) {
-                        float light_pdf_combined = light_pdf_tri / float(num_light_groups * group_count);
+                    float light_pdf_group = light_group_pdf(hit_light, current_ray.origin, hit_rec.point, current_ray.direction, grp.total_area);
+                    if (light_pdf_group > 0.0) {
+                        float light_pdf_combined = light_pdf_group / float(num_light_groups);
                         bsdf_weight = mis_weight(prev_bsdf_pdf, light_pdf_combined);
                     }
                 }

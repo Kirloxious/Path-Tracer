@@ -38,7 +38,7 @@ struct AABB
 };
 
 [[nodiscard]] AABB surroundingBox(const AABB& a, const AABB& b);
-[[nodiscard]] AABB computeAABB(const Triangle& t);
+[[nodiscard]] AABB computeAABB(const Triangle& t, const std::vector<Vertex>& vertices);
 
 struct alignas(16) BVHNodeFlat
 {
@@ -54,7 +54,7 @@ public:
     std::vector<BVHNodeFlat> nodes;
     int                      root = -1;
 
-    void build(const std::vector<Triangle>& triangles);
+    void build(const std::vector<Triangle>& triangles, const std::vector<Vertex>& vertices);
 
 private:
     struct Node

@@ -14,12 +14,13 @@ namespace {
 constexpr int PAR_THRESHOLD = 16384;
 } // namespace
 
-AABB computeAABB(const Triangle& t) {
-    glm::vec3 v1 = t.v0 + t.e1;
-    glm::vec3 v2 = t.v0 + t.e2;
-    AABB      aabb{};
-    aabb.min = glm::min(glm::min(t.v0, v1), v2);
-    aabb.max = glm::max(glm::max(t.v0, v1), v2);
+AABB computeAABB(const Triangle& t, const std::vector<Vertex>& vertices) {
+    const glm::vec3& p0 = vertices[t.indices.x].position;
+    const glm::vec3& p1 = vertices[t.indices.y].position;
+    const glm::vec3& p2 = vertices[t.indices.z].position;
+    AABB             aabb{};
+    aabb.min = glm::min(glm::min(p0, p1), p2);
+    aabb.max = glm::max(glm::max(p0, p1), p2);
     aabb.pad();
     return aabb;
 }
@@ -182,7 +183,7 @@ int BVH::buildR(std::vector<Node>& tree, std::atomic<int>& nextSlot, const std::
     return idx;
 }
 
-void BVH::build(const std::vector<Triangle>& triangles) {
+void BVH::build(const std::vector<Triangle>& triangles, const std::vector<Vertex>& vertices) {
     assert(!triangles.empty());
 
     const int n = static_cast<int>(triangles.size());
@@ -195,7 +196,7 @@ void BVH::build(const std::vector<Triangle>& triangles) {
     centroids.reserve(n);
 
     for (int i = 0; i < n; ++i) {
-        aabbs.push_back(computeAABB(triangles[i]));
+        aabbs.push_back(computeAABB(triangles[i], vertices));
         centroids.push_back(aabbs.back().center());
         triangleIndices[i] = i;
     }

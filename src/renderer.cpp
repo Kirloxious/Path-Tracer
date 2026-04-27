@@ -19,6 +19,7 @@ void Renderer::loadScene(const Scene& scene, const Camera& camera) {
     camUBO = Buffer(GL_UNIFORM_BUFFER, 2, camera.data, GL_DYNAMIC_DRAW);
     bvhNodesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 3, scene.world.bvh.nodes, GL_STREAM_COPY);
     trianglesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 4, scene.world.triangles, GL_STREAM_COPY);
+    verticesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 5, scene.world.vertices, GL_STREAM_COPY);
 
     Log::info("Renderer: Buffers created");
     for (auto& pass : passes) {

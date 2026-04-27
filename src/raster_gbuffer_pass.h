@@ -20,7 +20,8 @@ private:
 
     GLuint  vao = 0;
     GLuint  vbo = 0;
-    GLsizei vertexCount = 0;
+    GLuint  ebo = 0;
+    GLsizei indexCount = 0;
 
     void buildGeometry(const class World& world);
     void releaseGeometry();
