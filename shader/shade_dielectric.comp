@@ -1,0 +1,63 @@
+#version 460 core
+layout(local_size_x = 64) in;
+
+#include "common/path_state.glsl"
+#include "common/queue.glsl"
+#include "common/scene_buffers.glsl"
+#include "common/rng.glsl"
+
+layout(location = 12) uniform int bounce_index;
+layout(location = 13) uniform int max_bounces;
+
+float reflectance(float cosine, float ref_idx) {
+    cosine    = clamp(cosine, 0.0, 1.0);
+    float r0  = (1.0 - ref_idx) / (1.0 + ref_idx);
+    r0        = r0 * r0;
+    float x   = 1.0 - cosine;
+    float x2  = x * x;
+    return r0 + (1.0 - r0) * x2 * x2 * x;
+}
+
+void main() {
+    uint qid = gl_GlobalInvocationID.x;
+    if (qid >= hit_dielectric_count) return;
+    uint pid = hit_dielectric_idx[qid];
+
+    PathState s   = states[pid];
+    uint      rng = s.rng_state.x;
+
+    Material mat        = mats[s.hit_matid];
+    vec3     N          = s.hit_normal;
+    bool     front_face = (s.flags & FLAG_FRONT_FACE) != 0u;
+    float    ri         = front_face ? (1.0 / mat.refractive_index) : mat.refractive_index;
+
+    float cos_theta = clamp(dot(-s.ray_dir, N), 0.0, 1.0);
+    float sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+
+    vec3 dir;
+    if (ri * sin_theta > 1.0 || reflectance(cos_theta, ri) > random_unilateral(rng)) {
+        dir = reflect(s.ray_dir, N);
+    } else {
+        dir = refract(s.ray_dir, N, ri);
+    }
+
+    // Dielectric is colorless (mat_color = 1) — leave throughput alone.
+    s.ray_origin  = s.hit_point + 0.001 * dir;   // offset along the outgoing ray to avoid self-hit on either side
+    s.ray_dir     = dir;
+    s.bounce++;
+    s.flags      &= ~FLAG_PREV_DID_NEE;   // delta material
+
+    bool alive = true;
+    if (s.bounce > 2) {
+        float p = max(s.throughput.r, max(s.throughput.g, s.throughput.b));
+        if (p <= 0.0 || random_unilateral(rng) > p) alive = false;
+        else s.throughput /= p;
+    }
+
+    s.rng_state.x = rng;
+    states[pid]   = s;
+
+    if (alive && bounce_index + 1 < max_bounces) {
+        ray_queue_push(pid);
+    }
+}

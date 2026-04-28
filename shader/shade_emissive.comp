@@ -1,0 +1,25 @@
+#version 460 core
+layout(local_size_x = 64) in;
+
+#include "common/path_state.glsl"
+#include "common/queue.glsl"
+#include "common/scene_buffers.glsl"
+
+void main() {
+    uint qid = gl_GlobalInvocationID.x;
+    if (qid >= hit_emissive_count) return;
+    uint pid = hit_emissive_idx[qid];
+
+    PathState s = states[pid];
+
+    // If the previous bounce did NEE on a non-specular surface, we already accounted
+    // for direct illumination from this light there. Suppress to avoid double-counting.
+    bool prev_did_nee = (s.flags & FLAG_PREV_DID_NEE) != 0u;
+    if (!prev_did_nee) {
+        Material mat = mats[s.hit_matid];
+        s.radiance  += s.throughput * mat.color * mat.emission;
+    }
+
+    states[pid] = s;
+    // Path terminates at an emissive — no enqueue.
+}

@@ -1,0 +1,20 @@
+#version 460 core
+layout(local_size_x = 64) in;
+
+#include "common/path_state.glsl"
+#include "common/queue.glsl"
+#include "common/bvh_traversal.glsl"
+
+void main() {
+    uint qid = gl_GlobalInvocationID.x;
+    if (qid >= shadow_queue_count) return;
+    uint pid = shadow_queue_idx[qid];
+
+    PathState s      = states[pid];
+    vec3      origin = s.hit_point + 0.001 * s.hit_normal;
+    vec3      target = s.hit_point + s.nee_dir * s.nee_dist;
+
+    if (is_visible(origin, target)) {
+        states[pid].radiance = s.radiance + s.nee_le;
+    }
+}

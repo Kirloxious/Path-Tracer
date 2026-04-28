@@ -1,0 +1,47 @@
+#version 460 core
+layout(local_size_x = 64) in;
+
+#include "common/path_state.glsl"
+#include "common/queue.glsl"
+#include "common/scene_buffers.glsl"
+#include "common/rng.glsl"
+
+layout(location = 12) uniform int bounce_index;
+layout(location = 13) uniform int max_bounces;
+
+void main() {
+    uint qid = gl_GlobalInvocationID.x;
+    if (qid >= hit_metal_count) return;
+    uint pid = hit_metal_idx[qid];
+
+    PathState s   = states[pid];
+    uint      rng = s.rng_state.x;
+
+    Material mat       = mats[s.hit_matid];
+    vec3     N         = s.hit_normal;
+    vec3     reflected = reflect(s.ray_dir, N);
+    reflected         += mat.fuzz * random_unit_vector(rng);
+    vec3 dir           = normalize(reflected);
+
+    bool alive = dot(dir, N) > 0.0;
+    if (alive) {
+        s.throughput *= mat.color;
+        s.ray_origin  = s.hit_point + 0.001 * N;
+        s.ray_dir     = dir;
+        s.bounce++;
+        s.flags      &= ~FLAG_PREV_DID_NEE;   // delta material; emissive hit next bounce should count
+
+        if (s.bounce > 2) {
+            float p = max(s.throughput.r, max(s.throughput.g, s.throughput.b));
+            if (p <= 0.0 || random_unilateral(rng) > p) alive = false;
+            else s.throughput /= p;
+        }
+    }
+
+    s.rng_state.x = rng;
+    states[pid]   = s;
+
+    if (alive && bounce_index + 1 < max_bounces) {
+        ray_queue_push(pid);
+    }
+}

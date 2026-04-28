@@ -1,0 +1,36 @@
+#version 460 core
+layout(local_size_x = 64) in;
+
+#include "common/path_state.glsl"
+#include "common/queue.glsl"
+#include "common/bvh_traversal.glsl"
+
+void main() {
+    uint qid = gl_GlobalInvocationID.x;
+    if (qid >= ray_queue_count) return;
+    uint pid = ray_queue_idx[qid];
+
+    Ray r;
+    r.origin    = states[pid].ray_origin;
+    r.direction = states[pid].ray_dir;
+
+    HitRecord hit;
+    int       tri_index;
+    if (!world_hit_stackless(r, 0.001, 1e30, hit, tri_index)) {
+        // Miss — sky contribution is zero. Path dies (does not enqueue).
+        return;
+    }
+
+    states[pid].hit_point  = hit.point;
+    states[pid].hit_normal = hit.normal;
+    states[pid].hit_matid  = hit.mat_index;
+    states[pid].hit_t      = hit.t;
+    if (hit.front_face) states[pid].flags |=  FLAG_FRONT_FACE;
+    else                states[pid].flags &= ~FLAG_FRONT_FACE;
+
+    float t = mats[hit.mat_index].type;
+    if      (t == MAT_LAMBERTIAN) hit_lambertian_push(pid);
+    else if (t == MAT_METAL)      hit_metal_push(pid);
+    else if (t == MAT_DIELECTRIC) hit_dielectric_push(pid);
+    else                          hit_emissive_push(pid);
+}

@@ -169,6 +169,7 @@ GLuint ShaderProgram::compileStage(GLenum stage, const std::filesystem::path& pa
     }
 
     Log::info("compileStage: {} (stage = {})", path.string(), stage);
+    // Log::info("Source string: {}", source);
     const GLchar* src = source.c_str();
     GLuint        shader = glCreateShader(stage);
     glShaderSource(shader, 1, &src, nullptr);

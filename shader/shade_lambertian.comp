@@ -1,0 +1,111 @@
+#version 460 core
+layout(local_size_x = 64) in;
+
+#include "common/path_state.glsl"
+#include "common/queue.glsl"
+#include "common/scene_buffers.glsl"
+#include "common/rng.glsl"
+
+layout(location = 11) uniform int  num_light_groups;
+layout(location = 12) uniform int  bounce_index;
+layout(location = 13) uniform int  max_bounces;
+
+vec2 sample_triangle_bary(inout uint state) {
+    float r1 = random_unilateral(state);
+    float r2 = random_unilateral(state);
+    float u  = sqrt(r1);
+    return vec2(u * (1.0 - r2), u * r2);
+}
+
+void main() {
+    uint qid = gl_GlobalInvocationID.x;
+    if (qid >= hit_lambertian_count) return;
+    uint pid = hit_lambertian_idx[qid];
+
+    PathState s   = states[pid];
+    uint      rng = s.rng_state.x;
+
+    Material mat   = mats[s.hit_matid];
+    vec3     P     = s.hit_point;
+    vec3     N     = s.hit_normal;
+    vec3     albedo = mat.color;
+
+    // ---- NEE: pick a light group, then a triangle by area CDF, then a point ----
+    bool nee_setup = false;
+    if (num_light_groups > 0) {
+        int        gi   = int(random_unilateral(rng) * float(num_light_groups));
+        gi              = min(gi, num_light_groups - 1);
+        LightGroup grp  = light_groups[gi];
+
+        // Binary search the per-triangle CDF within this group.
+        int lo = grp.begin;
+        int hi = grp.begin + grp.count - 1;
+        float r = random_unilateral(rng);
+        while (lo < hi) {
+            int mid = (lo + hi) >> 1;
+            if (triangles[mid].cdf_in_group < r) lo = mid + 1;
+            else                                 hi = mid;
+        }
+        Triangle tri  = triangles[lo];
+        vec2     bary = sample_triangle_bary(rng);
+        vec3     v0   = vertices[tri.indices.x].position;
+        vec3     sp   = v0 + bary.x * tri.e1 + bary.y * tri.e2;
+
+        vec3  d        = sp - P;
+        float dist2    = dot(d, d);
+        float inv_dist = inversesqrt(dist2);
+        vec3  light_dir = d * inv_dist;
+        float dist     = dist2 * inv_dist;
+
+        // Solid-angle pdf, treating the whole group as one uniform area light.
+        float cross_dot = dot(cross(tri.e1, tri.e2), light_dir);
+        if (cross_dot < 0.0 && grp.total_area > 0.0) {
+            float light_pdf_combined = -2.0 * tri.area * dist2 / (cross_dot * grp.total_area * float(num_light_groups));
+            float cos_theta          = max(0.0, dot(N, light_dir));
+            if (cos_theta > 0.0 && light_pdf_combined > 0.0) {
+                Material lmat = mats[tri.material_index];
+                // Lambertian BRDF = albedo / π.
+                vec3 contrib = s.throughput * albedo * lmat.emission * cos_theta /
+                               (light_pdf_combined * PI);
+
+                s.nee_dir  = light_dir;
+                s.nee_dist = dist;
+                s.nee_le   = contrib;
+                nee_setup  = true;
+            }
+        }
+    }
+
+    if (nee_setup) {
+        shadow_queue_push(pid);
+    } else {
+        s.nee_le = vec3(0);
+    }
+
+    // ---- BSDF continuation: cosine-weighted hemisphere sample ----
+    // pdf = cos θ / π,  BRDF = albedo / π,  cos θ → estimator weight = albedo.
+    vec3 scatter_dir = N + random_unit_vector(rng);
+    if (dot(scatter_dir, scatter_dir) < 1e-8) scatter_dir = N;
+    scatter_dir = normalize(scatter_dir);
+
+    s.throughput *= albedo;
+    s.ray_origin  = P + 0.001 * N;
+    s.ray_dir     = scatter_dir;
+    s.bounce++;
+    s.flags      |= FLAG_PREV_DID_NEE;   // shade_emissive will skip Le on the immediate next hit
+
+    // Russian roulette after a few bounces.
+    bool alive = true;
+    if (s.bounce > 2) {
+        float p = max(s.throughput.r, max(s.throughput.g, s.throughput.b));
+        if (p <= 0.0 || random_unilateral(rng) > p) alive = false;
+        else s.throughput /= p;
+    }
+
+    s.rng_state.x = rng;
+    states[pid]   = s;
+
+    if (alive && bounce_index + 1 < max_bounces) {
+        ray_queue_push(pid);
+    }
+}

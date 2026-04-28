@@ -13,7 +13,6 @@
 #include "renderer.h"
 #include "texture.h"
 
-static const std::filesystem::path computeShaderPath = "shader/compute_shader.comp";
 static const std::filesystem::path denoiserShaderPath = "shader/denoiser.comp";
 static const std::filesystem::path gbufferVertPath = "shader/gbuffer.vert";
 static const std::filesystem::path gbufferFragPath = "shader/gbuffer.frag";
@@ -37,7 +36,7 @@ Application::Application(Scene initialScene)
 
     Log::info("Adding render passes");
     renderer.addRenderPass(std::make_unique<RasterGBufferPass>(gbufferVertPath, gbufferFragPath));
-    renderer.addRenderPass(std::make_unique<PathTracerPass>(computeShaderPath));
+    renderer.addRenderPass(std::make_unique<PathTracerPass>(camera.image_width, camera.image_height));
     renderer.addRenderPass(std::make_unique<DenoiserPass>(denoiserShaderPath));
 
     renderer.addRenderPass(std::make_unique<GuiPass>(fpsTimer, gpuTimer, sceneEntries, sceneSwitch)); // keep last

@@ -1,6 +1,10 @@
 #ifndef PATH_STATE_GLSL
 #define PATH_STATE_GLSL
 
+// Bits in PathState.flags
+const uint FLAG_FRONT_FACE   = 1u << 0;  // last hit's face was front-facing
+const uint FLAG_PREV_DID_NEE = 1u << 1;  // previous bounce sampled a light via NEE — used to suppress double-counting in shade_emissive
+
 struct PathState {
     vec3 throughput;
     uint flags;
