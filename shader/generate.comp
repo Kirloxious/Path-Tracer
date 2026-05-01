@@ -25,7 +25,7 @@ void main() {
     states[pid].radiance = vec3(0);
     states[pid].pixel_idx = pid;
     states[pid].bounce = 0;
-    states[pid].rng_state = init_rng(pid, frame_index);
+    states[pid].rng_state = init_rng(pid, frame_index, uint(time));
     states[pid].flags = FLAG_FRONT_FACE; // raster pass renders front faces only
 
     // Sky test: gbuffer normal of length zero means no primitive was rasterized.

@@ -36,6 +36,7 @@ private:
     std::vector<SceneEntry> sceneEntries;
     Gui::SceneSwitchState   sceneSwitch;
 
-    uint32_t timeSeed = 0;
+    // Seeded from system time at construction so different runs don't share frame-1 noise.
+    uint32_t timeSeed;
     int      frameIndex = 0;
 };

@@ -5,21 +5,60 @@ layout(local_size_x = 64) in;
 #include "common/queue.glsl"
 #include "common/scene_buffers.glsl"
 
+layout(location = 11) uniform int num_light_groups;
+
+// Linear scan over light groups (typically <10) to find which group owns `tri_idx`.
+int find_owning_group(int tri_idx) {
+    for (int g = 0; g < num_light_groups; ++g) {
+        LightGroup grp = light_groups[g];
+        if (tri_idx >= grp.begin && tri_idx < grp.begin + grp.count) {
+            return g;
+        }
+    }
+    return -1;
+}
+
+// Solid-angle pdf at receiver `p` for a sample on `tri`, treating its whole light group
+// as one uniform area light of total surface area `total_area`. Returns 0 if the light
+// face is back-facing or geometry is degenerate. Mirrors the pdf used by shade_lambertian.
+float light_group_pdf(in Triangle tri, in vec3 receiver, in vec3 sample_point, in vec3 light_dir, in float total_area) {
+    if (total_area <= 0.0 || tri.area <= 0.0) return 0.0;
+    float cross_dot = dot(cross(tri.e1, tri.e2), light_dir);
+    if (cross_dot >= 0.0) return 0.0;   // back-facing
+    vec3  d = sample_point - receiver;
+    return -2.0 * tri.area * dot(d, d) / (cross_dot * total_area);
+}
+
 void main() {
     uint qid = gl_GlobalInvocationID.x;
     if (qid >= hit_emissive_count) return;
     uint pid = hit_emissive_idx[qid];
 
-    PathState s = states[pid];
+    PathState s        = states[pid];
+    Material  mat      = mats[s.hit_matid];
+    bool      prev_non_specular = (s.flags & FLAG_PREV_NON_SPECULAR) != 0u;
+    bool      is_primary = (s.bounce == 0u);
 
-    // If the previous bounce did NEE on a non-specular surface, we already accounted
-    // for direct illumination from this light there. Suppress to avoid double-counting.
-    bool prev_did_nee = (s.flags & FLAG_PREV_DID_NEE) != 0u;
-    if (!prev_did_nee) {
-        Material mat = mats[s.hit_matid];
-        s.radiance  += s.throughput * mat.color * mat.emission;
+    // MIS weight for the BSDF estimator. Primary hits and specular continuations have no
+    // competing NEE estimator (delta pdfs / camera ray), so weight = 1. For non-specular
+    // continuations, the previous bounce's NEE could have sampled this light too; weight
+    // by the balance heuristic so the NEE + BSDF pair sums to 1.
+    float weight = 1.0;
+    if (!is_primary && prev_non_specular && num_light_groups > 0) {
+        int gi = find_owning_group(int(s.hit_triangle_idx));
+        if (gi >= 0) {
+            LightGroup grp = light_groups[gi];
+            // Reconstruct the light_dir at the previous bounce — it's just the continuation ray's direction.
+            vec3  light_dir_prev = s.ray_dir;
+            float light_pdf_combined = light_group_pdf(triangles[s.hit_triangle_idx], s.ray_origin, s.hit_point, light_dir_prev, grp.total_area)
+                                       / float(num_light_groups);
+            if (light_pdf_combined > 0.0 && (s.pdf_bsdf + light_pdf_combined) > 0.0) {
+                weight = s.pdf_bsdf / (s.pdf_bsdf + light_pdf_combined);
+            }
+        }
     }
 
+    s.radiance += s.throughput * mat.color * mat.emission * weight;
     states[pid] = s;
     // Path terminates at an emissive — no enqueue.
 }

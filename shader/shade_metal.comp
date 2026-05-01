@@ -29,7 +29,7 @@ void main() {
         s.ray_origin  = s.hit_point + 0.001 * N;
         s.ray_dir     = dir;
         s.bounce++;
-        s.flags      &= ~FLAG_PREV_DID_NEE;   // delta material; emissive hit next bounce should count
+        s.flags      &= ~FLAG_PREV_NON_SPECULAR;   // specular bounce — emissive hit next gets full Le (no MIS weighting)
 
         if (s.bounce > 2) {
             float p = max(s.throughput.r, max(s.throughput.g, s.throughput.b));

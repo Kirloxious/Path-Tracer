@@ -23,9 +23,40 @@ Camera::Camera(const CameraSettings& settings)
     yaw = glm::degrees(std::atan2(forward.z, forward.x));
 
     data.view = glm::lookAt(settings.lookfrom, settings.lookat, settings.vup);
-    data.projection = glm::perspective(glm::radians(settings.vfov), settings.aspect_ratio, 0.1f, 1000.0f);
+    baseProjection = glm::perspective(glm::radians(settings.vfov), settings.aspect_ratio, 0.1f, 1000.0f);
+    data.projection = baseProjection;
     data.inv_view = glm::inverse(data.view);
     data.inv_projection = glm::inverse(data.projection);
+}
+
+namespace {
+// Standard Halton low-discrepancy sequence. Index 0 returns 0, so callers should pass frameIndex+1.
+float halton(int index, int base) {
+    float f      = 1.0f;
+    float result = 0.0f;
+    while (index > 0) {
+        f /= static_cast<float>(base);
+        result += f * static_cast<float>(index % base);
+        index /= base;
+    }
+    return result;
+}
+} // namespace
+
+void Camera::applyJitter(int frameIndex) {
+    // Halton(2, 3) ∈ [0, 1)² → centered on the pixel ∈ [-0.5, 0.5)².
+    const float jx_pix = halton(frameIndex + 1, 2) - 0.5f;
+    const float jy_pix = halton(frameIndex + 1, 3) - 0.5f;
+
+    // Convert pixel offset to NDC. NDC spans [-1, 1] = 2 units across `image_width` pixels.
+    const float jx = jx_pix * 2.0f / static_cast<float>(image_width);
+    const float jy = jy_pix * 2.0f / static_cast<float>(image_height);
+
+    // Pre-multiplying by translate(jx, jy, 0) shifts post-projection clip-space by
+    // (jx*w, jy*w, 0), which after w-divide is exactly an NDC offset of (jx, jy).
+    const glm::mat4 jitterMat = glm::translate(glm::mat4(1.0f), glm::vec3(jx, jy, 0.0f));
+    data.projection           = jitterMat * baseProjection;
+    data.inv_projection       = glm::inverse(data.projection);
 }
 
 Camera& Camera::update(const InputState& input, float dt) {

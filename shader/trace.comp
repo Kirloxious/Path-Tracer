@@ -21,10 +21,11 @@ void main() {
         return;
     }
 
-    states[pid].hit_point  = hit.point;
-    states[pid].hit_normal = hit.normal;
-    states[pid].hit_matid  = hit.mat_index;
-    states[pid].hit_t      = hit.t;
+    states[pid].hit_point         = hit.point;
+    states[pid].hit_normal        = hit.normal;
+    states[pid].hit_matid         = hit.mat_index;
+    states[pid].hit_t             = hit.t;
+    states[pid].hit_triangle_idx  = uint(tri_index);
     if (hit.front_face) states[pid].flags |=  FLAG_FRONT_FACE;
     else                states[pid].flags &= ~FLAG_FRONT_FACE;
 

@@ -74,6 +74,9 @@ void PathTracerPass::uploadUniforms(const RenderContext& ctx) {
     shadeLambertian.setInt("num_light_groups", numLightGroups);
     shadeLambertian.setInt("max_bounces", maxBounces);
 
+    shadeEmissive.use();
+    shadeEmissive.setInt("num_light_groups", numLightGroups);
+
     shadeMetal.use();
     shadeMetal.setInt("max_bounces", maxBounces);
 
@@ -111,6 +114,7 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     generate.use();
     glUniform2i(glGetUniformLocation(generate.ID, "image_size"), width, height);
     generate.setInt("frame_index", ctx.frameIndex);
+    generate.setInt("time", static_cast<int>(ctx.timeSeed));
     glDispatchCompute(numWorkGroupsX_8x8, numWorkGroupsY_8x8, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 

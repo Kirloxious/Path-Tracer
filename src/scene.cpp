@@ -11,7 +11,7 @@ Scene Scene::CornellBox() {
 
     scene.cameraSettings.aspect_ratio = 16.0f / 9.0f;
     scene.cameraSettings.image_width = 1200;
-    scene.cameraSettings.max_bounces = 16;
+    scene.cameraSettings.max_bounces = 32;
     scene.cameraSettings.samples_per_pixel = 4;
     scene.cameraSettings.vfov = 40.0f;
     scene.cameraSettings.lookfrom = glm::vec3(27.75f, 27.75f, -75.0f);

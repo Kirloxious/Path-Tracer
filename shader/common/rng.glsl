@@ -9,11 +9,14 @@ const float MAT_EMISSIVE = 3.0;
 const float infinity = 1.0 / 0.0;
 const float PI = 3.14159265358979323846;
 
-// Seed an RNG state. Mixes pixel id and frame index so each pixel and frame
-// gets an independent sequence. The | 1u guarantees a non-zero seed (xorshift
-// stays at 0 if seeded with 0).
-uvec4 init_rng(uint pid, int frame_index) {
-    uint seed = (pid * 1973u + uint(frame_index) * 9277u + 1u) | 1u;
+// Seed an RNG state. Mixes pixel id, frame index, and a per-run `time` seed so
+// (a) adjacent pixels get independent sequences, (b) successive frames get
+// fresh sequences, (c) different program runs produce different patterns —
+// without (c), frame 1 looks identical every launch.
+//
+// The | 1u guarantees a non-zero seed (xorshift stays at 0 if seeded with 0).
+uvec4 init_rng(uint pid, int frame_index, uint time_seed) {
+    uint seed = (pid * 1973u + uint(frame_index) * 9277u + time_seed * 26699u + 1u) | 1u;
     return uvec4(seed, 0u, 0u, 0u);
 }
 

@@ -1,5 +1,6 @@
 #include "application.h"
 
+#include <chrono>
 #include <memory>
 
 #include "denoiser_pass.h"
@@ -19,11 +20,12 @@ static const std::filesystem::path gbufferFragPath = "shader/gbuffer.frag";
 
 Application::Application(Scene initialScene)
     : scene(std::move(initialScene)), camera(this->scene.cameraSettings), window(camera.image_width, camera.image_height, this->scene.name.c_str()),
-      renderer(camera.image_width, camera.image_height), sceneEntries(sceneRegistry()) {
+      renderer(camera.image_width, camera.image_height), sceneEntries(sceneRegistry()),
+      timeSeed(static_cast<uint32_t>(std::chrono::steady_clock::now().time_since_epoch().count())) {
     Log::info("OpenGL version: {}", reinterpret_cast<const char*>(glGetString(GL_VERSION)));
     Log::info("Image dimensions: {} x {}", camera.image_width, camera.image_height);
 
-    // GLDebug::enable();
+    GLDebug::enable();
 
     Gui::init(window);
 
@@ -53,12 +55,17 @@ int Application::run() {
         camera.update(input, fpsTimer.deltaTime);
 
         if (camera.moving) {
-            renderer.updateCameraUbo(camera);
             frameIndex = 0;
             camera.moving = false;
         }
 
         RenderContext ctx{scene, camera, ++frameIndex, timeSeed++};
+
+        // Sub-pixel jitter for AA. Re-uploads the camera UBO every frame because
+        // the projection matrix changes each frame; jitter resets implicitly when
+        // frameIndex resets after camera motion.
+        camera.applyJitter(ctx.frameIndex);
+        renderer.updateCameraUbo(camera);
         if (renderer.reloadShadersIfChanged(ctx)) {
             // Shader reloads discard the history too — the program being reloaded
             // may have changed the meaning of the data we've been accumulating.

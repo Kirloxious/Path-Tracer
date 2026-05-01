@@ -28,7 +28,7 @@ struct alignas(16) PathState
     glm::vec3  nee_dir;
     float      nee_dist;
     glm::vec3  nee_le;
-    float      _pad;
+    uint32_t   hit_triangle_idx;
 };
 static_assert(sizeof(PathState) == 144, "PathState size must match std430 layout");
 

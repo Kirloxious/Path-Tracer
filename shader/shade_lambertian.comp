@@ -64,8 +64,13 @@ void main() {
             float cos_theta          = max(0.0, dot(N, light_dir));
             if (cos_theta > 0.0 && light_pdf_combined > 0.0) {
                 Material lmat = mats[tri.material_index];
+                // BSDF pdf for the NEE direction (cosine-weighted hemisphere on a Lambertian).
+                // MIS balance heuristic: weight = pdf_light / (pdf_light + pdf_bsdf).
+                float bsdf_pdf_for_nee = cos_theta / PI;
+                float mis_weight       = light_pdf_combined / (light_pdf_combined + bsdf_pdf_for_nee);
+
                 // Lambertian BRDF = albedo / π.
-                vec3 contrib = s.throughput * albedo * lmat.emission * cos_theta /
+                vec3 contrib = s.throughput * albedo * lmat.emission * cos_theta * mis_weight /
                                (light_pdf_combined * PI);
 
                 s.nee_dir  = light_dir;
@@ -88,11 +93,13 @@ void main() {
     if (dot(scatter_dir, scatter_dir) < 1e-8) scatter_dir = N;
     scatter_dir = normalize(scatter_dir);
 
+    // Store the BSDF pdf of the continuation direction so the next emissive hit can MIS-weight Le.
+    s.pdf_bsdf    = max(0.0, dot(N, scatter_dir)) / PI;
     s.throughput *= albedo;
     s.ray_origin  = P + 0.001 * N;
     s.ray_dir     = scatter_dir;
     s.bounce++;
-    s.flags      |= FLAG_PREV_DID_NEE;   // shade_emissive will skip Le on the immediate next hit
+    s.flags      |= FLAG_PREV_NON_SPECULAR;   // emissive hit on continuation will MIS-weight Le using s.pdf_bsdf
 
     // Russian roulette after a few bounces.
     bool alive = true;

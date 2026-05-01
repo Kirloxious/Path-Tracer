@@ -52,8 +52,17 @@ public:
     // Applies one frame of input and returns *this for chaining.
     Camera& update(const InputState& input, float dt);
 
+    // Replace data.projection (and inv_projection) with a sub-pixel-jittered version,
+    // using a Halton(2, 3) sequence indexed by frameIndex. AA falls out of progressive
+    // accumulation: each frame the gbuffer samples a different sub-pixel position,
+    // and accum_image's running average smooths the resulting edges.
+    void applyJitter(int frameIndex);
+
 private:
     void translate(glm::vec3 delta);
     void updateDirectionVectors();
     void updateViewMatrix();
+
+    // Un-jittered projection, used as the base for applyJitter(). Set once at construction.
+    glm::mat4 baseProjection = glm::mat4(1.0f);
 };

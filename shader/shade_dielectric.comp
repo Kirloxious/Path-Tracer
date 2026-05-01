@@ -35,17 +35,25 @@ void main() {
     float sin_theta = sqrt(1.0 - cos_theta * cos_theta);
 
     vec3 dir;
-    if (ri * sin_theta > 1.0 || reflectance(cos_theta, ri) > random_unilateral(rng)) {
+    bool reflected_path = ri * sin_theta > 1.0 || reflectance(cos_theta, ri) > random_unilateral(rng);
+    if (reflected_path) {
         dir = reflect(s.ray_dir, N);
     } else {
         dir = refract(s.ray_dir, N, ri);
     }
 
+    // Offset along the geometric normal (N already faces the incoming ray side, since
+    // bvh_traversal flips it via set_face_normal). At grazing angles `dir` is nearly
+    // tangent to the surface, so offsetting along it leaves the new origin inside the
+    // primitive and the next trace self-hits — that's the dragon's firefly noise.
+    //   reflected:  ray bounces back into the side it came from → offset along +N
+    //   refracted:  ray crosses through into the other side     → offset along -N
+    vec3 offset_normal = reflected_path ? N : -N;
+    s.ray_origin       = s.hit_point + 0.001 * offset_normal;
+    s.ray_dir          = dir;
     // Dielectric is colorless (mat_color = 1) — leave throughput alone.
-    s.ray_origin  = s.hit_point + 0.001 * dir;   // offset along the outgoing ray to avoid self-hit on either side
-    s.ray_dir     = dir;
     s.bounce++;
-    s.flags      &= ~FLAG_PREV_DID_NEE;   // delta material
+    s.flags      &= ~FLAG_PREV_NON_SPECULAR;   // specular bounce — no MIS weighting on next emissive
 
     bool alive = true;
     if (s.bounce > 2) {
