@@ -1,0 +1,102 @@
+#version 460 core
+layout(local_size_x = 8, local_size_y = 8) in;
+
+#include "common/scene_buffers.glsl"
+#include "common/bvh_traversal.glsl"
+#include "common/rng.glsl"
+#include "common/restir_common.glsl"
+
+layout(binding = 5) uniform sampler2D gbuf_pos_matid_tex;
+layout(binding = 6) uniform sampler2D gbuf_normal_tex;
+layout(binding = 7) uniform sampler2D prev_gbuf_pos_matid_tex;
+layout(binding = 8) uniform sampler2D prev_gbuf_normal_tex;
+
+layout(location = 0) uniform ivec2 image_size;
+layout(location = 1) uniform int   frame_index;
+layout(location = 2) uniform int   m_cap;
+layout(location = 3) uniform int   time;
+
+// Validation thresholds. These are deliberately generous for v1; tighten if
+// temporal artefacts (ghosting, light leaking through silhouettes) appear.
+const float NORMAL_DOT_THRESHOLD = 0.9;
+const float WORLD_POS_DELTA      = 0.5;
+
+void main() {
+    ivec2 px = ivec2(gl_GlobalInvocationID.xy);
+    if (px.x >= image_size.x || px.y >= image_size.y) return;
+    uint pid = uint(px.y * image_size.x + px.x);
+
+    // First frame has no temporal history. The prev reservoir buffer is zero-
+    // cleared at construction so it would early-out below anyway, but skipping
+    // here saves the gbuffer fetches and reprojection math.
+    if (frame_index <= 1) return;
+
+    // Read current surface.
+    vec4 pm = texelFetch(gbuf_pos_matid_tex, px, 0);
+    vec3 n  = texelFetch(gbuf_normal_tex, px, 0).xyz;
+    if (dot(n, n) < 0.5) return;
+    uint     matid = floatBitsToUint(pm.w);
+    Material mat   = mats[matid];
+    if (mat.type != MAT_LAMBERTIAN) return;
+
+    vec3 P      = pm.xyz;
+    vec3 N      = normalize(n);
+    vec3 albedo = mat.color;
+
+    // Reproject into the previous frame's un-jittered NDC.
+    vec4 prev_clip = prev_view_proj_matrix * vec4(P, 1.0);
+    if (prev_clip.w <= 0.0) return;
+    vec3 prev_ndc = prev_clip.xyz / prev_clip.w;
+    if (any(lessThan(prev_ndc.xy, vec2(-1.0))) || any(greaterThan(prev_ndc.xy, vec2(1.0)))) return;
+
+    vec2  prev_uv = prev_ndc.xy * 0.5 + 0.5;
+    ivec2 prev_px = clamp(ivec2(prev_uv * vec2(image_size)), ivec2(0), image_size - 1);
+    uint  prev_pid = uint(prev_px.y * image_size.x + prev_px.x);
+
+    // Validate against prev gbuffer: same material, similar normal, no large
+    // world-space discontinuity (catches disocclusions where reprojection
+    // lands on a foreground/background swap).
+    vec4 prev_pm = texelFetch(prev_gbuf_pos_matid_tex, prev_px, 0);
+    vec3 prev_n_raw = texelFetch(prev_gbuf_normal_tex, prev_px, 0).xyz;
+    if (dot(prev_n_raw, prev_n_raw) < 0.5) return;
+    uint prev_matid = floatBitsToUint(prev_pm.w);
+    if (prev_matid != matid) return;
+    if (dot(normalize(prev_n_raw), N) < NORMAL_DOT_THRESHOLD) return;
+    vec3 dp = prev_pm.xyz - P;
+    if (dot(dp, dp) > WORLD_POS_DELTA * WORLD_POS_DELTA) return;
+
+    Reservoir prev = prev_reservoirs[prev_pid];
+    if (prev.M <= 0.0 || prev.light_tri_idx == RESTIR_INVALID_TRI) return;
+
+    // Cap prev.M to bound the influence of stale history.
+    prev.M = min(prev.M, float(m_cap));
+
+    // Re-evaluate the prev sample's target pdf at the current surface — geometry
+    // and BRDF terms shift because the receiver moved. If the sample is back-
+    // facing the new surface (or the new surface is back-facing the light),
+    // skip combining entirely rather than diluting cur.M with a useless sample.
+    float p_hat_prev_at_current = restir_target_pdf_lambertian(P, N, albedo, prev.light_tri_idx, prev.bary);
+    if (p_hat_prev_at_current <= 0.0) return;
+
+    Reservoir cur = reservoirs[pid];
+
+    uint rng = (pid * 7919u + uint(frame_index) * 50331u + uint(time) * 12289u + 0xCAFEBABEu) | 1u;
+
+    reservoir_combine(cur, prev, p_hat_prev_at_current, rng);
+    reservoir_finalize(cur);
+
+    // Visibility test on the (possibly updated) chosen sample. Even if cur
+    // was already visibility-tested in the initial pass, the chosen sample
+    // may now be the prev sample, whose visibility was tested at a different
+    // surface last frame.
+    if (cur.W > 0.0 && cur.light_tri_idx != RESTIR_INVALID_TRI) {
+        Triangle tri = triangles[cur.light_tri_idx];
+        vec3     v0  = vertices[tri.indices.x].position;
+        vec3     sp  = v0 + cur.bary.x * tri.e1 + cur.bary.y * tri.e2;
+        if (!is_visible(P + 0.001 * N, sp)) {
+            cur.W = 0.0;
+        }
+    }
+
+    reservoirs[pid] = cur;
+}

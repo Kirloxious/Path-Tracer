@@ -5,15 +5,16 @@ layout(local_size_x = 64) in;
 #include "common/queue.glsl"
 #include "common/scene_buffers.glsl"
 #include "common/rng.glsl"
+#include "common/restir_common.glsl"
 
-layout(location = 11) uniform int  num_light_groups;
-layout(location = 12) uniform int  bounce_index;
-layout(location = 13) uniform int  max_bounces;
+layout(location = 11) uniform int num_light_groups;
+layout(location = 12) uniform int bounce_index;
+layout(location = 13) uniform int max_bounces;
 
 vec2 sample_triangle_bary(inout uint state) {
     float r1 = random_unilateral(state);
     float r2 = random_unilateral(state);
-    float u  = sqrt(r1);
+    float u = sqrt(r1);
     return vec2(u * (1.0 - r2), u * r2);
 }
 
@@ -22,20 +23,49 @@ void main() {
     if (qid >= hit_lambertian_count) return;
     uint pid = hit_lambertian_idx[qid];
 
-    PathState s   = states[pid];
-    uint      rng = s.rng_state.x;
+    PathState s = states[pid];
+    Reservoir res = reservoirs[pid];
+    uint rng = s.rng_state.x;
 
-    Material mat   = mats[s.hit_matid];
-    vec3     P     = s.hit_point;
-    vec3     N     = s.hit_normal;
-    vec3     albedo = mat.color;
+    Material mat = mats[s.hit_matid];
+    vec3 P = s.hit_point;
+    vec3 N = s.hit_normal;
+    vec3 albedo = mat.color;
 
     // ---- NEE: pick a light group, then a triangle by area CDF, then a point ----
+
     bool nee_setup = false;
-    if (num_light_groups > 0) {
-        int        gi   = int(random_unilateral(rng) * float(num_light_groups));
-        gi              = min(gi, num_light_groups - 1);
-        LightGroup grp  = light_groups[gi];
+
+    bool use_restir = (s.bounce == 0) && (res.light_tri_idx != RESTIR_INVALID_TRI) && (res.W > 0.0);
+    if (use_restir) {
+        Triangle tri = triangles[res.light_tri_idx];
+        Material lmat = mats[tri.material_index];
+
+        vec2 bary = res.bary;
+        vec3 v0 = vertices[tri.indices.x].position;
+        vec3 sp = v0 + bary.x * tri.e1 + bary.y * tri.e2;
+        vec3 light_dir = normalize(sp - P);
+
+        float cos_theta = max(0.0, dot(N, light_dir));
+
+        // Visibility is already folded into res.W (initial/temporal/spatial
+        // each shadow-test the chosen sample at the receiver's surface and
+        // zero W on occlusion). Apply directly to skip shadow_queue_push and
+        // the redundant trace_shadow ray.
+        s.radiance += s.throughput * (albedo / PI) * lmat.emission * cos_theta * res.W;
+        // Leave nee_setup = false so this path doesn't enter shadow_queue.
+    }
+    else if (s.bounce == 0) {
+        // ReSTIR was the chosen NEE technique for primary direct lighting but
+        // produced no usable sample (empty reservoir or W=0). Don't fall back
+        // to inline NEE here — it would double-sample relative to the light
+        // pdf ReSTIR is already approximating, and the ReSTIR path tested
+        // visibility, so a zero contribution is correct.
+    }
+    else if (num_light_groups > 0) {
+        int gi = int(random_unilateral(rng) * float(num_light_groups));
+        gi = min(gi, num_light_groups - 1);
+        LightGroup grp = light_groups[gi];
 
         // Binary search the per-triangle CDF within this group.
         int lo = grp.begin;
@@ -44,39 +74,39 @@ void main() {
         while (lo < hi) {
             int mid = (lo + hi) >> 1;
             if (triangles[mid].cdf_in_group < r) lo = mid + 1;
-            else                                 hi = mid;
+            else hi = mid;
         }
-        Triangle tri  = triangles[lo];
-        vec2     bary = sample_triangle_bary(rng);
-        vec3     v0   = vertices[tri.indices.x].position;
-        vec3     sp   = v0 + bary.x * tri.e1 + bary.y * tri.e2;
+        Triangle tri = triangles[lo];
+        vec2 bary = sample_triangle_bary(rng);
+        vec3 v0 = vertices[tri.indices.x].position;
+        vec3 sp = v0 + bary.x * tri.e1 + bary.y * tri.e2;
 
-        vec3  d        = sp - P;
-        float dist2    = dot(d, d);
+        vec3 d = sp - P;
+        float dist2 = dot(d, d);
         float inv_dist = inversesqrt(dist2);
-        vec3  light_dir = d * inv_dist;
-        float dist     = dist2 * inv_dist;
+        vec3 light_dir = d * inv_dist;
+        float dist = dist2 * inv_dist;
 
         // Solid-angle pdf, treating the whole group as one uniform area light.
         float cross_dot = dot(cross(tri.e1, tri.e2), light_dir);
         if (cross_dot < 0.0 && grp.total_area > 0.0) {
             float light_pdf_combined = -2.0 * tri.area * dist2 / (cross_dot * grp.total_area * float(num_light_groups));
-            float cos_theta          = max(0.0, dot(N, light_dir));
+            float cos_theta = max(0.0, dot(N, light_dir));
             if (cos_theta > 0.0 && light_pdf_combined > 0.0) {
                 Material lmat = mats[tri.material_index];
                 // BSDF pdf for the NEE direction (cosine-weighted hemisphere on a Lambertian).
                 // MIS balance heuristic: weight = pdf_light / (pdf_light + pdf_bsdf).
                 float bsdf_pdf_for_nee = cos_theta / PI;
-                float mis_weight       = light_pdf_combined / (light_pdf_combined + bsdf_pdf_for_nee);
+                float mis_weight = light_pdf_combined / (light_pdf_combined + bsdf_pdf_for_nee);
 
                 // Lambertian BRDF = albedo / π.
                 vec3 contrib = s.throughput * albedo * lmat.emission * cos_theta * mis_weight /
-                               (light_pdf_combined * PI);
+                        (light_pdf_combined * PI);
 
-                s.nee_dir  = light_dir;
+                s.nee_dir = light_dir;
                 s.nee_dist = dist;
-                s.nee_le   = contrib;
-                nee_setup  = true;
+                s.nee_le = contrib;
+                nee_setup = true;
             }
         }
     }
@@ -86,6 +116,7 @@ void main() {
     } else {
         s.nee_le = vec3(0);
     }
+    // }
 
     // ---- BSDF continuation: cosine-weighted hemisphere sample ----
     // pdf = cos θ / π,  BRDF = albedo / π,  cos θ → estimator weight = albedo.
@@ -94,12 +125,12 @@ void main() {
     scatter_dir = normalize(scatter_dir);
 
     // Store the BSDF pdf of the continuation direction so the next emissive hit can MIS-weight Le.
-    s.pdf_bsdf    = max(0.0, dot(N, scatter_dir)) / PI;
+    s.pdf_bsdf = max(0.0, dot(N, scatter_dir)) / PI;
     s.throughput *= albedo;
-    s.ray_origin  = P + 0.001 * N;
-    s.ray_dir     = scatter_dir;
+    s.ray_origin = P + 0.001 * N;
+    s.ray_dir = scatter_dir;
     s.bounce++;
-    s.flags      |= FLAG_PREV_NON_SPECULAR;   // emissive hit on continuation will MIS-weight Le using s.pdf_bsdf
+    s.flags |= FLAG_PREV_NON_SPECULAR; // emissive hit on continuation will MIS-weight Le using s.pdf_bsdf
 
     // Russian roulette after a few bounces.
     bool alive = true;
@@ -110,7 +141,7 @@ void main() {
     }
 
     s.rng_state.x = rng;
-    states[pid]   = s;
+    states[pid] = s;
 
     if (alive && bounce_index + 1 < max_bounces) {
         ray_queue_push(pid);

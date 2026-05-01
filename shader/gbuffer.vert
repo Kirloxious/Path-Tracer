@@ -6,13 +6,14 @@ layout(location = 2) in uint a_matid;
 
 layout(std140, binding = 2) uniform CameraData
 {
-    mat4 view;
-    mat4 projection;
-    mat4 inv_view;
-    mat4 inv_projection;
-    vec3 lookfrom;
+    mat4  view;
+    mat4  projection;
+    mat4  inv_view;
+    mat4  inv_projection;
+    vec3  lookfrom;
     float focus_distance;
     float defocus_angle;
+    mat4  prev_view_proj;
 } camera;
 
 out vec3 v_world_pos;

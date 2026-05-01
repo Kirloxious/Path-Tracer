@@ -66,6 +66,10 @@ void main() {
     vec3 result = (wsum > 1e-6) ? sum / wsum : c_p;
 
     if (apply_tonemapping == 1) {
+        //Narkowics ACES Tonemapping
+        // const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+        // result = clamp((result * (a * result + b)) / (result * (c * result + d) + e), 0.0, 1.0);
+        // Reinhard Tonemapping
         const float exposure = 0.5;
         result = result * exposure / (result * exposure + 1.0);
         result = linear_to_srgb(result);

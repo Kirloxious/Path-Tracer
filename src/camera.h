@@ -28,7 +28,13 @@ struct CameraData
     glm::vec3 lookfrom; // camera position
     float     focus_distance;
     float     defocus_angle;
+    float     _pad0[3];
+    // proj * view from the previous frame, used for temporal reprojection
+    // (ReSTIR temporal reuse, motion vectors). Equals current view_proj on the
+    // very first frame — callers must guard temporal reuse with frame_index.
+    glm::mat4 prev_view_proj;
 };
+static_assert(sizeof(CameraData) == 352, "CameraData must match std140 layout");
 
 class Camera
 {

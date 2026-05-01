@@ -14,7 +14,13 @@ struct RenderTargets
     Texture denoised_ping; // A-Trous ping-pong
     Texture display;       // final image blitted to the swap chain
 
+    // gbuf is the current frame's primary-visibility data; gbuf_prev holds the
+    // previous frame's, used for temporal reprojection (ReSTIR temporal reuse,
+    // motion-vector validation). RasterGBufferPass swaps the pair every frame
+    // so downstream code can always read `gbuf` as "current" / `gbuf_prev` as
+    // "last frame".
     GBuffer gbuf;
+    GBuffer gbuf_prev;
 
     FrameBuffer fb; // wraps `display`, used for the final swap-chain blit
 

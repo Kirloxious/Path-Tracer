@@ -12,6 +12,7 @@
 #include "raster_gbuffer_pass.h"
 #include "render_pass.h"
 #include "renderer.h"
+#include "restir_pass.h"
 #include "texture.h"
 
 static const std::filesystem::path denoiserShaderPath = "shader/denoiser.comp";
@@ -25,7 +26,7 @@ Application::Application(Scene initialScene)
     Log::info("OpenGL version: {}", reinterpret_cast<const char*>(glGetString(GL_VERSION)));
     Log::info("Image dimensions: {} x {}", camera.image_width, camera.image_height);
 
-    GLDebug::enable();
+    // GLDebug::enable();
 
     Gui::init(window);
 
@@ -38,6 +39,7 @@ Application::Application(Scene initialScene)
 
     Log::info("Adding render passes");
     renderer.addRenderPass(std::make_unique<RasterGBufferPass>(gbufferVertPath, gbufferFragPath));
+    renderer.addRenderPass(std::make_unique<RestirPass>(camera.image_width, camera.image_height));
     renderer.addRenderPass(std::make_unique<PathTracerPass>(camera.image_width, camera.image_height));
     renderer.addRenderPass(std::make_unique<DenoiserPass>(denoiserShaderPath));
 

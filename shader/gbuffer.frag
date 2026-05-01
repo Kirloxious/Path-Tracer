@@ -13,6 +13,7 @@ layout(std140, binding = 2) uniform CameraData
     vec3  lookfrom;
     float focus_distance;
     float defocus_angle;
+    mat4  prev_view_proj;
 } camera;
 
 layout(location = 0) out vec4 o_pos_matid;

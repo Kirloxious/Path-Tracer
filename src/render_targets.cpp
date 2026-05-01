@@ -4,7 +4,8 @@
 #include "log.h"
 #include "texture.h"
 
-RenderTargets::RenderTargets(int w, int h) : accum(w, h), normals(w, h, GL_RGBA16F), denoised_ping(w, h), display(w, h), gbuf(w, h), fb() {
+RenderTargets::RenderTargets(int w, int h)
+    : accum(w, h), normals(w, h, GL_RGBA16F), denoised_ping(w, h), display(w, h), gbuf(w, h), gbuf_prev(w, h), fb() {
 
     fb = FrameBuffer(display);
     numGroupsX = (w + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE;

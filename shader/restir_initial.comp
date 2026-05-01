@@ -1,0 +1,167 @@
+#version 460 core
+layout(local_size_x = 8, local_size_y = 8) in;
+
+#include "common/scene_buffers.glsl"
+#include "common/bvh_traversal.glsl"
+#include "common/rng.glsl"
+#include "common/restir_common.glsl"
+
+layout(binding = 5) uniform sampler2D gbuf_pos_matid_tex;
+layout(binding = 6) uniform sampler2D gbuf_normal_tex;
+
+layout(location = 0) uniform ivec2 image_size;
+layout(location = 1) uniform int frame_index;
+layout(location = 2) uniform int m_initial;
+layout(location = 3) uniform int time;
+layout(location = 4) uniform int num_light_groups;
+
+vec2 sample_triangle_bary(inout uint state) {
+    float r1 = random_unilateral(state);
+    float r2 = random_unilateral(state);
+    float u = sqrt(r1);
+    return vec2(u * (1.0 - r2), u * r2);
+}
+
+// Single-candidate sampler. Returns true if the candidate is geometrically
+// valid (light surface faces the receiver, receiver faces the light, group
+// is non-degenerate). On success, fills out the surface point, area-domain
+// source pdf, target pdf, and triangle index. Visibility is NOT tested here
+// — that happens once on the chosen sample after RIS.
+bool sample_candidate(vec3 P,
+    vec3 N,
+    vec3 albedo,
+    inout uint rng,
+    out uint out_tri_idx,
+    out vec2 out_bary,
+    out float out_source_pdf_omega,
+    out float out_target_pdf) {
+    int gi = int(random_unilateral(rng) * float(num_light_groups));
+    gi = min(gi, num_light_groups - 1);
+    LightGroup grp = light_groups[gi];
+    if (grp.total_area <= 0.0 || grp.count <= 0) return false;
+
+    // Binary search the per-triangle CDF within this group.
+    int lo = grp.begin;
+    int hi = grp.begin + grp.count - 1;
+    float r = random_unilateral(rng);
+    while (lo < hi) {
+        int mid = (lo + hi) >> 1;
+        if (triangles[mid].cdf_in_group < r) lo = mid + 1;
+        else hi = mid;
+    }
+    Triangle tri = triangles[lo];
+    vec2 bary = sample_triangle_bary(rng);
+    vec3 v0 = vertices[tri.indices.x].position;
+    vec3 sp = v0 + bary.x * tri.e1 + bary.y * tri.e2;
+
+    vec3 d = sp - P;
+    float dist2 = dot(d, d);
+    float inv_dist = inversesqrt(dist2);
+    vec3 light_dir = d * inv_dist;
+
+    // cross(e1,e2) is the unnormalized outward normal × 2*area; sign tells us
+    // whether the light surface faces the receiver. Negative dot = front face.
+    float cross_dot = dot(cross(tri.e1, tri.e2), light_dir);
+    if (cross_dot >= 0.0) return false;
+
+    float cos_theta = max(0.0, dot(N, light_dir));
+    if (cos_theta <= 0.0) return false;
+
+    // Solid-angle pdf, treating the whole group as one uniform area light —
+    // identical to the formula in shade_lambertian.comp's NEE.
+    float source_pdf_omega = -2.0 * tri.area * dist2 / (cross_dot * grp.total_area * float(num_light_groups));
+    if (source_pdf_omega <= 0.0) return false;
+
+    Material lmat = mats[tri.material_index];
+    // Scalar target: luminance of f * Le * G with G already collapsed into the
+    // pdf above. shade_lambertian's NEE contribution (sans MIS) is
+    //   throughput * albedo * Le * cos_theta / (PI * source_pdf_omega).
+    // We strip throughput (constant per pixel here) and the 1/source_pdf_omega
+    // factor (since target_pdf is the integrand, not the estimator). The
+    // resulting integrand per unit solid angle is albedo * Le * cos_theta / PI.
+    vec3 contrib_rgb = albedo * lmat.emission * cos_theta * (1.0 / PI);
+    float p_hat = restir_luminance(contrib_rgb);
+    if (p_hat <= 0.0) return false;
+
+    out_tri_idx = uint(lo);
+    out_bary = bary;
+    out_source_pdf_omega = source_pdf_omega;
+    out_target_pdf = p_hat;
+    return true;
+}
+
+void main() {
+    ivec2 px = ivec2(gl_GlobalInvocationID.xy);
+    if (px.x >= image_size.x || px.y >= image_size.y) return;
+    uint pid = uint(px.y * image_size.x + px.x);
+
+    Reservoir r;
+    reservoir_clear(r);
+
+    // No light sampling possible — write empty reservoir and return.
+    if (num_light_groups <= 0) {
+        reservoirs[pid] = r;
+        return;
+    }
+
+    // Read primary surface from the gbuffer.
+    vec4 pm = texelFetch(gbuf_pos_matid_tex, px, 0);
+    vec3 n = texelFetch(gbuf_normal_tex, px, 0).xyz;
+
+    // Sky / no hit: zero-length normal sentinel.
+    if (dot(n, n) < 0.5) {
+        reservoirs[pid] = r;
+        return;
+    }
+
+    uint matid = floatBitsToUint(pm.w);
+    Material mat = mats[matid];
+    // v1 scope: diffuse-only ReSTIR DI. Non-Lambertian primary hits get a
+    // null reservoir and continue to use the existing inline NEE in their
+    // respective shade kernels.
+    if (mat.type != MAT_LAMBERTIAN) {
+        reservoirs[pid] = r;
+        return;
+    }
+
+    vec3 P = pm.xyz;
+    vec3 N = normalize(n);
+    vec3 albedo = mat.color;
+
+    // RNG seeded distinctly from the path tracer's so reservoir noise is
+    // independent of scattering noise.
+    uint rng = (pid * 5419u + uint(frame_index) * 31337u + uint(time) * 78979u + 0xA5A5u) | 1u;
+
+    int M = max(1, m_initial);
+    for (int i = 0; i < M; ++i) {
+        uint tri_idx;
+        vec2 bary;
+        float source_pdf_omega;
+        float p_hat;
+        if (!sample_candidate(P, N, albedo, rng, tri_idx, bary, source_pdf_omega, p_hat)) {
+            // Degenerate candidate still increments M (it was drawn from the source distribution
+            // and rejected by target=0). This keeps the RIS estimator unbiased.
+            r.M += 1.0;
+            continue;
+        }
+        float w_i = p_hat / source_pdf_omega;
+        reservoir_update(r, tri_idx, bary, p_hat, w_i, rng);
+    }
+
+    reservoir_finalize(r);
+
+    // Visibility test on the chosen sample. Occluded → keep reservoir state
+    // (so temporal/spatial reuse can recover later) but zero W so this frame's
+    // shading skips it.
+    if (r.W > 0.0 && r.light_tri_idx != RESTIR_INVALID_TRI) {
+        Triangle tri = triangles[r.light_tri_idx];
+        vec3 v0 = vertices[tri.indices.x].position;
+        vec3 sp = v0 + r.bary.x * tri.e1 + r.bary.y * tri.e2;
+        // Match shade_lambertian's ray-origin offset to keep self-intersection rules consistent.
+        if (!is_visible(P + 0.001 * N, sp)) {
+            r.W = 0.0;
+        }
+    }
+
+    reservoirs[pid] = r;
+}

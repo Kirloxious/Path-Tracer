@@ -1,5 +1,6 @@
 #include "raster_gbuffer_pass.h"
 
+#include <utility>
 #include <vector>
 
 #include "log.h"
@@ -87,6 +88,11 @@ void RasterGBufferPass::execute(const RenderContext&, RenderTargets& targets) {
     if (indexCount == 0) {
         return;
     }
+
+    // Rotate the gbuffer pair: gbuf_prev becomes the slot we draw into this frame
+    // (overwriting frame N-2 data), and the previous gbuf moves into gbuf_prev,
+    // preserving frame N-1 data for temporal consumers downstream.
+    std::swap(targets.gbuf, targets.gbuf_prev);
 
     glBindFramebuffer(GL_FRAMEBUFFER, targets.gbuf.fb.handle);
     glViewport(0, 0, targets.gbuf.width, targets.gbuf.height);

@@ -26,7 +26,7 @@ Scene Scene::CornellBox() {
     uint32_t green = w.addMaterial(Material::Lambertian(glm::vec3(0.12f, 0.45f, 0.15f)));
 
     // Ceiling light
-    w.addSphere(glm::vec3(S * 0.5f, S * 0.93f, S * 0.5f), S * 0.06f, Material::Emissive(glm::vec3(1.0f), glm::vec3(15.0f)));
+    w.addSphere(glm::vec3(S * 0.5f, S * 0.93f, S * 0.5f), S * 0.06f, Material::Emissive(glm::vec3(1.0f), glm::vec3(8.0f)));
 
     // Walls — open front at z=0
     w.addTriQuad(glm::vec3(S, 0, 0), glm::vec3(0, 0, S), glm::vec3(0, S, 0), red);   // Left (red)

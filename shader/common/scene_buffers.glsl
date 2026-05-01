@@ -18,6 +18,7 @@ layout(std140, binding = 2) uniform Camera {
     vec3  camera_position;
     float focus_distance;
     float defocus_angle;
+    mat4  prev_view_proj_matrix;
 };
 
 layout(std430, binding = 3) readonly buffer BVHBuffer       { BVHNodeFlat nodes[]; };

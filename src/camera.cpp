@@ -27,12 +27,13 @@ Camera::Camera(const CameraSettings& settings)
     data.projection = baseProjection;
     data.inv_view = glm::inverse(data.view);
     data.inv_projection = glm::inverse(data.projection);
+    data.prev_view_proj = data.projection * data.view;
 }
 
 namespace {
 // Standard Halton low-discrepancy sequence. Index 0 returns 0, so callers should pass frameIndex+1.
 float halton(int index, int base) {
-    float f      = 1.0f;
+    float f = 1.0f;
     float result = 0.0f;
     while (index > 0) {
         f /= static_cast<float>(base);
@@ -55,11 +56,17 @@ void Camera::applyJitter(int frameIndex) {
     // Pre-multiplying by translate(jx, jy, 0) shifts post-projection clip-space by
     // (jx*w, jy*w, 0), which after w-divide is exactly an NDC offset of (jx, jy).
     const glm::mat4 jitterMat = glm::translate(glm::mat4(1.0f), glm::vec3(jx, jy, 0.0f));
-    data.projection           = jitterMat * baseProjection;
-    data.inv_projection       = glm::inverse(data.projection);
+    data.projection = jitterMat * baseProjection;
+    data.inv_projection = glm::inverse(data.projection);
 }
 
 Camera& Camera::update(const InputState& input, float dt) {
+    // Snapshot last frame's un-jittered view*projection for temporal reprojection.
+    // baseProjection is intentional: applyJitter overwrites data.projection per frame,
+    // and we want motion vectors to ignore sub-pixel jitter so they describe surface
+    // motion only.
+    data.prev_view_proj = baseProjection * data.view;
+
     moving = false;
 
     const float speed = moveSpeed * dt;
