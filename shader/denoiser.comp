@@ -28,10 +28,12 @@ void main() {
     vec3 n_p = normals_sample.rgb * 2.0 - 1.0;
     float mat_type = normals_sample.a;
 
-    // Specular surfaces (metal=1, dielectric=2) cannot be meaningfully denoised spatially —
-    // adjacent pixels may share the same surface normal but reflect entirely different content.
-    bool is_specular = (mat_type > 0.5 && mat_type < 2.5);
-    if (is_specular) {
+    // Only Lambertian surfaces benefit from spatial denoising. Metal/dielectric (1/2)
+    // carry view-dependent reflected/refracted content that the A-Trous edge-stops can't
+    // protect; emissives (3) are zero-noise — denoising them just bleeds light across
+    // their silhouette into neighbouring darker geometry.
+    bool denoise_skip = (mat_type > 0.5);
+    if (denoise_skip) {
         vec3 result = c_p;
         if (apply_tonemapping == 1) {
             const float exposure = 0.5;

@@ -3,7 +3,8 @@
 
 // Bits in PathState.flags
 const uint FLAG_FRONT_FACE         = 1u << 0; // last hit's face was front-facing
-const uint FLAG_PREV_NON_SPECULAR  = 1u << 1; // previous bounce was non-specular — shade_emissive applies MIS weighting (specular/primary hits get weight 1)
+const uint FLAG_PREV_NON_SPECULAR  = 1u << 1; // previous bounce ran analytic NEE — shade_emissive applies balance-heuristic MIS using s.pdf_bsdf and the analytic light pdf
+const uint FLAG_RESTIR_HANDLED     = 1u << 2; // previous bounce was a ReSTIR-resolved primary with W>0 — shade_emissive skips its contribution to avoid double-counting the same direct-lighting estimator
 
 struct PathState {
     vec3  throughput;

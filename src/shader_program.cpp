@@ -12,7 +12,8 @@ ShaderProgram::~ShaderProgram() {
     }
 }
 
-ShaderProgram::ShaderProgram(ShaderProgram&& o) noexcept : ID(o.ID), m_sources(std::move(o.m_sources)) {
+ShaderProgram::ShaderProgram(ShaderProgram&& o) noexcept
+    : ID(o.ID), m_sources(std::move(o.m_sources)), m_locationCache(std::move(o.m_locationCache)) {
     o.ID = 0;
 }
 
@@ -23,6 +24,7 @@ ShaderProgram& ShaderProgram::operator=(ShaderProgram&& o) noexcept {
         }
         ID = o.ID;
         m_sources = std::move(o.m_sources);
+        m_locationCache = std::move(o.m_locationCache);
         o.ID = 0;
     }
     return *this;
@@ -85,6 +87,7 @@ bool ShaderProgram::reloadIfChanged() {
         glDeleteProgram(ID);
     }
     ID = newProgram;
+    m_locationCache.clear(); // uniforms may have been added, removed, or relocated by the new program
     Log::info("Shader reloaded successfully");
     return true;
 }
@@ -106,7 +109,11 @@ std::string ShaderProgram::sourcesLabel() const {
 }
 
 GLint ShaderProgram::getLocation(const std::string& name) const {
+    if (auto it = m_locationCache.find(name); it != m_locationCache.end()) {
+        return it->second;
+    }
     GLint loc = glGetUniformLocation(ID, name.c_str());
+    m_locationCache.emplace(name, loc); // -1 caches the miss too; we only warn once per program-lifetime via the set below
     if (loc == -1) {
         static thread_local std::unordered_set<std::string> warned;
         if (warned.insert(sourcesLabel() + ":" + name).second) {

@@ -14,23 +14,26 @@ const float PI = 3.14159265358979323846;
 // fresh sequences, (c) different program runs produce different patterns —
 // without (c), frame 1 looks identical every launch.
 //
-// The | 1u guarantees a non-zero seed (xorshift stays at 0 if seeded with 0).
+// PCG handles a zero state fine (it advances multiplicatively), so we drop the
+// | 1u that xorshift required.
 uvec4 init_rng(uint pid, int frame_index, uint time_seed) {
-    uint seed = (pid * 1973u + uint(frame_index) * 9277u + time_seed * 26699u + 1u) | 1u;
+    uint seed = pid * 1973u + uint(frame_index) * 9277u + time_seed * 26699u + 1u;
     return uvec4(seed, 0u, 0u, 0u);
 }
 
-uint xor_shift32(inout uint state) {
-    uint x = state;
-    x ^= x << 13;
-    x ^= x >> 17;
-    x ^= x << 5;
-    state = x;
-    return x;
+// PCG output XSH-RR variant (Melissa O'Neill, "PCG: A Family of Simple Fast
+// Space-Efficient Statistically Good Algorithms for Random Number Generation").
+// Replaces xorshift32 — xorshift produced visible structured noise when
+// neighbouring kernels seeded their state with small additive offsets, since
+// xorshift takes many iterations to fully decorrelate two close starting states.
+uint pcg_advance(inout uint state) {
+    state = state * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
 }
 
 float random_unilateral(inout uint state) {
-    return uintBitsToFloat((xor_shift32(state) >> 9) | 0x3F800000u) - 1.0;
+    return uintBitsToFloat((pcg_advance(state) >> 9) | 0x3F800000u) - 1.0;
 }
 
 float random_bilateral(inout uint state) {

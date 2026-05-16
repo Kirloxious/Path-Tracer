@@ -5,6 +5,7 @@ layout(local_size_x = 64) in;
 #include "common/queue.glsl"
 #include "common/scene_buffers.glsl"
 #include "common/rng.glsl"
+#include "common/geom.glsl"
 
 layout(location = 12) uniform int bounce_index;
 layout(location = 13) uniform int max_bounces;
@@ -26,10 +27,13 @@ void main() {
     bool alive = dot(dir, N) > 0.0;
     if (alive) {
         s.throughput *= mat.color;
-        s.ray_origin  = s.hit_point + 0.001 * N;
+        // Offset along geometric normal at bounce > 0 (see shade_lambertian for rationale).
+        bool front_face = (s.flags & FLAG_FRONT_FACE) != 0u;
+        vec3 offset_n = (s.bounce > 0u) ? triangle_geom_normal(s.hit_triangle_idx, front_face) : N;
+        s.ray_origin  = s.hit_point + 0.001 * offset_n;
         s.ray_dir     = dir;
         s.bounce++;
-        s.flags      &= ~FLAG_PREV_NON_SPECULAR;   // specular bounce — emissive hit next gets full Le (no MIS weighting)
+        s.flags      &= ~(FLAG_PREV_NON_SPECULAR | FLAG_RESTIR_HANDLED);   // specular bounce — emissive hit next gets full Le (no MIS weighting, ReSTIR's primary scope doesn't extend past a specular interface)
 
         if (s.bounce > 2) {
             float p = max(s.throughput.r, max(s.throughput.g, s.throughput.b));

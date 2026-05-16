@@ -1,5 +1,8 @@
 #include "scene.h"
 
+#include <algorithm>
+#include <limits>
+
 #include "log.h"
 #include "obj_loader.h"
 #include "utils.h"
@@ -195,10 +198,98 @@ Scene Scene::Showcase() {
     return scene;
 }
 
+Scene Scene::MirrorFloor() {
+    Scene scene;
+    scene.name = "Mirror Floor";
+    Log::info("Building scene: {}", scene.name);
+
+    scene.cameraSettings.aspect_ratio = 16.0f / 9.0f;
+    scene.cameraSettings.image_width = 1200;
+    scene.cameraSettings.max_bounces = 16;
+    scene.cameraSettings.samples_per_pixel = 4;
+    scene.cameraSettings.vfov = 30.0f;
+    scene.cameraSettings.lookfrom = glm::vec3(0.0f, 3.0f, 10.0f);
+    scene.cameraSettings.lookat = glm::vec3(0.0f, 1.0f, 0.0f);
+
+    World& w = scene.world;
+
+    // Layout: three subjects in a line at z=0, backsplash wall parallel behind at z=-2.5,
+    // area light centred on x=0 directly above. Camera looks down the +z axis so the wall
+    // frames all three subjects.
+    constexpr float subjectsZ = 0.0f;
+    constexpr float wallZ = -2.5f;
+    constexpr float wallSpanX = 8.0f; // wall extends from -wallSpanX to +wallSpanX
+    constexpr float wallH = 6.0f;
+    constexpr float lightY = 8.0f;
+    constexpr float floorY = 0.0f;
+    constexpr float floorSpan = 25.0f; // floor extends from -floorSpan to +floorSpan in x
+    constexpr float floorFwd = 25.0f;  // ... and from z = wallZ at the back to z = floorFwd in front of the camera
+
+    // Sphere tessellation. Triangles per sphere = 2 * lat * lon (minus the degenerate
+    // pole row). 32 × 64 = ~4k tris per sphere — silhouette is smooth at the radius-1
+    // subject sphere's screen size; bump higher if you push the camera in closer.
+    // The light sphere uses the same density: visible mostly as a soft disc, but the
+    // silhouette still benefits from extra subdivision and the cost is irrelevant
+    // (one sphere, no BVH hot path).
+    constexpr int sphereLat = 32;
+    constexpr int sphereLon = 64;
+
+    // Load an OBJ at (x, z) and shift it vertically so its lowest vertex sits exactly at floorY —
+    // each mesh's authoring origin differs (Suzanne is centred, the dragon's pivot is its underside),
+    // so hand-tuning y per-mesh is fragile. This stays correct under any scale or Y-rotation.
+    auto loadStanding = [&](const std::filesystem::path& path, uint32_t mat, float scale, float x, float z, float rotateY = 0.0f) -> OBJMesh {
+        OBJMesh m = loadOBJ(path, mat, scale, glm::vec3(x, 0.0f, z), rotateY);
+        float   yMin = std::numeric_limits<float>::infinity();
+        for (const auto& v : m.vertices) {
+            yMin = std::min(yMin, v.position.y);
+        }
+        const float lift = floorY - yMin;
+        for (auto& v : m.vertices) {
+            v.position.y += lift;
+        }
+        return m;
+    };
+
+    // Mirror floor: a single flat quad. addTriQuad winds CCW around cross(u, v), so picking
+    // u = +x and v pointing back toward the wall (negative z) makes the front face point at +y.
+    // fuzz=0 keeps reflections sharp; near-white albedo preserves the reflected colours.
+    uint32_t floorMat = w.addMaterial(Material::Metal(glm::vec3(0.95f, 0.95f, 0.95f), 0.0f));
+    w.addTriQuad(glm::vec3(-floorSpan, floorY, floorFwd), glm::vec3(2.0f * floorSpan, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, wallZ - floorFwd), floorMat);
+
+    // Backsplash wall: a single quad behind the subjects, normal facing the camera (+z).
+    // u=+x, v=+y so cross(u, v) = +z. Cool-grey lambertian gives a neutral frame against the warm subjects.
+    uint32_t wallMat = w.addMaterial(Material::Lambertian(glm::vec3(0.55f, 0.6f, 0.65f)));
+    w.addTriQuad(glm::vec3(-wallSpanX, floorY, wallZ), glm::vec3(2.0f * wallSpanX, 0.0f, 0.0f), glm::vec3(0.0f, wallH, 0.0f), wallMat);
+
+    // Overhead area light, centred above the row of subjects. Radius 3 (large enough that
+    // ReSTIR/NEE have a soft target — small lights give harder shadows + more variance);
+    // emission 6 matches the previous brightness given the closer placement.
+    w.addSphere(glm::vec3(0.0f, lightY, subjectsZ), 3.0f, Material::Emissive(glm::vec3(1.0f), glm::vec3(6.0f)), sphereLat, sphereLon);
+
+    // Lambertian Suzanne on the left — lifted so her chin sits on the mirror.
+    uint32_t suzanneMat = w.addMaterial(Material::Lambertian(glm::vec3(0.85f, 0.35f, 0.25f)));
+    w.addMesh(loadStanding("assets/suzanne.obj", suzanneMat, 1.0f, -0.5f, -5.0f));
+
+    // Metal gold dragon in the middle — fuzz softens the highlights without going full mirror.
+    uint32_t dragonMat = w.addMaterial(Material::Metal(glm::vec3(0.9f, 0.75f, 0.4f), 0.05f));
+    w.addMesh(loadStanding("assets/xyzrgb_dragon.obj", dragonMat, 0.02f, 0.0f, subjectsZ));
+
+    // Lambertian sphere on the right — radius 1, centre at y = floorY + 1, so its bottom sits exactly on the floor.
+    w.addSphere(glm::vec3(3.5f, floorY + 1.0f, subjectsZ), 1.0f, Material::Lambertian(glm::vec3(0.25f, 0.55f, 0.8f)), sphereLat, sphereLon);
+
+    w.emissiveLastIndex = w.sortEmissiveFirst();
+    Log::info("Emissive last index: {}", w.emissiveLastIndex);
+    Log::info("Total triangles: {}", w.triangles.size());
+
+    w.create();
+    return scene;
+}
+
 std::vector<SceneEntry> sceneRegistry() {
     return {
         {"Cornell Box", &Scene::CornellBox},
         {"Sphere World", &Scene::SphereWorld},
         {"Showcase", &Scene::Showcase},
+        {"Mirror Floor", &Scene::MirrorFloor},
     };
 }

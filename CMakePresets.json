@@ -81,6 +81,7 @@
       "binaryDir": "${sourceDir}/out/build/debug-linux",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS_DEBUG": "-g -pg",
         "CMAKE_SYSTEM_NAME": "Linux",
         "CMAKE_C_COMPILER": "/usr/bin/clang",
         "CMAKE_CXX_COMPILER": "/usr/bin/clang++"

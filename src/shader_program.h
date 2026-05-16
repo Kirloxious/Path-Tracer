@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -49,6 +50,11 @@ protected:
     };
 
     std::vector<Source> m_sources;
+
+    // Cache of name → location. glGetUniformLocation is a driver-side string lookup;
+    // called per setInt/setFloat across 8+ shaders this adds up. Cleared on reload —
+    // a recompiled program may have relocated or eliminated uniforms.
+    mutable std::unordered_map<std::string, GLint> m_locationCache;
 
     // Compile + link stages; return a new program handle or 0 on failure.
     virtual GLuint buildProgram() const = 0;

@@ -122,7 +122,4 @@ void RasterGBufferPass::execute(const RenderContext&, RenderTargets& targets) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-
-    targets.gbuf.pos_matid.bind(5, GL_READ_ONLY);
-    targets.gbuf.normal.bind(6, GL_READ_ONLY);
 }

@@ -15,6 +15,7 @@ struct Scene
     static Scene CornellBox();
     static Scene SphereWorld();
     static Scene Showcase();
+    static Scene MirrorFloor();
 };
 
 using SceneFactory = Scene (*)();

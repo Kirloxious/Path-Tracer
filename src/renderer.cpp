@@ -30,8 +30,6 @@ void Renderer::loadScene(const Scene& scene, const Camera& camera) {
     Log::info("Renderer: Scene loaded.");
 }
 
-void resize(int w, int h);
-
 void Renderer::updateCameraUbo(const Camera& cam) {
     camUBO.update(cam.data);
 }

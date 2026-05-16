@@ -75,11 +75,17 @@ public:
                 uint32_t c = vIdx(lat + 1, lon + 1);
                 uint32_t d = vIdx(lat, lon + 1);
 
+                // Wind CCW relative to the outward (vertex) normal so cross(e1, e2)
+                // is outward. The NEE light-pdf code and ReSTIR's target-pdf both
+                // gate on `dot(cross(e1, e2), light_dir) < 0` to detect receiver-
+                // facing light samples; CW winding silently rejects every sphere-
+                // light sample and forces all sphere-light direct illumination
+                // through BSDF-hits-emissive only.
                 if (lat != 0) {
-                    triangles.push_back(makeTriangle(vertices, a, c, d, material_index));
+                    triangles.push_back(makeTriangle(vertices, a, d, c, material_index));
                 }
                 if (lat != LAT - 1) {
-                    triangles.push_back(makeTriangle(vertices, a, b, c, material_index));
+                    triangles.push_back(makeTriangle(vertices, a, c, b, material_index));
                 }
             }
         }

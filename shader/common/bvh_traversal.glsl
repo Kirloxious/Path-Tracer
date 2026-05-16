@@ -67,7 +67,10 @@ bool intersect_aabb(in vec3 mn, in vec3 mx, in vec3 inv_dir, in vec3 neg_ood, in
     vec3  t2     = mx * inv_dir + neg_ood;
     float t_near = max(max(min(t1.x, t2.x), min(t1.y, t2.y)), min(t1.z, t2.z));
     float t_far  = min(min(max(t1.x, t2.x), max(t1.y, t2.y)), max(t1.z, t2.z));
-    return t_near < t_far && t_far > t_min && t_near < t_max;
+    // `<=` on the slab compare so a ray exactly tangent to one face (t_near == t_far on
+    // that axis) is still accepted — Cornell-box walls are axis-aligned and rays along
+    // their plane otherwise miss the wall's node entirely.
+    return t_near <= t_far && t_far > t_min && t_near < t_max;
 }
 
 // Closest-hit traversal. Returns triangle index in `out_tri_index` for callers

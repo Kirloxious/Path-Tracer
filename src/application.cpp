@@ -26,7 +26,7 @@ Application::Application(Scene initialScene)
     Log::info("OpenGL version: {}", reinterpret_cast<const char*>(glGetString(GL_VERSION)));
     Log::info("Image dimensions: {} x {}", camera.image_width, camera.image_height);
 
-    GLDebug::enable();
+    // GLDebug::enable();
 
     Gui::init(window);
 
@@ -49,6 +49,7 @@ Application::Application(Scene initialScene)
 }
 
 int Application::run() {
+    fpsTimer.start();
     while (!window.shouldClose()) {
 
         Gui::beginFrame();

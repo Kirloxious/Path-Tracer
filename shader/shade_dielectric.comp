@@ -5,16 +5,17 @@ layout(local_size_x = 64) in;
 #include "common/queue.glsl"
 #include "common/scene_buffers.glsl"
 #include "common/rng.glsl"
+#include "common/geom.glsl"
 
 layout(location = 12) uniform int bounce_index;
 layout(location = 13) uniform int max_bounces;
 
 float reflectance(float cosine, float ref_idx) {
-    cosine    = clamp(cosine, 0.0, 1.0);
-    float r0  = (1.0 - ref_idx) / (1.0 + ref_idx);
-    r0        = r0 * r0;
-    float x   = 1.0 - cosine;
-    float x2  = x * x;
+    cosine = clamp(cosine, 0.0, 1.0);
+    float r0 = (1.0 - ref_idx) / (1.0 + ref_idx);
+    r0 = r0 * r0;
+    float x = 1.0 - cosine;
+    float x2 = x * x;
     return r0 + (1.0 - r0) * x2 * x2 * x;
 }
 
@@ -23,13 +24,13 @@ void main() {
     if (qid >= hit_dielectric_count) return;
     uint pid = hit_dielectric_idx[qid];
 
-    PathState s   = states[pid];
-    uint      rng = s.rng_state.x;
+    PathState s = states[pid];
+    uint rng = s.rng_state.x;
 
-    Material mat        = mats[s.hit_matid];
-    vec3     N          = s.hit_normal;
-    bool     front_face = (s.flags & FLAG_FRONT_FACE) != 0u;
-    float    ri         = front_face ? (1.0 / mat.refractive_index) : mat.refractive_index;
+    Material mat = mats[s.hit_matid];
+    vec3 N = s.hit_normal;
+    bool front_face = (s.flags & FLAG_FRONT_FACE) != 0u;
+    float ri = front_face ? (1.0 / mat.refractive_index) : mat.refractive_index;
 
     float cos_theta = clamp(dot(-s.ray_dir, N), 0.0, 1.0);
     float sin_theta = sqrt(1.0 - cos_theta * cos_theta);
@@ -40,20 +41,32 @@ void main() {
         dir = reflect(s.ray_dir, N);
     } else {
         dir = refract(s.ray_dir, N, ri);
+        // Floating-point edge case: the analytic TIR guard above can disagree
+        // with refract()'s internal `1 - ri²(1 - cos²) < 0` test near grazing
+        // angles. When that happens refract() returns vec3(0); a zero direction
+        // entering the ray queue makes inv_dir NaN in BVH traversal. Fall back
+        // to reflection — the surface is effectively in TIR by either test.
+        if (dot(dir, dir) < 1e-12) {
+            dir = reflect(s.ray_dir, N);
+            reflected_path = true;
+        }
     }
 
-    // Offset along the geometric normal (N already faces the incoming ray side, since
-    // bvh_traversal flips it via set_face_normal). At grazing angles `dir` is nearly
-    // tangent to the surface, so offsetting along it leaves the new origin inside the
-    // primitive and the next trace self-hits — that's the dragon's firefly noise.
-    //   reflected:  ray bounces back into the side it came from → offset along +N
-    //   refracted:  ray crosses through into the other side     → offset along -N
-    vec3 offset_normal = reflected_path ? N : -N;
-    s.ray_origin       = s.hit_point + 0.001 * offset_normal;
-    s.ray_dir          = dir;
+    // Offset along the *geometric* normal: `N` (s.hit_normal) is the shading normal,
+    // which on curved surfaces near silhouettes can point past the tangent plane and
+    // shove the origin inside the primitive — that's the dragon's firefly noise.
+    // At bounce 0, hit_triangle_idx isn't seeded by generate.comp; fall back to the
+    // shading normal there (gbuffer for sphere primaries is the only affected case
+    // and dielectric primaries are usually closed convex meshes where it's not visible).
+    //   reflected:  ray bounces back into the side it came from → offset along +n
+    //   refracted:  ray crosses through into the other side     → offset along -n
+    vec3 offset_basis = (s.bounce > 0u) ? triangle_geom_normal(s.hit_triangle_idx, front_face) : N;
+    vec3 offset_normal = reflected_path ? offset_basis : -offset_basis;
+    s.ray_origin = s.hit_point + 0.001 * offset_normal;
+    s.ray_dir = dir;
     // Dielectric is colorless (mat_color = 1) — leave throughput alone.
     s.bounce++;
-    s.flags      &= ~FLAG_PREV_NON_SPECULAR;   // specular bounce — no MIS weighting on next emissive
+    s.flags &= ~(FLAG_PREV_NON_SPECULAR | FLAG_RESTIR_HANDLED); // specular bounce — no MIS weighting on next emissive, ReSTIR's primary scope doesn't extend past a specular interface
 
     bool alive = true;
     if (s.bounce > 2) {
@@ -63,7 +76,7 @@ void main() {
     }
 
     s.rng_state.x = rng;
-    states[pid]   = s;
+    states[pid] = s;
 
     if (alive && bounce_index + 1 < max_bounces) {
         ray_queue_push(pid);

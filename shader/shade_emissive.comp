@@ -37,7 +37,18 @@ void main() {
     PathState s        = states[pid];
     Material  mat      = mats[s.hit_matid];
     bool      prev_non_specular = (s.flags & FLAG_PREV_NON_SPECULAR) != 0u;
+    bool      restir_handled    = (s.flags & FLAG_RESTIR_HANDLED) != 0u;
     bool      is_primary = (s.bounce == 0u);
+
+    // ReSTIR at primary already integrated the same direct-lighting estimator path
+    // (primary→light) that this BSDF-hits-emissive sample represents. Including
+    // both double counts. Treat ReSTIR as a delta technique for MIS — weight = 0
+    // on the BSDF side. (Subsequent emissive hits past a non-specular bounce are
+    // handled by analytic MIS below.)
+    if (restir_handled) {
+        states[pid] = s;
+        return;
+    }
 
     // MIS weight for the BSDF estimator. Primary hits and specular continuations have no
     // competing NEE estimator (delta pdfs / camera ray), so weight = 1. For non-specular

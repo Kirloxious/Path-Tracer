@@ -6,6 +6,7 @@ layout(local_size_x = 64) in;
 #include "common/scene_buffers.glsl"
 #include "common/rng.glsl"
 #include "common/restir_common.glsl"
+#include "common/geom.glsl"
 
 layout(location = 11) uniform int num_light_groups;
 layout(location = 12) uniform int bounce_index;
@@ -127,10 +128,29 @@ void main() {
     // Store the BSDF pdf of the continuation direction so the next emissive hit can MIS-weight Le.
     s.pdf_bsdf = max(0.0, dot(N, scatter_dir)) / PI;
     s.throughput *= albedo;
-    s.ray_origin = P + 0.001 * N;
+    // Offset along the geometric normal when available; bounce 0 doesn't have
+    // hit_triangle_idx (generate.comp seeds state from the gbuffer, which carries
+    // only the shading normal). Cornell-box walls are flat so shading == geometric
+    // there — the curved-mesh silhouette fireflies fixed by this only manifest at bounce > 0.
+    bool front_face = (s.flags & FLAG_FRONT_FACE) != 0u;
+    vec3 offset_n = (s.bounce > 0u) ? triangle_geom_normal(s.hit_triangle_idx, front_face) : N;
+    s.ray_origin = P + 0.001 * offset_n;
     s.ray_dir = scatter_dir;
     s.bounce++;
-    s.flags |= FLAG_PREV_NON_SPECULAR; // emissive hit on continuation will MIS-weight Le using s.pdf_bsdf
+
+    // Re-derive the "what NEE technique just ran" flags for the next bounce.
+    // - use_restir: ReSTIR with W>0 at primary covered direct lighting from here;
+    //   the next emissive hit must skip its contribution (FLAG_RESTIR_HANDLED).
+    // - nee_setup:  analytic NEE was scheduled; the next emissive hit balance-MIS-es
+    //   against the analytic light pdf (FLAG_PREV_NON_SPECULAR).
+    // - Neither (e.g. ReSTIR-W=0 at primary, or back-facing/degenerate analytic NEE):
+    //   no competing estimator ran, so the next emissive hit takes weight 1.
+    s.flags &= ~(FLAG_PREV_NON_SPECULAR | FLAG_RESTIR_HANDLED);
+    if (use_restir) {
+        s.flags |= FLAG_RESTIR_HANDLED;
+    } else if (nee_setup) {
+        s.flags |= FLAG_PREV_NON_SPECULAR;
+    }
 
     // Russian roulette after a few bounces.
     bool alive = true;
