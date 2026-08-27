@@ -2,6 +2,7 @@
 #include "imgui.h"
 
 #include "camera.h"
+#include "render_settings.h"
 #include "scene.h"
 #include "timer.h"
 #include "world.h"
@@ -87,8 +88,14 @@ void drawCamera(const Camera& camera) {
     ImGui::Text("FOV        %6.1f", camera.settings.vfov);
 }
 
+void drawSettings(RenderSettings& settings) {
+    ImGui::SetNextItemWidth(180.0f);
+    // Post-process only — mutating this does NOT reset frameIndex (see Application::run).
+    ImGui::SliderFloat("Exposure", &settings.exposure, 0.05f, 5.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+}
+
 void drawStats(const FPSTimer& fps, const GPUTimer& gpu, const Scene& scene, const Camera& camera, const std::vector<SceneEntry>& sceneEntries,
-               SceneSwitchState& sceneSwitch) {
+               SceneSwitchState& sceneSwitch, RenderSettings& settings) {
     const float          pad = 10.0f;
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + pad, vp->WorkPos.y + pad), ImGuiCond_Always);
@@ -107,6 +114,8 @@ void drawStats(const FPSTimer& fps, const GPUTimer& gpu, const Scene& scene, con
         drawScene(scene);
         ImGui::Separator();
         drawCamera(camera);
+        ImGui::Separator();
+        drawSettings(settings);
     }
     ImGui::End();
 

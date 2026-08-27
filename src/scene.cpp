@@ -288,11 +288,115 @@ Scene Scene::MirrorFloor() {
     return scene;
 }
 
+static const char* kDefaultEnvMap = "assets/env/kloofendal_overcast_puresky_1k.hdr";
+
+Scene Scene::SphereWorldEnvLit() {
+    Scene scene;
+    scene.name = "Sphere World (env)";
+    Log::info("Building scene: {}", scene.name);
+
+    scene.cameraSettings.aspect_ratio = 16.0f / 9.0f;
+    scene.cameraSettings.image_width = 1200;
+    scene.cameraSettings.max_bounces = 16;
+    scene.cameraSettings.samples_per_pixel = 4;
+    scene.cameraSettings.vfov = 20.0f;
+    scene.cameraSettings.lookfrom = glm::vec3(13.0f, 2.0f, 3.0f);
+    scene.cameraSettings.lookat = glm::vec3(0.0f, 0.0f, 0.0f);
+
+    scene.envMapPath = kDefaultEnvMap;
+    scene.envIntensity = 1.0f;
+
+    World& w = scene.world;
+
+    uint32_t        ground = w.addMaterial(Material::Lambertian(glm::vec3(0.5f, 0.5f, 0.5f)));
+    constexpr float groundSpan = 50.0f;
+    w.addTriQuad(
+        glm::vec3(-groundSpan, 0.0f, groundSpan), glm::vec3(2.0f * groundSpan, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -2.0f * groundSpan), ground);
+    // No overhead sun sphere and no red emissives — env lights everything.
+
+    constexpr int tinyLat = 16;
+    constexpr int tinyLon = 32;
+    for (int a = -11; a < 11; a++) {
+        for (int b = -11; b < 11; b++) {
+            float     choose_mat = randomFloat();
+            glm::vec3 center = glm::vec3(a + 0.9f * randomFloat(), 0.2f, b + 0.9f * randomFloat());
+            if (choose_mat < 0.8f) {
+                glm::vec3 color = glm::vec3(randomFloat(), randomFloat(), randomFloat());
+                w.addSphere(center, 0.2f, Material::Lambertian(color), tinyLat, tinyLon);
+            } else if (choose_mat < 0.95f) {
+                glm::vec3 color = glm::vec3(randomFloat(), randomFloat(), randomFloat());
+                float     fuzz = 0.5f * randomFloat();
+                w.addSphere(center, 0.2f, Material::Metal(color, fuzz), tinyLat, tinyLon);
+            } else {
+                w.addSphere(center, 0.2f, Material::Dielectric(1.5f), tinyLat, tinyLon);
+            }
+        }
+    }
+
+    w.addSphere(glm::vec3(0.0f, 1.0f, 4.0f), 1.0f, Material::Dielectric(1.5f), tinyLat, tinyLon);
+    w.addSphere(glm::vec3(4.0f, 1.0f, 0.0f), 1.0f, Material::Metal(glm::vec3(0.7f, 0.6f, 0.5f), 0.0f), tinyLat, tinyLon);
+    w.addSphere(glm::vec3(-4.0f, 1.0f, 0.0f), 1.0f, Material::Lambertian(glm::vec3(0.4f, 0.2f, 0.1f)), tinyLat, tinyLon);
+
+    w.emissiveLastIndex = w.sortEmissiveFirst();
+    Log::info("Emissive last index: {}", w.emissiveLastIndex);
+
+    w.create();
+    return scene;
+}
+
+Scene Scene::ShowcaseEnvLit() {
+    Scene scene;
+    scene.name = "Showcase (env)";
+    Log::info("Building scene: {}", scene.name);
+
+    scene.cameraSettings.aspect_ratio = 16.0f / 9.0f;
+    scene.cameraSettings.image_width = 1200;
+    scene.cameraSettings.max_bounces = 16;
+    scene.cameraSettings.samples_per_pixel = 4;
+    scene.cameraSettings.vfov = 30.0f;
+    scene.cameraSettings.lookfrom = glm::vec3(0.0f, 3.0f, 10.0f);
+    scene.cameraSettings.lookat = glm::vec3(0.0f, 1.0f, 0.0f);
+
+    scene.envMapPath = kDefaultEnvMap;
+    scene.envIntensity = 1.0f;
+
+    World& w = scene.world;
+
+    uint32_t        groundMat = w.addMaterial(Material::Lambertian(glm::vec3(0.4f, 0.4f, 0.4f)));
+    constexpr float groundSpan = 50.0f;
+    w.addTriQuad(
+        glm::vec3(-groundSpan, 0.0f, groundSpan), glm::vec3(2.0f * groundSpan, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -2.0f * groundSpan), groundMat);
+    // Overhead emissive sun removed — env carries the lighting.
+
+    uint32_t bunnyMat = w.addMaterial(Material::Lambertian(glm::vec3(0.9f, 0.7f, 0.2f)));
+    w.addMesh(loadOBJ("assets/standford-bunny.obj", bunnyMat, 10.0f, glm::vec3(0.0f, -0.33f, 0.0f)));
+
+    uint32_t spotMat = w.addMaterial(Material::Lambertian(glm::vec3(0.9f, 0.85f, 0.7f)));
+    w.addMesh(loadOBJ("assets/spot.obj", spotMat, 1.0f, glm::vec3(-3.0f, 0.737f, 0.0f)));
+
+    uint32_t suzanneMat = w.addMaterial(Material::Metal(glm::vec3(0.9f, 0.7f, 0.3f), 0.1f));
+    w.addMesh(loadOBJ("assets/suzanne.obj", suzanneMat, 0.7f, glm::vec3(4.75f, 0.6f, -2.87f)));
+
+    uint32_t dragonMat = w.addMaterial(Material::Dielectric(1.5f));
+    w.addMesh(loadOBJ("assets/xyzrgb_dragon.obj", dragonMat, 0.015f, glm::vec3(0.0f, 0.94f, -2.5f)));
+
+    w.addSphere(glm::vec3(2.5f, 0.5f, 2.0f), 0.5f, Material::Dielectric(1.5f));
+
+    w.emissiveLastIndex = w.sortEmissiveFirst();
+    Log::info("Emissive last index: {}", w.emissiveLastIndex);
+    Log::info("Total triangles: {}", w.triangles.size());
+
+    w.create();
+    return scene;
+}
+
 std::vector<SceneEntry> sceneRegistry() {
     return {
         {"Cornell Box", &Scene::CornellBox},
         {"Sphere World", &Scene::SphereWorld},
+        {"Sphere World (env)", &Scene::SphereWorldEnvLit},
         {"Showcase", &Scene::Showcase},
+        {"Showcase (env)", &Scene::ShowcaseEnvLit},
         {"Mirror Floor", &Scene::MirrorFloor},
     };
 }

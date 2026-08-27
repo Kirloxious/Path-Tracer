@@ -10,6 +10,18 @@ layout(location = 1) uniform vec2 image_size;
 layout(location = 2) uniform float sigma_color;
 layout(location = 3) uniform float sigma_normal;
 layout(location = 4) uniform int apply_tonemapping;
+layout(location = 5) uniform float exposure;
+
+// Narkowicz ACES fit — cheap, matches ACES filmic curve for the middle range,
+// clamps highlights gracefully. Coefficients: krzysztof.narkowicz.com/2016.
+vec3 aces_tonemap(vec3 c) {
+    const float a = 2.51;
+    const float b = 0.03;
+    const float d = 2.43;
+    const float e_ = 0.59;
+    const float f = 0.14;
+    return clamp((c * (a * c + b)) / (c * (d * c + e_) + f), 0.0, 1.0);
+}
 
 // Separable Gaussian kernel: 2D weight = h[i] * h[j]
 const float h[5] = float[5](1.0 / 16.0, 1.0 / 4.0, 3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0);
@@ -36,8 +48,7 @@ void main() {
     if (denoise_skip) {
         vec3 result = c_p;
         if (apply_tonemapping == 1) {
-            const float exposure = 0.5;
-            result = result * exposure / (result * exposure + 1.0);
+            result = aces_tonemap(result * exposure);
             result = linear_to_srgb(result);
         }
         imageStore(dst_image, p, vec4(result, 1.0));
@@ -68,12 +79,7 @@ void main() {
     vec3 result = (wsum > 1e-6) ? sum / wsum : c_p;
 
     if (apply_tonemapping == 1) {
-        //Narkowics ACES Tonemapping
-        // const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
-        // result = clamp((result * (a * result + b)) / (result * (c * result + d) + e), 0.0, 1.0);
-        // Reinhard Tonemapping
-        const float exposure = 0.5;
-        result = result * exposure / (result * exposure + 1.0);
+        result = aces_tonemap(result * exposure);
         result = linear_to_srgb(result);
     }
 

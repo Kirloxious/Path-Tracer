@@ -4,6 +4,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/queue.glsl"
 #include "common/rng.glsl"
 #include "common/scene_buffers.glsl"
+#include "common/envmap.glsl"
 
 layout(binding = 5) uniform sampler2D gbuf_pos_matid_tex;
 layout(binding = 6) uniform sampler2D gbuf_normal_tex;
@@ -30,7 +31,13 @@ void main() {
     // Sky test: gbuffer normal of length zero means no primitive was rasterized.
     // Any real hit has a unit normal.
     if (dot(n, n) < 0.5) {
-        return; // path stays out of every queue → contributes zero radiance
+        // Primary sky — sample the envmap (or return black if unbound). Reconstruct
+        // the view ray from pixel coords via the inverse camera matrices.
+        vec2 ndc = (vec2(px) + 0.5) / vec2(image_size) * 2.0 - 1.0;
+        vec4 clip = inv_proj_matrix * vec4(ndc.x, ndc.y, -1.0, 1.0);
+        vec3 view_dir = normalize(mat3(inv_view_matrix) * normalize(clip.xyz));
+        states[pid].radiance = sample_envmap(view_dir);
+        return; // path stays out of every queue
     }
 
     uint matid = floatBitsToUint(pm.w);

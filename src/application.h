@@ -6,6 +6,7 @@
 #include "renderer.h"
 #include "window.h"
 #include "camera.h"
+#include "render_settings.h"
 #include "scene.h"
 #include "timer.h"
 
@@ -35,6 +36,7 @@ private:
 
     std::vector<SceneEntry> sceneEntries;
     Gui::SceneSwitchState   sceneSwitch;
+    RenderSettings          settings;
 
     // Seeded from system time at construction so different runs don't share frame-1 noise.
     uint32_t timeSeed;

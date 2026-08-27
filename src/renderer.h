@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "buffer.h"
+#include "env_map.h"
 #include "render_pass.h"
 #include "texture.h"
 
@@ -24,6 +25,7 @@ public:
 private:
     RenderTargets targets;
     Buffer        lightGroupsSSBO, matsSSBO, camUBO, bvhNodesSSBO, trianglesSSBO, verticesSSBO;
+    EnvMap        envMap;
 
     std::vector<std::unique_ptr<RenderPass>> passes;
 };

@@ -10,6 +10,7 @@
 class Camera;
 class FPSTimer;
 class GPUTimer;
+struct RenderSettings;
 struct Scene;
 struct SceneEntry;
 
@@ -30,5 +31,6 @@ void drawPerformance(const FPSTimer&, const GPUTimer&);
 void drawSceneSwitcher(const std::vector<SceneEntry>&, SceneSwitchState&);
 void drawScene(const Scene&);
 void drawCamera(const Camera&);
-void drawStats(const FPSTimer&, const GPUTimer&, const Scene&, const Camera&, const std::vector<SceneEntry>&, SceneSwitchState&);
+void drawSettings(RenderSettings&);
+void drawStats(const FPSTimer&, const GPUTimer&, const Scene&, const Camera&, const std::vector<SceneEntry>&, SceneSwitchState&, RenderSettings&);
 }; // namespace Gui

@@ -5,6 +5,8 @@
 
 #include "gbuffer.h"
 
+class EnvMap;
+
 struct RenderTargets
 {
     static constexpr int WORK_GROUP_SIZE = 8;
@@ -23,6 +25,10 @@ struct RenderTargets
     GBuffer gbuf_prev;
 
     FrameBuffer fb; // wraps `display`, used for the final swap-chain blit
+
+    // Optional per-scene HDR envmap. Owned by Renderer; Renderer sets this pointer
+    // in loadScene() (null if the scene has no envmap). Passes read it in execute().
+    const EnvMap* envMap = nullptr;
 
     GLuint numGroupsX = 0;
     GLuint numGroupsY = 0;

@@ -8,11 +8,16 @@
 
 class FPSTimer;
 class GPUTimer;
+struct RenderSettings;
 
 class GuiPass : public RenderPass
 {
 public:
-    GuiPass(const FPSTimer& fps, const GPUTimer& gpu, const std::vector<SceneEntry>& sceneEntries, Gui::SceneSwitchState& sceneSwitch);
+    GuiPass(const FPSTimer&                fps,
+            const GPUTimer&                gpu,
+            const std::vector<SceneEntry>& sceneEntries,
+            Gui::SceneSwitchState&         sceneSwitch,
+            RenderSettings&                settings);
     void execute(const RenderContext&, RenderTargets&) override;
 
 private:
@@ -20,4 +25,5 @@ private:
     const GPUTimer&                gpuTimer;
     const std::vector<SceneEntry>& sceneEntries;
     Gui::SceneSwitchState&         sceneSwitch;
+    RenderSettings&                settings;
 };

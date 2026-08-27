@@ -21,6 +21,15 @@ void Renderer::loadScene(const Scene& scene, const Camera& camera) {
     trianglesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 4, scene.world.triangles, GL_STREAM_COPY);
     verticesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 5, scene.world.vertices, GL_STREAM_COPY);
 
+    // Rebuild (or clear) the envmap. Empty path → EnvMap() default-constructs
+    // to invalid, which makes `targets.envMap->valid()` false.
+    if (!scene.envMapPath.empty()) {
+        envMap = EnvMap(scene.envMapPath, scene.envIntensity);
+    } else {
+        envMap = EnvMap();
+    }
+    targets.envMap = &envMap;
+
     Log::info("Renderer: Buffers created");
     for (auto& pass : passes) {
         pass->uploadUniforms(scene, camera);

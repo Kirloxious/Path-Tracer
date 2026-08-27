@@ -39,6 +39,21 @@ Texture::Texture(int width, int height, GLenum internalFormat) : width(width), h
     glClearTexImage(handle, 0, format, GL_FLOAT, zero);
 }
 
+Texture::Texture(int width, int height, GLenum internalFormat, GLenum pixelFormat, GLenum pixelType, const void* pixels)
+    : width(width), height(height), internalFormat(internalFormat) {
+    if (width <= 0 || height <= 0 || pixels == nullptr) {
+        Log::error("Texture: bad upload ({}x{}, pixels={})", width, height, pixels);
+        return;
+    }
+    glCreateTextures(GL_TEXTURE_2D, 1, &handle);
+    glTextureStorage2D(handle, 1, internalFormat, width, height);
+    glTextureParameteri(handle, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTextureParameteri(handle, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTextureParameteri(handle, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(handle, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTextureSubImage2D(handle, 0, 0, 0, width, height, pixelFormat, pixelType, pixels);
+}
+
 Texture::~Texture() {
     if (handle) {
         glDeleteTextures(1, &handle);

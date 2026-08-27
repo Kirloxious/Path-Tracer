@@ -4,6 +4,7 @@ layout(local_size_x = 64) in;
 #include "common/path_state.glsl"
 #include "common/queue.glsl"
 #include "common/bvh_traversal.glsl"
+#include "common/envmap.glsl"
 
 void main() {
     uint qid = gl_GlobalInvocationID.x;
@@ -17,7 +18,9 @@ void main() {
     HitRecord hit;
     int       tri_index;
     if (!world_hit_stackless(r, 0.001, 1e30, hit, tri_index)) {
-        // Miss — sky contribution is zero. Path dies (does not enqueue).
+        // Miss — env contribution × throughput. Path dies (does not enqueue).
+        // v1 uses miss-sampling only; no MIS weight needed here (no NEE toward env).
+        states[pid].radiance += states[pid].throughput * sample_envmap(r.direction);
         return;
     }
 

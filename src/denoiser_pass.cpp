@@ -7,7 +7,7 @@
 #include "log.h"
 #include "render_pass.h"
 
-DenoiserPass::DenoiserPass(const std::filesystem::path& shaderPath) {
+DenoiserPass::DenoiserPass(const std::filesystem::path& shaderPath, const RenderSettings& settings) : settings(settings) {
     Log::info("DenoiserPass: loading '{}'", shaderPath.string());
     shader = ComputeShader(shaderPath);
 }
@@ -39,6 +39,7 @@ void DenoiserPass::execute(const RenderContext& ctx, RenderTargets& targets) {
 
     shader.use();
     shader.setFloat("sigma_color", adaptiveSigmaColor);
+    shader.setFloat("exposure", settings.exposure);
     for (int pass = 0; pass < 4; ++pass) {
         srcs[pass]->bind(0, GL_READ_ONLY);
         targets.normals.bind(1, GL_READ_ONLY);

@@ -3,6 +3,7 @@
 #include <filesystem>
 
 #include "buffer.h"
+#include "env_map.h"
 #include "log.h"
 
 namespace {
@@ -73,12 +74,21 @@ PathTracerPass::PathTracerPass(int w, int h)
 
 void PathTracerPass::uploadUniforms(const Scene& scene, const Camera& camera) {
     // Static (per-scene) uniforms. Per-frame uniforms are set in execute().
-    const int bvhRoot = scene.world.bvh.root;
-    const int numLightGroups = static_cast<int>(scene.world.lightGroups.size());
-    const int maxBounces = camera.settings.max_bounces;
+    const int   bvhRoot = scene.world.bvh.root;
+    const int   numLightGroups = static_cast<int>(scene.world.lightGroups.size());
+    const int   maxBounces = camera.settings.max_bounces;
+    const bool  envValid = !scene.envMapPath.empty();
+    const float envIntensity = scene.envIntensity;
 
     trace.use();
     trace.setInt("bvh_root_index", bvhRoot);
+    // envmap.glsl uses layout(location=20) / location=21 for these.
+    glUniform1i(20, envValid ? 1 : 0);
+    glUniform1f(21, envIntensity);
+
+    generate.use();
+    glUniform1i(20, envValid ? 1 : 0);
+    glUniform1f(21, envIntensity);
 
     traceShadow.use();
     traceShadow.setInt("bvh_root_index", bvhRoot);
@@ -120,6 +130,12 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     // ---- Bind read-only inputs from the raster gbuffer ----
     glBindTextureUnit(5, targets.gbuf.pos_matid.handle);
     glBindTextureUnit(6, targets.gbuf.normal.handle);
+
+    // Envmap texture at unit 9 (envmap.glsl declares binding=9). Bind unconditionally —
+    // if the scene has no envmap, sample_envmap() returns black via the env_map_valid uniform.
+    if (targets.envMap && targets.envMap->valid()) {
+        targets.envMap->bind(9);
+    }
 
     // Bind the indirect args buffer once. It's still bound as an SSBO at
     // BIND_DISPATCH_ARGS for prepareIndirect's writes.
