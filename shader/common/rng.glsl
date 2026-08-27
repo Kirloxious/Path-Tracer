@@ -1,10 +1,10 @@
 #ifndef RNG_GLSL
 #define RNG_GLSL
 
-const float MAT_LAMBERTIAN = 0.0;
-const float MAT_METAL = 1.0;
-const float MAT_DIELECTRIC = 2.0;
-const float MAT_EMISSIVE = 3.0;
+const uint MAT_LAMBERTIAN = 0u;
+const uint MAT_METAL = 1u;
+const uint MAT_DIELECTRIC = 2u;
+const uint MAT_EMISSIVE = 3u;
 
 const float infinity = 1.0 / 0.0;
 const float PI = 3.14159265358979323846;

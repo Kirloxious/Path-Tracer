@@ -51,7 +51,7 @@ struct Material
     float fuzz;
     vec3 emission;
     float refractive_index;
-    float type;
+    uint type;
 };
 
 struct BVHNodeFlat

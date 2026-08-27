@@ -29,7 +29,7 @@ Scene Scene::CornellBox() {
     uint32_t green = w.addMaterial(Material::Lambertian(glm::vec3(0.12f, 0.45f, 0.15f)));
 
     // Ceiling light
-    w.addSphere(glm::vec3(S * 0.5f, S * 0.93f, S * 0.5f), S * 0.06f, Material::Emissive(glm::vec3(1.0f), glm::vec3(8.0f)));
+    w.addSphere(glm::vec3(S * 0.5f, S * 0.93f, S * 0.5f), S * 0.06f, Material::Emissive(glm::vec3(1.0f), glm::vec3(8.0f)), 16, 32);
 
     // Walls — open front at z=0
     w.addTriQuad(glm::vec3(S, 0, 0), glm::vec3(0, 0, S), glm::vec3(0, S, 0), red);   // Left (red)
@@ -112,14 +112,14 @@ Scene Scene::SphereWorld() {
 
     World& w = scene.world;
 
-    uint32_t ground = w.addMaterial(Material::Lambertian(glm::vec3(0.5f, 0.5f, 0.5f)));
-    w.addSphere(glm::vec3(0.0f, -1000.0f, 0.0f), 1000.0f, ground);
-    w.addSphere(glm::vec3(0.0f, 100.0f, 50.0f), 30.0f, Material::Emissive(glm::vec3(1.0f), glm::vec3(4.0f)));
+    uint32_t        ground = w.addMaterial(Material::Lambertian(glm::vec3(0.5f, 0.5f, 0.5f)));
+    constexpr float groundSpan = 50.0f;
+    w.addTriQuad(
+        glm::vec3(-groundSpan, 0.0f, groundSpan), glm::vec3(2.0f * groundSpan, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -2.0f * groundSpan), ground);
+    w.addSphere(glm::vec3(0.0f, 100.0f, 50.0f), 30.0f, Material::Emissive(glm::vec3(1.0f), glm::vec3(10.0f)), 16, 32);
 
-    // Tiny radius-0.2 spheres are mostly sub-pixel — drop tessellation to 4x6
-    // (16 tris each) instead of the 224-tri default to keep the BVH manageable.
-    constexpr int tinyLat = 4;
-    constexpr int tinyLon = 6;
+    constexpr int tinyLat = 16;
+    constexpr int tinyLon = 32;
     for (int a = -11; a < 11; a++) {
         for (int b = -11; b < 11; b++) {
             float     choose_mat = randomFloat();
@@ -139,10 +139,10 @@ Scene Scene::SphereWorld() {
         }
     }
 
-    w.addSphere(glm::vec3(0.0f, 1.0f, 4.0f), 1.0f, Material::Dielectric(1.5f));
-    w.addSphere(glm::vec3(4.0f, 1.0f, 0.0f), 1.0f, Material::Metal(glm::vec3(0.7f, 0.6f, 0.5f), 0.0f));
-    w.addSphere(glm::vec3(-4.0f, 1.0f, 0.0f), 1.0f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(10.0f, 6.0f, 2.0f)));
-    w.addSphere(glm::vec3(-8.0f, 1.0f, 0.0f), 1.0f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(10.0f, 6.0f, 2.0f)));
+    w.addSphere(glm::vec3(0.0f, 1.0f, 4.0f), 1.0f, Material::Dielectric(1.5f), tinyLat, tinyLon);
+    w.addSphere(glm::vec3(4.0f, 1.0f, 0.0f), 1.0f, Material::Metal(glm::vec3(0.7f, 0.6f, 0.5f), 0.0f), tinyLat, tinyLon);
+    w.addSphere(glm::vec3(-4.0f, 1.0f, 0.0f), 1.0f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(10.0f, 6.0f, 2.0f)), tinyLat, tinyLon);
+    w.addSphere(glm::vec3(-8.0f, 1.0f, 0.0f), 1.0f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(10.0f, 6.0f, 2.0f)), tinyLat, tinyLon);
 
     uint32_t  triMat = w.addMaterial(Material::Lambertian(glm::vec3(0.2f, 0.8f, 0.2f)));
     glm::vec3 a(6.0f, 0.0f, -3.0f), b(8.0f, 0.0f, -3.0f), c(7.0f, 0.0f, -5.0f), apex(7.0f, 2.0f, -4.0f);
@@ -173,7 +173,10 @@ Scene Scene::Showcase() {
 
     World& w = scene.world;
 
-    w.addSphere(glm::vec3(0.0f, -1000.0f, 0.0f), 1000.0f, Material::Lambertian(glm::vec3(0.4f, 0.4f, 0.4f)));
+    uint32_t        groundMat = w.addMaterial(Material::Lambertian(glm::vec3(0.4f, 0.4f, 0.4f)));
+    constexpr float groundSpan = 50.0f;
+    w.addTriQuad(
+        glm::vec3(-groundSpan, 0.0f, groundSpan), glm::vec3(2.0f * groundSpan, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -2.0f * groundSpan), groundMat);
     w.addSphere(glm::vec3(0.0f, 12.0f, 0.0f), 4.0f, Material::Emissive(glm::vec3(1.0f), glm::vec3(6.0f)));
 
     uint32_t bunnyMat = w.addMaterial(Material::Lambertian(glm::vec3(0.9f, 0.7f, 0.2f)));
@@ -204,7 +207,7 @@ Scene Scene::MirrorFloor() {
     Log::info("Building scene: {}", scene.name);
 
     scene.cameraSettings.aspect_ratio = 16.0f / 9.0f;
-    scene.cameraSettings.image_width = 1200;
+    scene.cameraSettings.image_width = 1600;
     scene.cameraSettings.max_bounces = 16;
     scene.cameraSettings.samples_per_pixel = 4;
     scene.cameraSettings.vfov = 30.0f;

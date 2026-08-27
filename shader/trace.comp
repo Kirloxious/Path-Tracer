@@ -29,7 +29,7 @@ void main() {
     if (hit.front_face) states[pid].flags |=  FLAG_FRONT_FACE;
     else                states[pid].flags &= ~FLAG_FRONT_FACE;
 
-    float t = mats[hit.mat_index].type;
+    uint t = mats[hit.mat_index].type;
     if      (t == MAT_LAMBERTIAN) hit_lambertian_push(pid);
     else if (t == MAT_METAL)      hit_metal_push(pid);
     else if (t == MAT_DIELECTRIC) hit_dielectric_push(pid);

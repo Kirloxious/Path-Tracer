@@ -333,7 +333,7 @@ float scatter_pdf(in Material mat, in vec3 normal, in vec3 scatter_dir) {
 
 bool scatter(inout uint state, in Ray ray_in, in HitRecord hit_rec, inout vec3 mat_color, inout Ray scattered, out Material mat) {
     mat = mats[hit_rec.mat_index];
-    float type = mat.type;
+    uint type = mat.type;
 
     if (type == MAT_EMISSIVE) {
         mat_color = mat.color;

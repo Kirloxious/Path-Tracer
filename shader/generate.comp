@@ -45,7 +45,7 @@ void main() {
     // ray_queue_push(pid);
     // Skip the first trace by pushing straight to the per-material hit queue.
     // Subsequent bounces go through trace.comp
-    float t = mats[matid].type;
+    uint t = mats[matid].type;
     if (t == MAT_LAMBERTIAN) hit_lambertian_push(pid);
     else if (t == MAT_METAL) hit_metal_push(pid);
     else if (t == MAT_DIELECTRIC) hit_dielectric_push(pid);

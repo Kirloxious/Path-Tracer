@@ -17,14 +17,14 @@ struct alignas(16) Material
     float     fuzz = 0.0f;
     glm::vec3 emission = glm::vec3(0.0f);
     float     refractive_index = 0.0f;
-    float     type = 0.0f;
+    uint32_t  type = 0u;
 
-    [[nodiscard]] bool isEmissive() const { return type == static_cast<float>(MaterialType::Emissive); }
+    [[nodiscard]] bool isEmissive() const { return type == static_cast<uint32_t>(MaterialType::Emissive); }
 
     [[nodiscard]] static Material Lambertian(glm::vec3 color) {
         Material m;
         m.color = color;
-        m.type = static_cast<float>(MaterialType::Lambertian);
+        m.type = static_cast<uint32_t>(MaterialType::Lambertian);
         return m;
     }
 
@@ -32,14 +32,14 @@ struct alignas(16) Material
         Material m;
         m.color = color;
         m.fuzz = fuzz;
-        m.type = static_cast<float>(MaterialType::Metal);
+        m.type = static_cast<uint32_t>(MaterialType::Metal);
         return m;
     }
 
     [[nodiscard]] static Material Dielectric(float refractive_index) {
         Material m;
         m.refractive_index = refractive_index;
-        m.type = static_cast<float>(MaterialType::Dielectric);
+        m.type = static_cast<uint32_t>(MaterialType::Dielectric);
         return m;
     }
 
@@ -47,7 +47,7 @@ struct alignas(16) Material
         Material m;
         m.color = color;
         m.emission = emission;
-        m.type = static_cast<float>(MaterialType::Emissive);
+        m.type = static_cast<uint32_t>(MaterialType::Emissive);
         return m;
     }
 };
