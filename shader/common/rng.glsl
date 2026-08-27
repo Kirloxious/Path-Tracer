@@ -16,9 +16,8 @@ const float PI = 3.14159265358979323846;
 //
 // PCG handles a zero state fine (it advances multiplicatively), so we drop the
 // | 1u that xorshift required.
-uvec4 init_rng(uint pid, int frame_index, uint time_seed) {
-    uint seed = pid * 1973u + uint(frame_index) * 9277u + time_seed * 26699u + 1u;
-    return uvec4(seed, 0u, 0u, 0u);
+uint init_rng(uint pid, int frame_index, uint time_seed) {
+    return pid * 1973u + uint(frame_index) * 9277u + time_seed * 26699u + 1u;
 }
 
 // PCG output XSH-RR variant (Melissa O'Neill, "PCG: A Family of Simple Fast

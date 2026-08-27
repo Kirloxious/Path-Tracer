@@ -23,8 +23,7 @@ void Renderer::loadScene(const Scene& scene, const Camera& camera) {
 
     Log::info("Renderer: Buffers created");
     for (auto& pass : passes) {
-        // hack: passing temp render ctx
-        pass->uploadUniforms({scene, camera, 1, 0});
+        pass->uploadUniforms(scene, camera);
     }
 
     Log::info("Renderer: Scene loaded.");

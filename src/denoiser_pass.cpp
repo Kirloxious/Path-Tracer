@@ -12,9 +12,9 @@ DenoiserPass::DenoiserPass(const std::filesystem::path& shaderPath) {
     shader = ComputeShader(shaderPath);
 }
 
-void DenoiserPass::uploadUniforms(const RenderContext& ctx) {
+void DenoiserPass::uploadUniforms(const Scene&, const Camera& camera) {
     shader.use();
-    shader.setVec2("image_size", glm::vec2(ctx.camera.image_width, ctx.camera.image_height));
+    shader.setVec2("image_size", glm::vec2(camera.image_width, camera.image_height));
     shader.setFloat("sigma_normal", 64.0f);
 }
 

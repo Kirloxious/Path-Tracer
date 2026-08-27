@@ -1,0 +1,26 @@
+#version 460 core
+layout(local_size_x = 6) in;
+
+// Reads the current queue counters and writes a matching glDispatchCompute-Indirect
+// arg triple per queue slot. Called before each group of shade/trace dispatches so
+// they only launch the workgroups they actually need (huge savings at late bounces
+// where 95% of paths have died).
+
+#include "common/queue.glsl"
+
+layout(std430, binding = 23) restrict writeonly buffer DispatchArgsBuffer {
+    uvec4 dispatch_args[6]; // uvec4 (with .w unused) keeps 16-byte std430 alignment
+};
+
+// All shade/trace/traceShadow kernels are `local_size_x = 64`. Hardcoded to keep
+// this kernel branchless.
+const uint LOCAL_SIZE = 64u;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= 6u) return;
+
+    uint c = q_count[i];
+    uint g = (c + LOCAL_SIZE - 1u) / LOCAL_SIZE;
+    dispatch_args[i] = uvec4(g, 1u, 1u, 0u);
+}

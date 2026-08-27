@@ -35,20 +35,12 @@ struct Reservoir {
 
 const uint RESTIR_INVALID_TRI = 0xFFFFFFFFu;
 
-layout(std430, binding = 18) restrict buffer RestirReservoirsCurrent {
-    Reservoir reservoirs[];
-};
-
-layout(std430, binding = 19) restrict readonly buffer RestirReservoirsPrev {
-    Reservoir prev_reservoirs[];
-};
-
-// Spatial reuse input. The spatial shader reads from this and writes to
-// `reservoirs[]` (binding 18). The two spatial passes ping-pong by swapping
-// which underlying Buffer is bound to 18 vs 20 between dispatches.
-layout(std430, binding = 20) restrict readonly buffer RestirSpatialInput {
-    Reservoir spatial_input[];
-};
+// SSBO declarations for the three reservoir buffers live in per-shader includes:
+//   reservoirs[]      → shadow_reservoirs.glsl-style headers (below)
+//   prev_reservoirs[] → only restir_temporal.comp
+//   spatial_input[]   → only restir_spatial.comp
+// Splitting them keeps shade_lambertian under NVIDIA's 16-SSBO cap while
+// letting the ReSTIR kernels still share the Reservoir struct and helpers here.
 
 float restir_luminance(vec3 c) {
     return dot(c, vec3(0.2126, 0.7152, 0.0722));

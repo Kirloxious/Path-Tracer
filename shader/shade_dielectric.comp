@@ -25,7 +25,7 @@ void main() {
     uint pid = hit_dielectric_idx[qid];
 
     PathState s = states[pid];
-    uint rng = s.rng_state.x;
+    uint rng = s.rng_state;
 
     Material mat = mats[s.hit_matid];
     vec3 N = s.hit_normal;
@@ -75,7 +75,7 @@ void main() {
         else s.throughput /= p;
     }
 
-    s.rng_state.x = rng;
+    s.rng_state = rng;
     states[pid] = s;
 
     if (alive && bounce_index + 1 < max_bounces) {

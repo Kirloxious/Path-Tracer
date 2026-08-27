@@ -23,7 +23,6 @@ void main() {
     // simply don't enter ray_queue and contribute zero radiance.
     states[pid].throughput = vec3(1);
     states[pid].radiance = vec3(0);
-    states[pid].pixel_idx = pid;
     states[pid].bounce = 0;
     states[pid].rng_state = init_rng(pid, frame_index, uint(time));
     states[pid].flags = FLAG_FRONT_FACE; // raster pass renders front faces only

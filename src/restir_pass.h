@@ -37,7 +37,7 @@ class RestirPass : public RenderPass
 public:
     RestirPass(int width, int height);
 
-    void uploadUniforms(const RenderContext&) override;
+    void uploadUniforms(const Scene&, const Camera&) override;
     bool reloadIfChanged(const RenderContext&) override;
     void execute(const RenderContext&, RenderTargets&) override;
 

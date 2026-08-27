@@ -6,6 +6,10 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/rng.glsl"
 #include "common/restir_common.glsl"
 
+layout(std430, binding = 18) restrict buffer RestirReservoirsCurrent {
+    Reservoir reservoirs[];
+};
+
 layout(binding = 5) uniform sampler2D gbuf_pos_matid_tex;
 layout(binding = 6) uniform sampler2D gbuf_normal_tex;
 

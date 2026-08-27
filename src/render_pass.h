@@ -19,7 +19,10 @@ class RenderPass
 public:
     virtual ~RenderPass() = default;
 
-    virtual void uploadUniforms(const RenderContext&) {}
+    // Called on scene load and after a successful shader reload. Only the
+    // scene and camera are available — nothing per-frame (frameIndex, timeSeed).
+    // Per-frame uniforms belong in execute() where they can read a real ctx.
+    virtual void uploadUniforms(const Scene&, const Camera&) {}
 
     virtual bool reloadIfChanged(const RenderContext&) { return false; }
 

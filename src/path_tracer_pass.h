@@ -12,25 +12,31 @@
 // declaration exactly: every `vec3 + scalar` pair is one 16-byte slot.
 struct alignas(16) PathState
 {
-    glm::vec3  throughput;
-    uint32_t   flags;
-    glm::vec3  radiance;
-    uint32_t   pixel_idx;
-    glm::uvec4 rng_state;
-    glm::vec3  ray_origin;
-    float      pdf_bsdf;
-    glm::vec3  ray_dir;
-    uint32_t   bounce;
-    glm::vec3  hit_point;
-    uint32_t   hit_matid;
-    glm::vec3  hit_normal;
-    float      hit_t;
-    glm::vec3  nee_dir;
-    float      nee_dist;
-    glm::vec3  nee_le;
-    uint32_t   hit_triangle_idx;
+    glm::vec3 throughput;
+    uint32_t  flags;
+    glm::vec3 radiance;
+    uint32_t  rng_state;
+    glm::vec3 ray_origin;
+    float     pdf_bsdf;
+    glm::vec3 ray_dir;
+    uint32_t  bounce;
+    glm::vec3 hit_point;
+    uint32_t  hit_matid;
+    glm::vec3 hit_normal;
+    uint32_t  hit_triangle_idx;
 };
-static_assert(sizeof(PathState) == 144, "PathState size must match std430 layout");
+static_assert(sizeof(PathState) == 96, "PathState size must match std430 layout");
+
+// Companion buffer for NEE plumbing (see common/path_state.glsl). Kept separate
+// from PathState so kernels that don't touch NEE avoid the VRAM cost.
+struct alignas(16) ShadowState
+{
+    glm::vec3 nee_dir;
+    float     nee_dist;
+    glm::vec3 nee_le;
+    float     _pad;
+};
+static_assert(sizeof(ShadowState) == 32, "ShadowState size must match std430 layout");
 
 // Wavefront path tracer. One PathState SSBO plus per-bounce queues drive a
 // sequence of coherent compute dispatches:
@@ -51,7 +57,7 @@ class PathTracerPass : public RenderPass
 public:
     PathTracerPass(int width, int height);
 
-    void uploadUniforms(const RenderContext&) override;
+    void uploadUniforms(const Scene&, const Camera&) override;
     bool reloadIfChanged(const RenderContext&) override;
     void execute(const RenderContext&, RenderTargets&) override;
 
@@ -71,8 +77,13 @@ private:
     ComputeShader shadeEmissive;
     ComputeShader traceShadow;
     ComputeShader resolve;
+    ComputeShader prepareIndirect;
 
     Buffer pathStateSSBO;
+    Buffer shadowStateSSBO;
+    // Doubles as an SSBO (written by prepareIndirect) and as GL_DISPATCH_INDIRECT_BUFFER
+    // (read by glDispatchComputeIndirect). Holds 6 uvec3 dispatch args, indexed by SLOT_*.
+    Buffer dispatchArgsSSBO;
 
     QueueCounters queueCounters;
     Queue         rayQueue;

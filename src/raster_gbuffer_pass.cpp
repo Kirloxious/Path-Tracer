@@ -76,8 +76,8 @@ void RasterGBufferPass::buildGeometry(const World& world) {
     Log::info("RasterGBufferPass: {} vertices, {} indices ({} triangles)", world.vertices.size(), indexCount, indexCount / 3);
 }
 
-void RasterGBufferPass::uploadUniforms(const RenderContext& ctx) {
-    buildGeometry(ctx.scene.world);
+void RasterGBufferPass::uploadUniforms(const Scene& scene, const Camera&) {
+    buildGeometry(scene.world);
 }
 
 bool RasterGBufferPass::reloadIfChanged(const RenderContext&) {

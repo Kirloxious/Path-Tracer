@@ -2,11 +2,16 @@
 layout(local_size_x = 64) in;
 
 #include "common/path_state.glsl"
+#include "common/shadow_state.glsl"
 #include "common/queue.glsl"
 #include "common/scene_buffers.glsl"
 #include "common/rng.glsl"
 #include "common/restir_common.glsl"
 #include "common/geom.glsl"
+
+layout(std430, binding = 18) restrict readonly buffer RestirReservoirsCurrent {
+    Reservoir reservoirs[];
+};
 
 layout(location = 11) uniform int num_light_groups;
 layout(location = 12) uniform int bounce_index;
@@ -26,7 +31,7 @@ void main() {
 
     PathState s = states[pid];
     Reservoir res = reservoirs[pid];
-    uint rng = s.rng_state.x;
+    uint rng = s.rng_state;
 
     Material mat = mats[s.hit_matid];
     vec3 P = s.hit_point;
@@ -104,9 +109,9 @@ void main() {
                 vec3 contrib = s.throughput * albedo * lmat.emission * cos_theta * mis_weight /
                         (light_pdf_combined * PI);
 
-                s.nee_dir = light_dir;
-                s.nee_dist = dist;
-                s.nee_le = contrib;
+                shadow_states[pid].nee_dir = light_dir;
+                shadow_states[pid].nee_dist = dist;
+                shadow_states[pid].nee_le = contrib;
                 nee_setup = true;
             }
         }
@@ -114,10 +119,7 @@ void main() {
 
     if (nee_setup) {
         shadow_queue_push(pid);
-    } else {
-        s.nee_le = vec3(0);
     }
-    // }
 
     // ---- BSDF continuation: cosine-weighted hemisphere sample ----
     // pdf = cos θ / π,  BRDF = albedo / π,  cos θ → estimator weight = albedo.
@@ -160,7 +162,7 @@ void main() {
         else s.throughput /= p;
     }
 
-    s.rng_state.x = rng;
+    s.rng_state = rng;
     states[pid] = s;
 
     if (alive && bounce_index + 1 < max_bounces) {

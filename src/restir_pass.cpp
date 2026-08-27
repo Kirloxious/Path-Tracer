@@ -42,9 +42,9 @@ void RestirPass::clearReservoirBuffers() {
     glClearNamedBufferData(reservoirsB.id, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, &zero);
 }
 
-void RestirPass::uploadUniforms(const RenderContext& ctx) {
-    const int bvhRoot = ctx.scene.world.bvh.root;
-    const int numLightGroups = static_cast<int>(ctx.scene.world.lightGroups.size());
+void RestirPass::uploadUniforms(const Scene& scene, const Camera&) {
+    const int bvhRoot = scene.world.bvh.root;
+    const int numLightGroups = static_cast<int>(scene.world.lightGroups.size());
 
     initial.use();
     initial.setInt("bvh_root_index", bvhRoot);
@@ -69,7 +69,7 @@ bool RestirPass::reloadIfChanged(const RenderContext& ctx) {
     any |= temporal.reloadIfChanged();
     any |= spatial.reloadIfChanged();
     if (any) {
-        uploadUniforms(ctx);
+        uploadUniforms(ctx.scene, ctx.camera);
     }
     return any;
 }

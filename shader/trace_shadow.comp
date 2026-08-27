@@ -2,6 +2,7 @@
 layout(local_size_x = 64) in;
 
 #include "common/path_state.glsl"
+#include "common/shadow_state.glsl"
 #include "common/queue.glsl"
 #include "common/bvh_traversal.glsl"
 #include "common/geom.glsl"
@@ -11,15 +12,20 @@ void main() {
     if (qid >= shadow_queue_count) return;
     uint pid = shadow_queue_idx[qid];
 
-    PathState s = states[pid];
     // Analytic NEE only fires at bounce > 0 (bounce 0 uses ReSTIR with folded
     // visibility), so hit_triangle_idx is always valid here.
-    bool front_face = (s.flags & FLAG_FRONT_FACE) != 0u;
-    vec3 offset_n   = triangle_geom_normal(s.hit_triangle_idx, front_face);
-    vec3 origin     = s.hit_point + 0.001 * offset_n;
-    vec3 target     = s.hit_point + s.nee_dir * s.nee_dist;
+    uint  flags       = states[pid].flags;
+    vec3  hit_point   = states[pid].hit_point;
+    uint  tri_idx     = states[pid].hit_triangle_idx;
+    bool  front_face  = (flags & FLAG_FRONT_FACE) != 0u;
+
+    ShadowState ss = shadow_states[pid];
+
+    vec3 offset_n = triangle_geom_normal(tri_idx, front_face);
+    vec3 origin   = hit_point + 0.001 * offset_n;
+    vec3 target   = hit_point + ss.nee_dir * ss.nee_dist;
 
     if (is_visible(origin, target)) {
-        states[pid].radiance = s.radiance + s.nee_le;
+        states[pid].radiance = states[pid].radiance + ss.nee_le;
     }
 }

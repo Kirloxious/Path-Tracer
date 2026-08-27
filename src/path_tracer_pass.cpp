@@ -18,6 +18,8 @@ constexpr GLuint BIND_HIT_METAL_INDICES = 14;
 constexpr GLuint BIND_HIT_DIELECTRIC_INDICES = 15;
 constexpr GLuint BIND_HIT_EMISSIVE_INDICES = 16;
 constexpr GLuint BIND_SHADOW_QUEUE_INDICES = 17;
+constexpr GLuint BIND_SHADOW_STATE = 22;
+constexpr GLuint BIND_DISPATCH_ARGS = 23;
 
 // Counter-array slot indices — must match shader/common/queue.glsl Q_*.
 constexpr int SLOT_RAY = 0;
@@ -27,6 +29,11 @@ constexpr int SLOT_DIELECTRIC = 3;
 constexpr int SLOT_EMISSIVE = 4;
 constexpr int SLOT_SHADOW = 5;
 constexpr int NUM_QUEUE_SLOTS = 6;
+
+// prepare_indirect writes uvec4 per slot (uvec3 in std430 arrays has a 16-byte
+// stride anyway; the .w padding just makes the layout explicit). glDispatchComputeIndirect
+// reads 3 uints from `slot * DISPATCH_ARG_STRIDE` bytes.
+constexpr GLintptr DISPATCH_ARG_STRIDE = 16;
 } // namespace
 
 PathTracerPass::PathTracerPass(int w, int h)
@@ -43,9 +50,15 @@ PathTracerPass::PathTracerPass(int w, int h)
     shadeEmissive = ComputeShader("shader/shade_emissive.comp");
     traceShadow = ComputeShader("shader/trace_shadow.comp");
     resolve = ComputeShader("shader/resolve.comp");
+    prepareIndirect = ComputeShader("shader/prepare_indirect.comp");
 
-    // PathState — width*height entries, 144 B each. ~117 MB at 1200x675.
+    // PathState — width*height entries, 96 B each (was 144 B). NEE fields moved to shadowStateSSBO.
     pathStateSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, BIND_PATH_STATE, nullptr, numPixels * sizeof(PathState), GL_DYNAMIC_COPY);
+    shadowStateSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, BIND_SHADOW_STATE, nullptr, numPixels * sizeof(ShadowState), GL_DYNAMIC_COPY);
+
+    // 6 slots × 16 B (uvec4 stride in std430). Same GL buffer serves as SSBO (write, from
+    // prepare_indirect) and GL_DISPATCH_INDIRECT_BUFFER (read, by glDispatchComputeIndirect).
+    dispatchArgsSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, BIND_DISPATCH_ARGS, nullptr, NUM_QUEUE_SLOTS * DISPATCH_ARG_STRIDE, GL_DYNAMIC_COPY);
 
     queueCounters = QueueCounters(BIND_QUEUE_COUNTERS, NUM_QUEUE_SLOTS);
 
@@ -58,11 +71,11 @@ PathTracerPass::PathTracerPass(int w, int h)
     shadowQueue = Queue(queueCounters, SLOT_SHADOW, BIND_SHADOW_QUEUE_INDICES, numPixels);
 }
 
-void PathTracerPass::uploadUniforms(const RenderContext& ctx) {
+void PathTracerPass::uploadUniforms(const Scene& scene, const Camera& camera) {
     // Static (per-scene) uniforms. Per-frame uniforms are set in execute().
-    const int bvhRoot = ctx.scene.world.bvh.root;
-    const int numLightGroups = static_cast<int>(ctx.scene.world.lightGroups.size());
-    const int maxBounces = ctx.camera.settings.max_bounces;
+    const int bvhRoot = scene.world.bvh.root;
+    const int numLightGroups = static_cast<int>(scene.world.lightGroups.size());
+    const int maxBounces = camera.settings.max_bounces;
 
     trace.use();
     trace.setInt("bvh_root_index", bvhRoot);
@@ -94,8 +107,9 @@ bool PathTracerPass::reloadIfChanged(const RenderContext& ctx) {
     any |= shadeEmissive.reloadIfChanged();
     any |= traceShadow.reloadIfChanged();
     any |= resolve.reloadIfChanged();
+    any |= prepareIndirect.reloadIfChanged();
     if (any) {
-        uploadUniforms(ctx);
+        uploadUniforms(ctx.scene, ctx.camera);
     }
     return any;
 }
@@ -107,6 +121,14 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     glBindTextureUnit(5, targets.gbuf.pos_matid.handle);
     glBindTextureUnit(6, targets.gbuf.normal.handle);
 
+    // Bind the indirect args buffer once. It's still bound as an SSBO at
+    // BIND_DISPATCH_ARGS for prepareIndirect's writes.
+    glBindBuffer(GL_DISPATCH_INDIRECT_BUFFER, dispatchArgsSSBO.id);
+
+    // Every barrier below combines storage + indirect visibility so the next
+    // glDispatchComputeIndirect can read the freshly-written args.
+    constexpr GLbitfield BARRIER = GL_SHADER_STORAGE_BARRIER_BIT | GL_COMMAND_BARRIER_BIT;
+
     // ---- Clear all queue counters ----
     queueCounters.clearAll();
 
@@ -116,34 +138,45 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     generate.setInt("frame_index", ctx.frameIndex);
     generate.setInt("time", static_cast<int>(ctx.timeSeed));
     glDispatchCompute(numWorkGroupsX_8x8, numWorkGroupsY_8x8, 1);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    glMemoryBarrier(BARRIER);
 
     // ---- Bounce loop ----
     for (int b = 0; b < maxBounces; ++b) {
+        // Rebuild hit_{L,M,D,E} indirect args from the queue counters that generate
+        // (bounce 0) or the previous iteration's trace (bounce > 0) just filled.
+        prepareIndirect.use();
+        glDispatchCompute(1, 1, 1);
+        glMemoryBarrier(BARRIER);
+
         // Shade. Each kernel reads its own hit_X queue and writes ray_queue + shadow_queue
         // via atomicAdd; they don't depend on each other's outputs, so we issue all four
         // back-to-back and barrier once at the end.
         shadeLambertian.use();
         shadeLambertian.setInt("bounce_index", b);
-        glDispatchCompute(numWorkGroups_64, 1, 1);
+        glDispatchComputeIndirect(SLOT_LAMB * DISPATCH_ARG_STRIDE);
 
         shadeMetal.use();
         shadeMetal.setInt("bounce_index", b);
-        glDispatchCompute(numWorkGroups_64, 1, 1);
+        glDispatchComputeIndirect(SLOT_METAL * DISPATCH_ARG_STRIDE);
 
         shadeDielectric.use();
         shadeDielectric.setInt("bounce_index", b);
-        glDispatchCompute(numWorkGroups_64, 1, 1);
+        glDispatchComputeIndirect(SLOT_DIELECTRIC * DISPATCH_ARG_STRIDE);
 
         shadeEmissive.use();
-        glDispatchCompute(numWorkGroups_64, 1, 1);
+        glDispatchComputeIndirect(SLOT_EMISSIVE * DISPATCH_ARG_STRIDE);
 
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        glMemoryBarrier(BARRIER);
 
-        // Shadow visibility. Reads shadow_queue + states, writes states[].radiance.
+        // Refresh args for the shadow_queue and ray_queue that shades just filled.
+        prepareIndirect.use();
+        glDispatchCompute(1, 1, 1);
+        glMemoryBarrier(BARRIER);
+
+        // Shadow visibility. Reads shadow_queue + shadow_states + states, writes states[].radiance.
         traceShadow.use();
-        glDispatchCompute(numWorkGroups_64, 1, 1);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        glDispatchComputeIndirect(SLOT_SHADOW * DISPATCH_ARG_STRIDE);
+        glMemoryBarrier(BARRIER);
 
         // Hit_X consumed by shade; shadow consumed by traceShadow. Reset for next iter.
         hitLambertian.clear();
@@ -155,8 +188,8 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
         // Trace continuation rays (skip on the last bounce — there's no "next" hit to write).
         if (b + 1 < maxBounces) {
             trace.use();
-            glDispatchCompute(numWorkGroups_64, 1, 1);
-            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+            glDispatchComputeIndirect(SLOT_RAY * DISPATCH_ARG_STRIDE);
+            glMemoryBarrier(BARRIER);
             rayQueue.clear();
         }
     }

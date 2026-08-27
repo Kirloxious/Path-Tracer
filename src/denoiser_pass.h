@@ -7,7 +7,7 @@ class DenoiserPass : public RenderPass
 {
 public:
     explicit DenoiserPass(const std::filesystem::path&);
-    void uploadUniforms(const RenderContext&) override;
+    void uploadUniforms(const Scene&, const Camera&) override;
     bool reloadIfChanged(const RenderContext&) override;
     void execute(const RenderContext&, RenderTargets&) override;
 

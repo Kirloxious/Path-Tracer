@@ -6,6 +6,17 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/rng.glsl"
 #include "common/restir_common.glsl"
 
+layout(std430, binding = 18) restrict buffer RestirReservoirsCurrent {
+    Reservoir reservoirs[];
+};
+
+// Spatial reuse reads from `spatial_input` and writes `reservoirs`. The two
+// spatial passes ping-pong by swapping which underlying Buffer is bound to
+// 18 vs 20 between dispatches.
+layout(std430, binding = 20) restrict readonly buffer RestirSpatialInput {
+    Reservoir spatial_input[];
+};
+
 layout(binding = 5) uniform sampler2D gbuf_pos_matid_tex;
 layout(binding = 6) uniform sampler2D gbuf_normal_tex;
 
