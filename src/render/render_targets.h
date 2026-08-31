@@ -14,7 +14,8 @@ struct RenderTargets
     Texture accum;         // path tracer output — single-frame noisy sample
     Texture normals;       // primary normals + material type, consumed by the denoiser
     Texture denoised_ping; // A-Trous ping-pong
-    Texture display;       // final image blitted to the swap chain
+    Texture hdr;           // HDR pre-tonemap image — output of denoiser, modified by bloom, read by auto-exposure + tonemap
+    Texture display;       // final LDR image blitted to the swap chain
 
     // gbuf is the current frame's primary-visibility data; gbuf_prev holds the
     // previous frame's, used for temporal reprojection (ReSTIR temporal reuse,

@@ -9,26 +9,9 @@ layout(location = 0) uniform int step_size;
 layout(location = 1) uniform vec2 image_size;
 layout(location = 2) uniform float sigma_color;
 layout(location = 3) uniform float sigma_normal;
-layout(location = 4) uniform int apply_tonemapping;
-layout(location = 5) uniform float exposure;
-
-// Narkowicz ACES fit — cheap, matches ACES filmic curve for the middle range,
-// clamps highlights gracefully. Coefficients: krzysztof.narkowicz.com/2016.
-vec3 aces_tonemap(vec3 c) {
-    const float a = 2.51;
-    const float b = 0.03;
-    const float d = 2.43;
-    const float e_ = 0.59;
-    const float f = 0.14;
-    return clamp((c * (a * c + b)) / (c * (d * c + e_) + f), 0.0, 1.0);
-}
 
 // Separable Gaussian kernel: 2D weight = h[i] * h[j]
 const float h[5] = float[5](1.0 / 16.0, 1.0 / 4.0, 3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0);
-
-vec3 linear_to_srgb(vec3 c) {
-    return mix(c * 12.92, pow(c, vec3(1.0 / 2.4)) * 1.055 - 0.055, step(0.0031308, c));
-}
 
 void main() {
     ivec2 p = ivec2(gl_GlobalInvocationID.xy);
@@ -46,12 +29,7 @@ void main() {
     // their silhouette into neighbouring darker geometry.
     bool denoise_skip = (mat_type > 0.5);
     if (denoise_skip) {
-        vec3 result = c_p;
-        if (apply_tonemapping == 1) {
-            result = aces_tonemap(result * exposure);
-            result = linear_to_srgb(result);
-        }
-        imageStore(dst_image, p, vec4(result, 1.0));
+        imageStore(dst_image, p, vec4(c_p, 1.0));
         return;
     }
 
@@ -77,11 +55,5 @@ void main() {
     }
 
     vec3 result = (wsum > 1e-6) ? sum / wsum : c_p;
-
-    if (apply_tonemapping == 1) {
-        result = aces_tonemap(result * exposure);
-        result = linear_to_srgb(result);
-    }
-
     imageStore(dst_image, p, vec4(result, 1.0));
 }

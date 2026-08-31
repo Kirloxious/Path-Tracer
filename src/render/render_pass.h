@@ -9,6 +9,7 @@ struct RenderContext
     const Camera& camera;
     int           frameIndex;
     uint32_t      timeSeed;
+    float         dt; // seconds since last frame — used by EMA-style passes (auto-exposure)
 
 public:
     void resetFrameIndex() { frameIndex = 0; }
@@ -25,6 +26,10 @@ public:
     virtual void uploadUniforms(const Scene&, const Camera&) {}
 
     virtual bool reloadIfChanged(const RenderContext&) { return false; }
+
+    // Called when the framebuffer size changes. Default no-op; passes that cache
+    // dimensions or own per-pixel GPU buffers must override to reallocate.
+    virtual void resize(int /*width*/, int /*height*/) {}
 
     virtual void execute(const RenderContext&, RenderTargets&) = 0;
 

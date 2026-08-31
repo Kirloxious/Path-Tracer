@@ -63,6 +63,20 @@ void RestirPass::uploadUniforms(const Scene& scene, const Camera&) {
     clearReservoirBuffers();
 }
 
+void RestirPass::resize(int w, int h) {
+    width = w;
+    height = h;
+    numPixels = w * h;
+    numWorkGroupsX = (w + WORK_GROUP - 1) / WORK_GROUP;
+    numWorkGroupsY = (h + WORK_GROUP - 1) / WORK_GROUP;
+
+    const size_t bytes = numPixels * sizeof(ReservoirData);
+    reservoirsA = Buffer(GL_SHADER_STORAGE_BUFFER, BIND_RESERVOIRS_CURRENT, nullptr, bytes, GL_DYNAMIC_COPY);
+    reservoirsB = Buffer(GL_SHADER_STORAGE_BUFFER, BIND_RESERVOIRS_PREV, nullptr, bytes, GL_DYNAMIC_COPY);
+    clearReservoirBuffers();
+    useAAsCurrent = true;
+}
+
 bool RestirPass::reloadIfChanged(const RenderContext& ctx) {
     bool any = false;
     any |= initial.reloadIfChanged();

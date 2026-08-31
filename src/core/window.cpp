@@ -41,7 +41,7 @@ Window::Window(int width, int height, std::string_view title) : width(width), he
     }
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 #ifndef NDEBUG
     glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 #endif
@@ -68,6 +68,19 @@ Window::Window(int width, int height, std::string_view title) : width(width), he
         return;
     }
     glfwSwapInterval(0);
+
+    // Route framebuffer resize events into pending{Width,Height,Resize} so the
+    // main loop can reallocate render targets between frames.
+    glfwSetWindowUserPointer(window, this);
+    glfwSetFramebufferSizeCallback(window, [](GLFWwindow* w, int fbW, int fbH) {
+        auto* self = static_cast<Window*>(glfwGetWindowUserPointer(w));
+        if (!self || fbW <= 0 || fbH <= 0) {
+            return;
+        }
+        self->pendingResize = true;
+        self->pendingWidth = fbW;
+        self->pendingHeight = fbH;
+    });
 
     Log::info("GL vendor: {}", reinterpret_cast<const char*>(glGetString(GL_VENDOR)));
     Log::info("GL renderer: {}", reinterpret_cast<const char*>(glGetString(GL_RENDERER)));

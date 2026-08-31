@@ -3,7 +3,11 @@
 #include <chrono>
 #include <memory>
 
+#include "render/passes/aov_pass.h"
+#include "render/passes/auto_exposure_pass.h"
+#include "render/passes/bloom_pass.h"
 #include "render/passes/denoiser_pass.h"
+#include "render/passes/tonemap_pass.h"
 #include "core/gl_debug.h"
 #include "render/gui.h"
 #include "render/passes/gui_pass.h"
@@ -41,7 +45,11 @@ Application::Application(Scene initialScene)
     renderer.addRenderPass(std::make_unique<RasterGBufferPass>(gbufferVertPath, gbufferFragPath));
     renderer.addRenderPass(std::make_unique<RestirPass>(camera.image_width, camera.image_height));
     renderer.addRenderPass(std::make_unique<PathTracerPass>(camera.image_width, camera.image_height));
-    renderer.addRenderPass(std::make_unique<DenoiserPass>(denoiserShaderPath, settings));
+    renderer.addRenderPass(std::make_unique<DenoiserPass>(denoiserShaderPath));
+    renderer.addRenderPass(std::make_unique<BloomPass>(camera.image_width, camera.image_height, settings));
+    renderer.addRenderPass(std::make_unique<AutoExposurePass>(camera.image_width, camera.image_height, settings));
+    renderer.addRenderPass(std::make_unique<TonemapPass>(camera.image_width, camera.image_height));
+    renderer.addRenderPass(std::make_unique<AovPass>(camera.image_width, camera.image_height, settings));
 
     renderer.addRenderPass(
         std::make_unique<GuiPass>(fpsTimer, gpuTimer, renderer.getPassTimings(), sceneEntries, sceneSwitch, settings)); // keep last
@@ -55,6 +63,15 @@ int Application::run() {
 
         Gui::beginFrame();
 
+        if (window.pendingResize) {
+            window.pendingResize = false;
+            window.width = window.pendingWidth;
+            window.height = window.pendingHeight;
+            camera.resize(window.width, window.height);
+            renderer.resize(window.width, window.height);
+            frameIndex = 0;
+        }
+
         const InputState input = window.pollInput();
         camera.update(input, fpsTimer.deltaTime);
 
@@ -63,12 +80,12 @@ int Application::run() {
             camera.moving = false;
         }
 
-        RenderContext ctx{scene, camera, ++frameIndex, timeSeed++};
+        RenderContext ctx{scene, camera, ++frameIndex, timeSeed++, static_cast<float>(fpsTimer.deltaTime)};
 
         // Sub-pixel jitter for AA. Re-uploads the camera UBO every frame because
         // the projection matrix changes each frame; jitter resets implicitly when
         // frameIndex resets after camera motion.
-        camera.applyJitter(ctx.frameIndex);
+        // camera.applyJitter(ctx.frameIndex);
         renderer.updateCameraUbo(camera);
         if (renderer.reloadShadersIfChanged(ctx)) {
             // Shader reloads discard the history too — the program being reloaded

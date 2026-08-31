@@ -89,9 +89,40 @@ void drawCamera(const Camera& camera) {
 }
 
 void drawSettings(RenderSettings& settings) {
+    // Post-process only — mutating anything below does NOT reset frameIndex.
+    ImGui::Checkbox("Auto exposure", &settings.autoExposureEnabled);
+    if (settings.autoExposureEnabled) {
+        ImGui::SetNextItemWidth(180.0f);
+        ImGui::SliderFloat("Target luma", &settings.autoExposureTargetLuma, 0.05f, 0.5f, "%.2f");
+        ImGui::SetNextItemWidth(180.0f);
+        ImGui::SliderFloat("Adapt tau (s)", &settings.autoExposureTau, 0.05f, 5.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+    } else {
+        ImGui::SetNextItemWidth(180.0f);
+        ImGui::SliderFloat("Exposure", &settings.exposure, 0.05f, 5.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+    }
+
+    ImGui::Checkbox("Bloom", &settings.bloomEnabled);
+    if (settings.bloomEnabled) {
+        ImGui::SetNextItemWidth(180.0f);
+        ImGui::SliderFloat("Bloom strength", &settings.bloomStrength, 0.0f, 0.5f, "%.3f");
+        ImGui::SetNextItemWidth(180.0f);
+        ImGui::SliderFloat("Bloom threshold", &settings.bloomThreshold, 0.0f, 5.0f, "%.2f");
+    }
+
+    // AOV overlay. Also post-process — swapping mode doesn't invalidate accumulation.
+    static const char* aovNames[] = {"Off", "World Normal", "Linear Depth", "Albedo", "Material ID", "BVH Cost", "Variance"};
+    int                aovIdx = static_cast<int>(settings.aovMode);
     ImGui::SetNextItemWidth(180.0f);
-    // Post-process only — mutating this does NOT reset frameIndex (see Application::run).
-    ImGui::SliderFloat("Exposure", &settings.exposure, 0.05f, 5.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+    if (ImGui::Combo("AOV", &aovIdx, aovNames, IM_ARRAYSIZE(aovNames))) {
+        settings.aovMode = static_cast<AovMode>(aovIdx);
+    }
+    if (settings.aovMode == AovMode::LinearDepth) {
+        ImGui::SetNextItemWidth(180.0f);
+        ImGui::SliderFloat("Depth max", &settings.aovDepthMax, 0.5f, 200.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
+    } else if (settings.aovMode == AovMode::BvhCost) {
+        ImGui::SetNextItemWidth(180.0f);
+        ImGui::SliderFloat("BVH cost max", &settings.aovBvhCostMax, 10.0f, 2000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+    }
 }
 
 void drawPassTimings(const PassTimings& timings) {

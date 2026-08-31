@@ -123,6 +123,24 @@ Camera& Camera::update(const InputState& input, float dt) {
     return *this;
 }
 
+void Camera::resize(int w, int h) {
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    image_width = w;
+    image_height = h;
+    settings.image_width = w;
+    settings.aspect_ratio = static_cast<float>(w) / static_cast<float>(h);
+
+    baseProjection = glm::perspective(glm::radians(settings.vfov), settings.aspect_ratio, 0.1f, 1000.0f);
+    data.projection = baseProjection;
+    data.inv_projection = glm::inverse(data.projection);
+    // Match the constructor: seed prev_view_proj with the current view*projection
+    // so the very next frame's temporal reprojection can't sample against a stale
+    // aspect ratio.
+    data.prev_view_proj = data.projection * data.view;
+}
+
 void Camera::translate(glm::vec3 delta) {
     data.lookfrom += delta.x * right + delta.y * up + delta.z * forward;
 }

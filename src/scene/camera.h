@@ -58,6 +58,10 @@ public:
     // Applies one frame of input and returns *this for chaining.
     Camera& update(const InputState& input, float dt);
 
+    // Update image dimensions + rebuild projection matrix to match a new aspect ratio.
+    // Leaves position/orientation untouched.
+    void resize(int width, int height);
+
     // Replace data.projection (and inv_projection) with a sub-pixel-jittered version,
     // using a Halton(2, 3) sequence indexed by frameIndex. AA falls out of progressive
     // accumulation: each frame the gbuffer samples a different sub-pixel position,

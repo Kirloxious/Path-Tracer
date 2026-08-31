@@ -39,6 +39,7 @@ public:
 
     void        uploadUniforms(const Scene&, const Camera&) override;
     bool        reloadIfChanged(const RenderContext&) override;
+    void        resize(int width, int height) override;
     void        execute(const RenderContext&, RenderTargets&) override;
     const char* name() const override { return "ReSTIR"; }
 

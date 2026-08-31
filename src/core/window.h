@@ -34,6 +34,13 @@ public:
     int              height = 0;
     std::string_view title;
 
+    // Set by the GLFW framebuffer-size callback whenever the OS resizes the window.
+    // Application drains this each frame to reallocate render targets on the render
+    // thread rather than inside the callback.
+    bool pendingResize = false;
+    int  pendingWidth = 0;
+    int  pendingHeight = 0;
+
     Window(int width, int height, std::string_view title);
     ~Window();
 

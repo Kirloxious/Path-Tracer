@@ -107,6 +107,28 @@ void PathTracerPass::uploadUniforms(const Scene& scene, const Camera& camera) {
     shadeDielectric.setInt("max_bounces", maxBounces);
 }
 
+void PathTracerPass::resize(int w, int h) {
+    width = w;
+    height = h;
+    numPixels = w * h;
+    numWorkGroupsX_8x8 = (w + WORK_GROUP_8x8 - 1) / WORK_GROUP_8x8;
+    numWorkGroupsY_8x8 = (h + WORK_GROUP_8x8 - 1) / WORK_GROUP_8x8;
+    numWorkGroups_64 = (numPixels + WORK_GROUP_64 - 1) / WORK_GROUP_64;
+
+    pathStateSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, BIND_PATH_STATE, nullptr, numPixels * sizeof(PathState), GL_DYNAMIC_COPY);
+    shadowStateSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, BIND_SHADOW_STATE, nullptr, numPixels * sizeof(ShadowState), GL_DYNAMIC_COPY);
+
+    // dispatchArgsSSBO is size-independent (6 slots, fixed) but the queues below
+    // scale with pixel count, so they must be reallocated. Rebind their counter
+    // to the same shared QueueCounters (still valid, unchanged).
+    rayQueue = Queue(queueCounters, SLOT_RAY, BIND_RAY_QUEUE_INDICES, numPixels);
+    hitLambertian = Queue(queueCounters, SLOT_LAMB, BIND_HIT_LAMBERTIAN_INDICES, numPixels);
+    hitMetal = Queue(queueCounters, SLOT_METAL, BIND_HIT_METAL_INDICES, numPixels);
+    hitDielectric = Queue(queueCounters, SLOT_DIELECTRIC, BIND_HIT_DIELECTRIC_INDICES, numPixels);
+    hitEmissive = Queue(queueCounters, SLOT_EMISSIVE, BIND_HIT_EMISSIVE_INDICES, numPixels);
+    shadowQueue = Queue(queueCounters, SLOT_SHADOW, BIND_SHADOW_QUEUE_INDICES, numPixels);
+}
+
 bool PathTracerPass::reloadIfChanged(const RenderContext& ctx) {
     bool any = false;
     any |= generate.reloadIfChanged();
