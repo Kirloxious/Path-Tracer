@@ -11,9 +11,10 @@ public:
     RasterGBufferPass(const std::filesystem::path& vertPath, const std::filesystem::path& fragPath);
     ~RasterGBufferPass() override;
 
-    void uploadUniforms(const Scene&, const Camera&) override;
-    bool reloadIfChanged(const RenderContext&) override;
-    void execute(const RenderContext&, RenderTargets&) override;
+    void        uploadUniforms(const Scene&, const Camera&) override;
+    bool        reloadIfChanged(const RenderContext&) override;
+    void        execute(const RenderContext&, RenderTargets&) override;
+    const char* name() const override { return "Raster"; }
 
 private:
     RasterShader shader;

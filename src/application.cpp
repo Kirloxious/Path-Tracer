@@ -43,7 +43,7 @@ Application::Application(Scene initialScene)
     renderer.addRenderPass(std::make_unique<PathTracerPass>(camera.image_width, camera.image_height));
     renderer.addRenderPass(std::make_unique<DenoiserPass>(denoiserShaderPath, settings));
 
-    renderer.addRenderPass(std::make_unique<GuiPass>(fpsTimer, gpuTimer, sceneEntries, sceneSwitch, settings)); // keep last
+    renderer.addRenderPass(std::make_unique<GuiPass>(fpsTimer, gpuTimer, renderer.getPassTimings(), sceneEntries, sceneSwitch, settings)); // keep last
 
     renderer.loadScene(scene, camera);
 }

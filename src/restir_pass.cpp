@@ -92,14 +92,14 @@ void RestirPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     glBindTextureUnit(8, targets.gbuf_prev.normal.handle);
 
     initial.use();
-    glUniform2i(glGetUniformLocation(initial.ID, "image_size"), width, height);
+    initial.setIVec2("image_size", width, height);
     initial.setInt("frame_index", ctx.frameIndex);
     initial.setInt("time", static_cast<int>(ctx.timeSeed));
     glDispatchCompute(numWorkGroupsX, numWorkGroupsY, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     temporal.use();
-    glUniform2i(glGetUniformLocation(temporal.ID, "image_size"), width, height);
+    temporal.setIVec2("image_size", width, height);
     temporal.setInt("frame_index", ctx.frameIndex);
     temporal.setInt("time", static_cast<int>(ctx.timeSeed));
     glDispatchCompute(numWorkGroupsX, numWorkGroupsY, 1);
@@ -114,14 +114,14 @@ void RestirPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     // Pass 2: read prevId (pass-1 output), write currentId. Final result lands
     // back in currentId at binding 18 for shade_lambertian to consume.
     spatial.use();
-    glUniform2i(glGetUniformLocation(spatial.ID, "image_size"), width, height);
+    spatial.setIVec2("image_size", width, height);
     spatial.setInt("frame_index", ctx.frameIndex);
     spatial.setInt("time", static_cast<int>(ctx.timeSeed));
 
     // Pass 1
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BIND_RESERVOIRS_SPATIAL_INPUT, currentId);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BIND_RESERVOIRS_CURRENT, prevId);
-    glUniform1f(glGetUniformLocation(spatial.ID, "radius_pixels"), SPATIAL_RADIUS_PASS_1);
+    spatial.setFloat("radius_pixels", SPATIAL_RADIUS_PASS_1);
     spatial.setInt("pass_index", 0);
     glDispatchCompute(numWorkGroupsX, numWorkGroupsY, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -129,7 +129,7 @@ void RestirPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     // Pass 2
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BIND_RESERVOIRS_SPATIAL_INPUT, prevId);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BIND_RESERVOIRS_CURRENT, currentId);
-    glUniform1f(glGetUniformLocation(spatial.ID, "radius_pixels"), SPATIAL_RADIUS_PASS_2);
+    spatial.setFloat("radius_pixels", SPATIAL_RADIUS_PASS_2);
     spatial.setInt("pass_index", 1);
     glDispatchCompute(numWorkGroupsX, numWorkGroupsY, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);

@@ -50,6 +50,10 @@ void ShaderProgram::setVec2(const std::string& name, const glm::vec2& v) const {
     glUniform2fv(getLocation(name), 1, &v[0]);
 }
 
+void ShaderProgram::setIVec2(const std::string& name, int x, int y) const {
+    glUniform2i(getLocation(name), x, y);
+}
+
 void ShaderProgram::setVec3(const std::string& name, const glm::vec3& v) const {
     glUniform3fv(getLocation(name), 1, &v[0]);
 }

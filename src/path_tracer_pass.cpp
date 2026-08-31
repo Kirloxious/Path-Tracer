@@ -150,7 +150,7 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
 
     // ---- generate: gbuffer → hit_X queues ----
     generate.use();
-    glUniform2i(glGetUniformLocation(generate.ID, "image_size"), width, height);
+    generate.setIVec2("image_size", width, height);
     generate.setInt("frame_index", ctx.frameIndex);
     generate.setInt("time", static_cast<int>(ctx.timeSeed));
     glDispatchCompute(numWorkGroupsX_8x8, numWorkGroupsY_8x8, 1);
@@ -215,7 +215,7 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     targets.normals.bind(2, GL_WRITE_ONLY);
 
     resolve.use();
-    glUniform2i(glGetUniformLocation(resolve.ID, "image_size"), width, height);
+    resolve.setIVec2("image_size", width, height);
     resolve.setInt("frame_index", ctx.frameIndex);
     glDispatchCompute(numWorkGroupsX_8x8, numWorkGroupsY_8x8, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);

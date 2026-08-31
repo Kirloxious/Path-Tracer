@@ -4,7 +4,7 @@
 #include "camera.h"
 #include "render_settings.h"
 #include "scene.h"
-#include "timer.h"
+#include "timer.h" // for PassTimings + GPUTimer/FPSTimer
 #include "world.h"
 
 namespace Gui {
@@ -94,8 +94,14 @@ void drawSettings(RenderSettings& settings) {
     ImGui::SliderFloat("Exposure", &settings.exposure, 0.05f, 5.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
 }
 
-void drawStats(const FPSTimer& fps, const GPUTimer& gpu, const Scene& scene, const Camera& camera, const std::vector<SceneEntry>& sceneEntries,
-               SceneSwitchState& sceneSwitch, RenderSettings& settings) {
+void drawPassTimings(const PassTimings& timings) {
+    for (int i = 0; i < timings.count(); ++i) {
+        ImGui::Text("%-10s %6.2f ms", timings.nameFor(i), timings.msFor(i));
+    }
+}
+
+void drawStats(const FPSTimer& fps, const GPUTimer& gpu, const PassTimings& passes, const Scene& scene, const Camera& camera,
+               const std::vector<SceneEntry>& sceneEntries, SceneSwitchState& sceneSwitch, RenderSettings& settings) {
     const float          pad = 10.0f;
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + pad, vp->WorkPos.y + pad), ImGuiCond_Always);
@@ -109,6 +115,8 @@ void drawStats(const FPSTimer& fps, const GPUTimer& gpu, const Scene& scene, con
 
     if (ImGui::Begin("##perf-overlay", nullptr, flags)) {
         drawPerformance(fps, gpu);
+        ImGui::Separator();
+        drawPassTimings(passes);
         ImGui::Separator();
         drawSceneSwitcher(sceneEntries, sceneSwitch);
         drawScene(scene);

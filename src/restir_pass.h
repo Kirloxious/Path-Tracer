@@ -37,9 +37,10 @@ class RestirPass : public RenderPass
 public:
     RestirPass(int width, int height);
 
-    void uploadUniforms(const Scene&, const Camera&) override;
-    bool reloadIfChanged(const RenderContext&) override;
-    void execute(const RenderContext&, RenderTargets&) override;
+    void        uploadUniforms(const Scene&, const Camera&) override;
+    bool        reloadIfChanged(const RenderContext&) override;
+    void        execute(const RenderContext&, RenderTargets&) override;
+    const char* name() const override { return "ReSTIR"; }
 
 private:
     void clearReservoirBuffers();

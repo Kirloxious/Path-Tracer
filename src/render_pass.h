@@ -28,6 +28,10 @@ public:
 
     virtual void execute(const RenderContext&, RenderTargets&) = 0;
 
+    // Short display name for per-pass GPU timers. Default is a placeholder so
+    // adding a new pass doesn't force a rebuild of the timer panel.
+    virtual const char* name() const { return "Pass"; }
+
     RenderPass() = default;
     RenderPass(const RenderPass&) = delete;
     RenderPass& operator=(const RenderPass&) = delete;
