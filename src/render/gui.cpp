@@ -138,13 +138,13 @@ void drawStats(const FPSTimer& fps, const GPUTimer& gpu, const PassTimings& pass
     ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + pad, vp->WorkPos.y + pad), ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.40f);
 
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                             ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_AlwaysAutoResize;
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+                             ImGuiWindowFlags_NoNav | ImGuiWindowFlags_AlwaysAutoResize;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 6.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6.0f, 3.0f));
 
-    if (ImGui::Begin("##perf-overlay", nullptr, flags)) {
+    if (ImGui::Begin("perf-overlay", nullptr, flags)) {
         drawPerformance(fps, gpu);
         ImGui::Separator();
         drawPassTimings(passes);

@@ -1,0 +1,114 @@
+#version 460 core
+layout(local_size_x = 8, local_size_y = 8) in;
+#include "common/scene_buffers.glsl"
+
+layout(rgba32f, binding = 0) readonly  uniform image2D current_image; // tonemap output
+layout(rgba32f, binding = 2) writeonly uniform image2D taa_output_image;
+
+layout(binding = 5) uniform sampler2D gbuf_pos_matid_tex;      // world-space primary hit
+layout(binding = 7) uniform sampler2D taa_history_tex;         // previous frame's TAA output (LINEAR filtered)
+
+layout(location = 0) uniform ivec2 image_size;
+layout(location = 1) uniform int   frame_index;   // resets to 1 on camera motion / shader reload
+layout(location = 2) uniform float blend_alpha;   // upper bound on history weight (e.g. 0.9)
+
+vec3 rgb_min(vec3 a, vec3 b) { return min(a, b); }
+vec3 rgb_max(vec3 a, vec3 b) { return max(a, b); }
+
+// 5-tap Catmull-Rom bicubic — replaces bilinear history sampling to preserve high
+// frequencies. Bilinear resampling each frame acts as a repeated 4-tap low-pass
+// filter and is the dominant cause of the "TAA blur" look. Catmull-Rom's negative
+// side lobes push back against that softening. Weights collapsed to bilinear tap
+// centers via the offset12 trick so we spend 5 bilinear fetches instead of 16.
+vec3 sample_history_catmull_rom(sampler2D tex, vec2 uv, vec2 tex_size) {
+    vec2 sample_pos = uv * tex_size;
+    vec2 tex_pos_1 = floor(sample_pos - 0.5) + 0.5;
+    vec2 f = sample_pos - tex_pos_1;
+
+    vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+    vec2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+    vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+    vec2 w3 = f * f * (-0.5 + 0.5 * f);
+
+    vec2 w12 = w1 + w2;
+    vec2 offset12 = w2 / w12;
+
+    vec2 tex_pos_0 = (tex_pos_1 - 1.0) / tex_size;
+    vec2 tex_pos_3 = (tex_pos_1 + 2.0) / tex_size;
+    vec2 tex_pos_12 = (tex_pos_1 + offset12) / tex_size;
+
+    vec3 result = vec3(0.0);
+    result += texture(tex, vec2(tex_pos_12.x, tex_pos_0.y)).rgb * w12.x * w0.y;
+    result += texture(tex, vec2(tex_pos_0.x,  tex_pos_12.y)).rgb * w0.x  * w12.y;
+    result += texture(tex, vec2(tex_pos_12.x, tex_pos_12.y)).rgb * w12.x * w12.y;
+    result += texture(tex, vec2(tex_pos_3.x,  tex_pos_12.y)).rgb * w3.x  * w12.y;
+    result += texture(tex, vec2(tex_pos_12.x, tex_pos_3.y)).rgb * w12.x * w3.y;
+    return result;
+}
+
+void main() {
+    ivec2 px = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(px, image_size))) return;
+
+    vec3 cur = imageLoad(current_image, px).rgb;
+
+    // Frame 1 (post-reset) has no valid history — pass current through untouched.
+    if (frame_index <= 1) {
+        imageStore(taa_output_image, px, vec4(cur, 1.0));
+        return;
+    }
+
+    // Sky pixels have no valid gbuffer world position; skip reprojection there. The
+    // envmap is view-locked, so keeping the current color for sky is correct — history
+    // reprojection would only introduce ghosting when the camera rotates.
+    vec4 pm = texelFetch(gbuf_pos_matid_tex, px, 0);
+    if (dot(pm.xyz, pm.xyz) == 0.0) {
+        imageStore(taa_output_image, px, vec4(cur, 1.0));
+        return;
+    }
+
+    // Reproject the primary hit's world pos through the un-jittered previous view*proj
+    // (see camera.cpp: prev_view_proj is deliberately built from baseProjection).
+    vec4 clip_prev = prev_view_proj_matrix * vec4(pm.xyz, 1.0);
+    if (clip_prev.w <= 0.0) {
+        imageStore(taa_output_image, px, vec4(cur, 1.0));
+        return;
+    }
+    vec2 ndc_prev = clip_prev.xy / clip_prev.w;
+    vec2 uv_prev  = ndc_prev * 0.5 + 0.5;
+
+    if (any(lessThan(uv_prev, vec2(0.0))) || any(greaterThan(uv_prev, vec2(1.0)))) {
+        imageStore(taa_output_image, px, vec4(cur, 1.0));
+        return;
+    }
+
+    vec3 hist = sample_history_catmull_rom(taa_history_tex, uv_prev, vec2(image_size));
+    // Catmull-Rom's negative lobes can dip below zero on high-contrast edges — the
+    // neighborhood clamp below re-bounds the value into the valid color range, but
+    // clamp to 0 first so a stray negative can't poison the min() side of the AABB.
+    hist = max(hist, vec3(0.0));
+
+    // Neighborhood clamp — reject ghosting when the surface's shading has changed
+    // between frames (moving lights, still-converging noise, etc.). Simple RGB AABB
+    // over the 3×3 current-frame neighborhood.
+    vec3 nmin = cur;
+    vec3 nmax = cur;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            if (dx == 0 && dy == 0) continue;
+            ivec2 q = clamp(px + ivec2(dx, dy), ivec2(0), image_size - 1);
+            vec3  c = imageLoad(current_image, q).rgb;
+            nmin = rgb_min(nmin, c);
+            nmax = rgb_max(nmax, c);
+        }
+    }
+    hist = clamp(hist, nmin, nmax);
+
+    // Ramp the history weight over the first few frames so early frames rely more on
+    // fresh samples, then settle at `blend_alpha`. Matches the accum pass's spirit of
+    // trusting history more as we collect more samples.
+    float a = min(blend_alpha, 1.0 - 1.0 / float(frame_index));
+    vec3  outc = mix(cur, hist, a);
+
+    imageStore(taa_output_image, px, vec4(outc, 1.0));
+}

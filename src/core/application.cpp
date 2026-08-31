@@ -7,6 +7,7 @@
 #include "render/passes/auto_exposure_pass.h"
 #include "render/passes/bloom_pass.h"
 #include "render/passes/denoiser_pass.h"
+#include "render/passes/taa_pass.h"
 #include "render/passes/tonemap_pass.h"
 #include "core/gl_debug.h"
 #include "render/gui.h"
@@ -49,6 +50,9 @@ Application::Application(Scene initialScene)
     renderer.addRenderPass(std::make_unique<BloomPass>(camera.image_width, camera.image_height, settings));
     renderer.addRenderPass(std::make_unique<AutoExposurePass>(camera.image_width, camera.image_height, settings));
     renderer.addRenderPass(std::make_unique<TonemapPass>(camera.image_width, camera.image_height));
+    // TAA runs after tonemap so its history stays in perceptual/LDR space (firefly-safe)
+    // and before AOV so debug AOV overrides don't poison the TAA history.
+    renderer.addRenderPass(std::make_unique<TaaPass>(camera.image_width, camera.image_height));
     renderer.addRenderPass(std::make_unique<AovPass>(camera.image_width, camera.image_height, settings));
 
     renderer.addRenderPass(
@@ -85,7 +89,7 @@ int Application::run() {
         // Sub-pixel jitter for AA. Re-uploads the camera UBO every frame because
         // the projection matrix changes each frame; jitter resets implicitly when
         // frameIndex resets after camera motion.
-        // camera.applyJitter(ctx.frameIndex);
+        camera.applyJitter(ctx.frameIndex);
         renderer.updateCameraUbo(camera);
         if (renderer.reloadShadersIfChanged(ctx)) {
             // Shader reloads discard the history too — the program being reloaded

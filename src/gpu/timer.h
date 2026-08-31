@@ -4,6 +4,8 @@
 #include <GLFW/glfw3.h>
 #include <array>
 #include <string>
+#include <utility>
+#include <vector>
 
 class Timer
 {
@@ -92,76 +94,76 @@ private:
 class PassTimings
 {
 public:
-    static constexpr int MAX_PASSES = 8;
-
-    PassTimings() {
-        for (int f = 0; f < 2; ++f) {
-            for (int p = 0; p < MAX_PASSES; ++p) {
-                glGenQueries(1, &slots[f][p].qStart);
-                glGenQueries(1, &slots[f][p].qEnd);
-                // Prime once so the first read returns "available"; without this the
-                // first-frame read blocks or returns garbage on some drivers.
-                glQueryCounter(slots[f][p].qStart, GL_TIMESTAMP);
-                glQueryCounter(slots[f][p].qEnd, GL_TIMESTAMP);
-            }
-        }
-    }
+    PassTimings() = default;
 
     ~PassTimings() {
-        for (int f = 0; f < 2; ++f) {
-            for (int p = 0; p < MAX_PASSES; ++p) {
-                if (slots[f][p].qStart) {
-                    glDeleteQueries(1, &slots[f][p].qStart);
+        for (Pass& pass : passes) {
+            for (Slot& slot : pass.slots) {
+                if (slot.qStart) {
+                    glDeleteQueries(1, &slot.qStart);
                 }
-                if (slots[f][p].qEnd) {
-                    glDeleteQueries(1, &slots[f][p].qEnd);
+                if (slot.qEnd) {
+                    glDeleteQueries(1, &slot.qEnd);
                 }
             }
         }
     }
 
-    // Registered once during Renderer setup, once per RenderPass.
+    // Owns raw GL query handles; copying would double-free them on destruction.
+    PassTimings(const PassTimings&) = delete;
+    PassTimings& operator=(const PassTimings&) = delete;
+
+    // Registered once during Renderer setup, once per RenderPass. Queries are created
+    // on demand so the pass count is never capped — a fixed cap silently dropped the
+    // last passes from the panel whenever the pipeline grew.
     void addPass(const char* name) {
-        if (passCount >= MAX_PASSES) {
-            return;
+        Pass pass;
+        pass.name = name;
+        for (Slot& slot : pass.slots) {
+            glGenQueries(1, &slot.qStart);
+            glGenQueries(1, &slot.qEnd);
+            // Prime once so the first read returns "available"; without this the
+            // first-frame read blocks or returns garbage on some drivers.
+            glQueryCounter(slot.qStart, GL_TIMESTAMP);
+            glQueryCounter(slot.qEnd, GL_TIMESTAMP);
         }
-        passNames[passCount++] = name;
+        passes.push_back(pass);
     }
 
     // Called at the start of Renderer::render(). Pulls in last frame's results.
     void beginFrame() {
-        for (int p = 0; p < passCount; ++p) {
+        for (Pass& pass : passes) {
             GLuint64 tStart = 0;
             GLuint64 tEnd = 0;
-            glGetQueryObjectui64v(slots[read][p].qStart, GL_QUERY_RESULT, &tStart);
-            glGetQueryObjectui64v(slots[read][p].qEnd, GL_QUERY_RESULT, &tEnd);
+            glGetQueryObjectui64v(pass.slots[read].qStart, GL_QUERY_RESULT, &tStart);
+            glGetQueryObjectui64v(pass.slots[read].qEnd, GL_QUERY_RESULT, &tEnd);
             // EWMA smoothing (α = 0.1) — same feel as GPUTimer's second-window average
             // without needing a wall-clock snapshot loop.
             const double ms = (tEnd > tStart) ? static_cast<double>(tEnd - tStart) / 1e6 : 0.0;
-            passMs[p] = passMs[p] * 0.9 + ms * 0.1;
+            pass.ms = pass.ms * 0.9 + ms * 0.1;
         }
     }
 
     void beginPass(int idx) {
-        if (idx < 0 || idx >= passCount) {
+        if (!inRange(idx)) {
             return;
         }
-        glQueryCounter(slots[write][idx].qStart, GL_TIMESTAMP);
+        glQueryCounter(passes[static_cast<size_t>(idx)].slots[write].qStart, GL_TIMESTAMP);
     }
 
     void endPass(int idx) {
-        if (idx < 0 || idx >= passCount) {
+        if (!inRange(idx)) {
             return;
         }
-        glQueryCounter(slots[write][idx].qEnd, GL_TIMESTAMP);
+        glQueryCounter(passes[static_cast<size_t>(idx)].slots[write].qEnd, GL_TIMESTAMP);
     }
 
     // Advance ping-pong at end of frame — swap the buffer we'll read next time.
     void endFrame() { std::swap(read, write); }
 
-    int         count() const { return passCount; }
-    const char* nameFor(int i) const { return passNames[i]; }
-    double      msFor(int i) const { return passMs[i]; }
+    int         count() const { return static_cast<int>(passes.size()); }
+    const char* nameFor(int i) const { return passes[static_cast<size_t>(i)].name; }
+    double      msFor(int i) const { return passes[static_cast<size_t>(i)].ms; }
 
 private:
     struct Slot
@@ -169,12 +171,21 @@ private:
         GLuint qStart = 0;
         GLuint qEnd = 0;
     };
-    std::array<std::array<Slot, MAX_PASSES>, 2> slots{};
-    int                                         write = 0;
-    int                                         read = 1;
-    int                                         passCount = 0;
-    const char*                                 passNames[MAX_PASSES] = {};
-    double                                      passMs[MAX_PASSES] = {};
+
+    struct Pass
+    {
+        const char* name = nullptr;
+        double      ms = 0.0;
+        // Double-buffered: index `write` is being recorded this frame, `read` holds
+        // last frame's completed pair.
+        std::array<Slot, 2> slots{};
+    };
+
+    bool inRange(int idx) const { return idx >= 0 && idx < count(); }
+
+    std::vector<Pass> passes;
+    int               write = 0;
+    int               read = 1;
 };
 
 class FPSTimer : public Timer

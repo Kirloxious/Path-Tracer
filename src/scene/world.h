@@ -131,7 +131,13 @@ public:
 
     void create() {
 
-        validate();
+        // A failed validate() means the geometry can't produce a usable BVH — bail before
+        // bvh.build(), whose `assert(!triangles.empty())` is compiled out under NDEBUG and
+        // whose `2 * n - 1` node count underflows to SIZE_MAX for n == 0.
+        if (!validate()) {
+            Log::error("World::create() aborted — scene failed validation");
+            return;
+        }
         buildLightGroups();
 
         auto start = std::chrono::high_resolution_clock::now();
@@ -195,14 +201,18 @@ public:
         Log::info("Light groups: {} (total {} emissive triangles)", lightGroups.size(), end);
     }
 
-    void validate() const {
+    // Returns false when the world is unusable (no geometry / no materials) — callers must
+    // not proceed to buildLightGroups() or bvh.build(). Index-range and emissive-sort
+    // problems are reported but don't fail the build; they degrade the image rather than
+    // crashing the builder.
+    [[nodiscard]] bool validate() const {
         if (triangles.empty()) {
             Log::error("World::create() called with no geometry — BVH will be empty");
-            return;
+            return false;
         }
         if (materials.empty()) {
             Log::error("World has no materials — every triangle's material_index is invalid");
-            return;
+            return false;
         }
 
         const uint32_t numMats = static_cast<uint32_t>(materials.size());
@@ -234,6 +244,8 @@ public:
         if (hasEmissive && emissiveLastIndex < 0) {
             Log::warn("World has emissive triangles but emissiveLastIndex={} — did you forget sortEmissiveFirst()?", emissiveLastIndex);
         }
+
+        return true;
     }
 
     int sortEmissiveFirst() {

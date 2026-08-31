@@ -7,7 +7,6 @@
 
 Renderer::Renderer(int w, int h) : targets(w, h) {
     Log::info("Renderer");
-    passes.reserve(5);
 }
 
 void Renderer::loadScene(const Scene& scene, const Camera& camera) {

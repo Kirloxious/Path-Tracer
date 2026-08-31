@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glad/glad.h>
+#include <type_traits>
 #include <vector>
 
 #include "core/log.h"
@@ -9,7 +10,7 @@ class Buffer
 {
 public:
     GLuint id = 0;
-    GLenum target;
+    GLenum target = 0;
 
     Buffer() = default;
 
@@ -30,15 +31,26 @@ public:
     Buffer(GLenum target, GLuint bindingPoint, const std::vector<T>& data, GLenum usage)
         : Buffer(target, bindingPoint, data.data(), data.size() * sizeof(T), usage) {}
 
-    // Convenience constructor for single structs
+    // Convenience constructor for single structs. Constrained away from pointers so a
+    // `Buffer(target, binding, ptr, byteSize, usage)` call can never bind T = some pointer
+    // type and upload sizeof(pointer) bytes instead of the buffer it points at.
     template<typename T>
+        requires(!std::is_pointer_v<T>)
     Buffer(GLenum target, GLuint bindingPoint, const T& data, GLenum usage) : Buffer(target, bindingPoint, &data, sizeof(T), usage) {}
 
     void update(const void* data, size_t byteSize, size_t offset = 0) { glNamedBufferSubData(id, offset, byteSize, data); }
 
     template<typename T> void update(const std::vector<T>& data, size_t offset = 0) { update(data.data(), data.size() * sizeof(T), offset); }
 
-    template<typename T> void update(const T& data, size_t offset = 0) { update(&data, sizeof(T), offset); }
+    // Same guard as the single-struct constructor. Without it, `update(&x, sizeof(x))`
+    // binds T = decltype(&x) by identity — which beats the raw-pointer overload's
+    // pointer-to-void conversion — and silently uploads the pointer's own bits at
+    // `offset = sizeof(x)`. Pass the object, not its address.
+    template<typename T>
+        requires(!std::is_pointer_v<T>)
+    void update(const T& data, size_t offset = 0) {
+        update(&data, sizeof(T), offset);
+    }
 
     void bind() const { glBindBuffer(target, id); }
     void unbind() const { glBindBuffer(target, 0); }

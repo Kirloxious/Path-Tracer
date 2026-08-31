@@ -51,8 +51,7 @@ void AutoExposurePass::execute(const RenderContext& ctx, RenderTargets& targets)
     if (!settings.autoExposureEnabled) {
         // Manual exposure: just write the slider value into the SSBO so tonemap
         // sees the same field either way.
-        const float manual = settings.exposure;
-        exposureSSBO.update(&manual, sizeof(float));
+        exposureSSBO.update(settings.exposure);
         primed = false; // re-seed EMA next time auto-exposure is re-enabled
         return;
     }

@@ -45,9 +45,12 @@ float halton(int index, int base) {
 } // namespace
 
 void Camera::applyJitter(int frameIndex) {
-    // Halton(2, 3) ∈ [0, 1)² → centered on the pixel ∈ [-0.5, 0.5)².
-    const float jx_pix = halton(frameIndex + 1, 2) - 0.5f;
-    const float jy_pix = halton(frameIndex + 1, 3) - 0.5f;
+    // Halton(2, 3) ∈ [0, 1)² → centered on the pixel ∈ [-0.5, 0.5)². The 0.5 scale
+    // keeps samples in the inner half of each pixel, which halves silhouette wobble
+    // between frames at the cost of ~2× less peak AA coverage. TAA fills the gap.
+    constexpr float jitterScale = 0.5f;
+    const float     jx_pix = (halton(frameIndex + 1, 2) - 0.5f) * jitterScale;
+    const float     jy_pix = (halton(frameIndex + 1, 3) - 0.5f) * jitterScale;
 
     // Convert pixel offset to NDC. NDC spans [-1, 1] = 2 units across `image_width` pixels.
     const float jx = jx_pix * 2.0f / static_cast<float>(image_width);
