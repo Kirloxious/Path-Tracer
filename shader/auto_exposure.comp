@@ -1,0 +1,58 @@
+#version 460 core
+layout(local_size_x = 256) in;
+
+// Reduces the 256-bin histogram to an EMA-smoothed exposure written into the
+// ExposureBuffer TonemapPass reads. The reduction over 256 bins is small
+// enough that a serial pass on thread 0 is simpler and not slower than a
+// shared-memory tree reduction here.
+
+layout(std430, binding = 31) buffer HistogramBuffer {
+    uint bins[256];
+} hist;
+
+layout(std430, binding = 30) buffer ExposureBuffer {
+    float exposure;
+    float _padding[3];
+} expo;
+
+layout(location = 0) uniform float log_luma_min;
+layout(location = 1) uniform float log_luma_range;
+layout(location = 2) uniform float dt;
+layout(location = 3) uniform float tau;             // EMA time constant in seconds
+layout(location = 4) uniform float target_luma;     // desired luminance (e.g. 0.18 middle-gray)
+layout(location = 5) uniform float min_exposure;
+layout(location = 6) uniform float max_exposure;
+layout(location = 7) uniform int   reset_exposure;  // 1 → skip EMA, snap directly
+
+void main() {
+    // Thread 0 does the whole reduction; the other 255 threads only exist so
+    // the histogram-clear loop below can run in parallel.
+    if (gl_LocalInvocationIndex == 0u) {
+        // Skip bin 0 — reserved for essentially-black pixels; including them
+        // biases the mean toward 0 and blows out dark scenes.
+        float w_sum = 0.0;
+        float c_sum = 0.0;
+        for (uint i = 1u; i < 256u; ++i) {
+            float count = float(hist.bins[i]);
+            w_sum += count * float(i);
+            c_sum += count;
+        }
+
+        float mean_bin = (c_sum < 1.0) ? 128.0 : (w_sum / c_sum);
+
+        // Bin index → log2 luminance → linear luminance.
+        float t = (mean_bin - 1.0) / 254.0;
+        float log_luma = log_luma_min + t * log_luma_range;
+        float avg_luma = exp2(log_luma);
+
+        float target_exposure = clamp(target_luma / max(avg_luma, 1e-4), min_exposure, max_exposure);
+
+        float alpha = 1.0 - exp(-dt / max(tau, 1e-3));
+        float next  = (reset_exposure == 1) ? target_exposure : mix(expo.exposure, target_exposure, clamp(alpha, 0.0, 1.0));
+        expo.exposure = next;
+    }
+
+    // All 256 threads cooperate to zero the histogram for next frame.
+    barrier();
+    hist.bins[gl_LocalInvocationIndex] = 0u;
+}

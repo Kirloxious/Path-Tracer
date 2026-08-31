@@ -1,0 +1,43 @@
+#version 460 core
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Builds a 256-bin log-luminance histogram of the HDR image. Uses shared memory
+// so 256 threads per workgroup atomically-hit a local histogram, then merge to
+// the global one — cheaper than a global-atomic-only version by ~100x.
+
+layout(rgba32f, binding = 0) readonly uniform image2D src_image;
+
+layout(std430, binding = 31) buffer HistogramBuffer {
+    uint bins[256];
+} hist;
+
+layout(location = 0) uniform ivec2 image_size;
+layout(location = 1) uniform float log_luma_min;
+layout(location = 2) uniform float inv_log_luma_range;
+
+shared uint local_bins[256];
+
+uint luma_to_bin(float luma) {
+    if (luma < 1e-4) return 0u; // reserve bin 0 for "essentially black" pixels
+    float log_luma = log2(luma);
+    float t = clamp((log_luma - log_luma_min) * inv_log_luma_range, 0.0, 1.0);
+    return uint(t * 254.0) + 1u; // bins 1..255 span the log range
+}
+
+void main() {
+    // Zero shared bins cooperatively.
+    uint local_index = gl_LocalInvocationIndex; // 0..255
+    local_bins[local_index] = 0u;
+    barrier();
+
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x < image_size.x && p.y < image_size.y) {
+        vec3 c = imageLoad(src_image, p).rgb;
+        float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+        uint bin = luma_to_bin(luma);
+        atomicAdd(local_bins[bin], 1u);
+    }
+    barrier();
+
+    atomicAdd(hist.bins[local_index], local_bins[local_index]);
+}
