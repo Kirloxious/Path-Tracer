@@ -110,15 +110,21 @@ public:
     ~PassTimings() {
         for (int f = 0; f < 2; ++f) {
             for (int p = 0; p < MAX_PASSES; ++p) {
-                if (slots[f][p].qStart) glDeleteQueries(1, &slots[f][p].qStart);
-                if (slots[f][p].qEnd) glDeleteQueries(1, &slots[f][p].qEnd);
+                if (slots[f][p].qStart) {
+                    glDeleteQueries(1, &slots[f][p].qStart);
+                }
+                if (slots[f][p].qEnd) {
+                    glDeleteQueries(1, &slots[f][p].qEnd);
+                }
             }
         }
     }
 
     // Registered once during Renderer setup, once per RenderPass.
     void addPass(const char* name) {
-        if (passCount >= MAX_PASSES) return;
+        if (passCount >= MAX_PASSES) {
+            return;
+        }
         passNames[passCount++] = name;
     }
 
@@ -126,23 +132,27 @@ public:
     void beginFrame() {
         for (int p = 0; p < passCount; ++p) {
             GLuint64 tStart = 0;
-            GLuint64 tEnd   = 0;
+            GLuint64 tEnd = 0;
             glGetQueryObjectui64v(slots[read][p].qStart, GL_QUERY_RESULT, &tStart);
             glGetQueryObjectui64v(slots[read][p].qEnd, GL_QUERY_RESULT, &tEnd);
             // EWMA smoothing (α = 0.1) — same feel as GPUTimer's second-window average
             // without needing a wall-clock snapshot loop.
             const double ms = (tEnd > tStart) ? static_cast<double>(tEnd - tStart) / 1e6 : 0.0;
-            passMs[p]       = passMs[p] * 0.9 + ms * 0.1;
+            passMs[p] = passMs[p] * 0.9 + ms * 0.1;
         }
     }
 
     void beginPass(int idx) {
-        if (idx < 0 || idx >= passCount) return;
+        if (idx < 0 || idx >= passCount) {
+            return;
+        }
         glQueryCounter(slots[write][idx].qStart, GL_TIMESTAMP);
     }
 
     void endPass(int idx) {
-        if (idx < 0 || idx >= passCount) return;
+        if (idx < 0 || idx >= passCount) {
+            return;
+        }
         glQueryCounter(slots[write][idx].qEnd, GL_TIMESTAMP);
     }
 
@@ -157,14 +167,14 @@ private:
     struct Slot
     {
         GLuint qStart = 0;
-        GLuint qEnd   = 0;
+        GLuint qEnd = 0;
     };
     std::array<std::array<Slot, MAX_PASSES>, 2> slots{};
-    int                                         write     = 0;
-    int                                         read      = 1;
+    int                                         write = 0;
+    int                                         read = 1;
     int                                         passCount = 0;
     const char*                                 passNames[MAX_PASSES] = {};
-    double                                      passMs[MAX_PASSES]    = {};
+    double                                      passMs[MAX_PASSES] = {};
 };
 
 class FPSTimer : public Timer

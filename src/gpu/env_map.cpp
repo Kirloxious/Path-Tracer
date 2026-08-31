@@ -35,6 +35,8 @@ EnvMap::EnvMap(const std::filesystem::path& hdrPath, float intensity) : intensit
 }
 
 void EnvMap::bind(int unit) const {
-    if (!valid()) return;
+    if (!valid()) {
+        return;
+    }
     glBindTextureUnit(static_cast<GLuint>(unit), texture.handle);
 }

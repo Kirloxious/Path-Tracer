@@ -20,9 +20,9 @@ public:
     float getIntensity() const { return intensity; }
 
     // Non-copyable, movable (mirrors Texture wrapper).
-    EnvMap(const EnvMap&)            = delete;
+    EnvMap(const EnvMap&) = delete;
     EnvMap& operator=(const EnvMap&) = delete;
-    EnvMap(EnvMap&&) noexcept        = default;
+    EnvMap(EnvMap&&) noexcept = default;
     EnvMap& operator=(EnvMap&&) noexcept = default;
 
 private:

@@ -38,13 +38,12 @@ private:
 struct Queue
 {
     Buffer         indices;
-    QueueCounters* counters    = nullptr;
+    QueueCounters* counters = nullptr;
     int            counterSlot = 0;
 
     Queue() = default;
 
-    Queue(QueueCounters& sharedCounters, int slot, GLuint indicesBinding, size_t capacity)
-        : counters(&sharedCounters), counterSlot(slot) {
+    Queue(QueueCounters& sharedCounters, int slot, GLuint indicesBinding, size_t capacity) : counters(&sharedCounters), counterSlot(slot) {
         indices = Buffer(GL_SHADER_STORAGE_BUFFER, indicesBinding, nullptr, capacity * sizeof(uint32_t), GL_DYNAMIC_COPY);
     }
 
