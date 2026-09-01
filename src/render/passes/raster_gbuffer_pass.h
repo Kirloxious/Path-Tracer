@@ -14,7 +14,7 @@
  * @brief Rasterizes the scene into the G-buffer, replacing GPU primary ray casting.
  *
  * Issues a single `glDrawElements` over `World::vertices` plus an index buffer derived from
- * `Triangle::indices`, writing `gbuf.pos_matid` (xyz = world position, w =
+ * `Triangle::indices`, writing `gbuf.normal` (xyz = world normal, w =
  * `floatBitsToUint(material_index)`) and `gbuf.normal`. Face culling is disabled because the
  * Cornell-box scene mixes windings; the fragment shader flips normals via `gl_FrontFacing` to
  * match the path tracer's `set_face_normal` convention.

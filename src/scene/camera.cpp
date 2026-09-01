@@ -1,9 +1,34 @@
 #include "scene/camera.h"
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
 #include <cmath>
 
 #include "core/log.h"
+
+namespace {
+// Reversed-Z projection.
+//
+// A conventional projection maps the near plane to depth 0 and far to 1, spending almost
+// all of float32's precision in the first fraction of a unit. With near = 0.1 and
+// far = 1000 that left the reconstruction of world position from depth accurate to only
+// ~2e-2 on Cornell Box (scene scale 55) — twenty times the 0.001 offset the tracer uses to
+// escape self-intersection, and enough to seed shadow acne.
+//
+// Swapping near and far inverts the mapping so the far plane sits at depth 0. Float32 has
+// enormous relative precision near zero, and that is exactly where distant geometry now
+// lands, which very nearly cancels the 1/z distribution of perspective depth. Paired with
+// glClipControl(GL_ZERO_TO_ONE) it turns depth into a well-conditioned quantity across the
+// whole range instead of only near the camera.
+//
+// Requires, in lockstep: glClipControl ZERO_TO_ONE, GL_GREATER depth testing, and clearing
+// depth to 0 rather than 1. See Renderer's init and RasterGBufferPass::execute.
+glm::mat4 makeReversedZProjection(const CameraSettings& settings) {
+    constexpr float nearPlane = 0.1f;
+    constexpr float farPlane = 1000.0f;
+    return glm::perspectiveZO(glm::radians(settings.vfov), settings.aspect_ratio, farPlane, nearPlane);
+}
+} // namespace
 
 Camera::Camera(const CameraSettings& settings)
     : settings(settings), image_width(settings.image_width), image_height(static_cast<int>(settings.image_width / settings.aspect_ratio)) {
@@ -22,7 +47,7 @@ Camera::Camera(const CameraSettings& settings)
     yaw = glm::degrees(std::atan2(forward.z, forward.x));
 
     data.view = glm::lookAt(settings.lookfrom, settings.lookat, settings.vup);
-    baseProjection = glm::perspective(glm::radians(settings.vfov), settings.aspect_ratio, 0.1f, 1000.0f);
+    baseProjection = makeReversedZProjection(settings);
     data.projection = baseProjection;
     data.inv_view = glm::inverse(data.view);
     data.inv_projection = glm::inverse(data.projection);
@@ -132,7 +157,7 @@ void Camera::resize(int w, int h) {
     settings.image_width = w;
     settings.aspect_ratio = static_cast<float>(w) / static_cast<float>(h);
 
-    baseProjection = glm::perspective(glm::radians(settings.vfov), settings.aspect_ratio, 0.1f, 1000.0f);
+    baseProjection = makeReversedZProjection(settings);
     data.projection = baseProjection;
     data.inv_projection = glm::inverse(data.projection);
     // Match the constructor: seed prev_view_proj with the current view*projection

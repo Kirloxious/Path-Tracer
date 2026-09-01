@@ -39,8 +39,8 @@ void AovPass::execute(const RenderContext&, RenderTargets& targets) {
     // accum is bound read-only for the variance AOV.
     targets.display.bind(0, GL_WRITE_ONLY);
     targets.accum.bind(1, GL_READ_ONLY);
-    glBindTextureUnit(5, targets.gbuf.pos_matid.handle);
     glBindTextureUnit(6, targets.gbuf.normal.handle);
+    glBindTextureUnit(10, targets.gbuf.depth.handle); // world position is reconstructed from this
 
     shader.setIVec2("image_size", width, height);
     shader.setInt("aov_mode", static_cast<int>(settings.aovMode));

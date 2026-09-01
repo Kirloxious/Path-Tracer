@@ -22,14 +22,19 @@ class GBuffer
 public:
     /// Attachment-index constants kept in one place so the raster shader,
     /// the debug blit, and the consumer (path tracer) can't drift.
-    static constexpr int ATTACH_POS_MATID = 0;
-    static constexpr int ATTACH_NORMAL = 1;
+    static constexpr int ATTACH_NORMAL = 0;
 
-    /// rgba32f — xyz = world-space hit position, w = `floatBitsToUint(material_index)`.
-    Texture pos_matid;
-    /// rgba16f — xyz = world-space surface normal (normalized).
+    /// rgba16f — xyz = world-space surface normal (normalized), w = material index.
+    ///
+    /// The material index rides in .w because a half float stores integers exactly up to
+    /// 2048, far more material slots than any scene here uses. It used to live in the .w of
+    /// a separate rgba32f world-position target, which is gone: world position is now
+    /// reconstructed from `depth` (see common/gbuffer.glsl).
     Texture normal;
-    /// Hardware depth — enables depth testing during the raster pass.
+
+    /// Hardware depth — depth testing during the raster pass, and the source world position
+    /// is reconstructed from. Reversed-Z, so the far plane is 0 and the near plane is 1;
+    /// see makeReversedZProjection() in camera.cpp for why.
     Texture depth;
 
     FrameBuffer fb;
@@ -40,7 +45,7 @@ public:
     GBuffer() = default;
 
     /**
-     * @brief Allocates all three attachments at @p w x @p h and builds the MRT framebuffer.
+     * @brief Allocates both attachments at @p w x @p h and builds the framebuffer.
      * @param w Width in pixels.
      * @param h Height in pixels.
      */
@@ -53,7 +58,7 @@ public:
 
     /**
      * @brief Blits one attachment to the default framebuffer for debug visualization.
-     * @param attachmentIndex ATTACH_POS_MATID or ATTACH_NORMAL.
+     * @param attachmentIndex ATTACH_NORMAL (the only colour attachment).
      * @param dstWidth        Destination width in pixels.
      * @param dstHeight       Destination height in pixels.
      */

@@ -16,8 +16,7 @@ layout(std140, binding = 2) uniform CameraData
     mat4  prev_view_proj;
 } camera;
 
-layout(location = 0) out vec4 o_pos_matid;
-layout(location = 1) out vec4 o_normal;
+layout(location = 0) out vec4 o_normal;
 
 void main() {
     // Match the BVH's set_face_normal convention: flip the stored outward normal so
@@ -30,6 +29,8 @@ void main() {
         N = -N;
     }
 
-    o_pos_matid = vec4(v_world_pos, uintBitsToFloat(v_matid));
-    o_normal    = vec4(N, 0.0);
+    // World position is no longer stored: consumers reconstruct it from the depth buffer,
+    // which already holds the same information. The material index moves into .w — exact in
+    // a half float for any index below 2048.
+    o_normal = vec4(N, float(v_matid));
 }

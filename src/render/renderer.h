@@ -95,7 +95,7 @@ public:
      *
      * Backs the F1/F2 debug views in Application::run().
      *
-     * @param attachmentIndex GBuffer::ATTACH_POS_MATID or GBuffer::ATTACH_NORMAL.
+     * @param attachmentIndex GBuffer::ATTACH_NORMAL (the only colour attachment).
      * @param width           Destination width in pixels.
      * @param height          Destination height in pixels.
      */

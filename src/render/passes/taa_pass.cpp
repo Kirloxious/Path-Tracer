@@ -25,7 +25,8 @@ void TaaPass::execute(const RenderContext& ctx, RenderTargets& targets) {
 
     targets.display.bind(0, GL_READ_ONLY);
     targets.taa_output.bind(2, GL_WRITE_ONLY);
-    glBindTextureUnit(5, targets.gbuf.pos_matid.handle);
+    glBindTextureUnit(6, targets.gbuf.normal.handle);
+    glBindTextureUnit(10, targets.gbuf.depth.handle); // world position is reconstructed from this
     glBindTextureUnit(7, targets.taa_history.handle);
 
     shader.setIVec2("image_size", width, height);

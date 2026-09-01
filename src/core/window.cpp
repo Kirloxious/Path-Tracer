@@ -69,6 +69,15 @@ Window::Window(int width, int height, std::string_view windowTitle) : width(widt
     }
     glfwSwapInterval(0);
 
+    // Reversed-Z depth. GL's default clip range maps NDC z to [-1, 1] and then to [0, 1] in
+    // the depth buffer, which wastes half the mantissa before the depth format even sees it.
+    // ZERO_TO_ONE plus the near/far swap in makeReversedZProjection() puts distant geometry
+    // near depth 0, where float32 is densest. GL 4.5+; this context is 4.6.
+    //
+    // Three things must agree or depth testing silently inverts: this call, the projection,
+    // and RasterGBufferPass's GL_GREATER + 0.0 clear.
+    glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
+
     // Route framebuffer resize events into pending{Width,Height,Resize} so the
     // main loop can reallocate render targets between frames.
     glfwSetWindowUserPointer(window, this);

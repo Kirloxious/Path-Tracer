@@ -5,11 +5,10 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/rng.glsl" // MAT_* constants live here
 #include "common/uniform_locations.glsl"
 #include "common/bvh_traversal.glsl"
+#include "common/gbuffer.glsl"
 
 layout(rgb10_a2, binding = 0) writeonly uniform image2D dst_image;
 layout(rgba32f, binding = 1) readonly  uniform image2D accum_image;
-layout(binding = 5) uniform sampler2D gbuf_pos_matid_tex;
-layout(binding = 6) uniform sampler2D gbuf_normal_tex;
 
 layout(location = 0) uniform ivec2 image_size;
 layout(location = 1) uniform int   aov_mode;
@@ -70,9 +69,8 @@ void main() {
     ivec2 p = ivec2(gl_GlobalInvocationID.xy);
     if (p.x >= image_size.x || p.y >= image_size.y) return;
 
-    vec4  pm    = texelFetch(gbuf_pos_matid_tex, p, 0);
-    vec3  n_raw = texelFetch(gbuf_normal_tex,    p, 0).xyz;
-    bool  miss  = dot(n_raw, n_raw) < 0.5;
+    vec3 n_raw = gbuffer_raw_normal(p);
+    bool miss  = gbuffer_is_sky(n_raw);
 
     vec3 rgb = vec3(0.0);
 
@@ -85,7 +83,7 @@ void main() {
             if (miss) {
                 rgb = vec3(0.0);
             } else {
-                float d = length(pm.xyz - camera_position);
+                float d = length(gbuffer_world_pos(p, image_size) - camera_position);
                 rgb = vec3(clamp(d / max(depth_max, 1e-4), 0.0, 1.0));
             }
             break;
@@ -94,8 +92,7 @@ void main() {
             if (miss) {
                 rgb = vec3(0.0);
             } else {
-                uint matid = floatBitsToUint(pm.w);
-                Material m = mats[matid];
+                Material m = mats[gbuffer_matid(p)];
                 // For emissives, the "color" slot is unused — fall back to emission
                 // clamped into a legible range.
                 rgb = (m.type == MAT_EMISSIVE) ? clamp(m.emission, 0.0, 1.0) : m.color;
@@ -103,14 +100,15 @@ void main() {
             break;
         }
         case AOV_MATERIAL_ID: {
-            rgb = miss ? vec3(0.0) : idHash(floatBitsToUint(pm.w));
+            rgb = miss ? vec3(0.0) : idHash(gbuffer_matid(p));
             break;
         }
         case AOV_BVH_COST: {
             // Reconstruct the primary view ray from pixel coords so sky pixels
             // (no gbuffer hit) still get a meaningful cost.
             vec2 ndc = (vec2(p) + 0.5) / vec2(image_size) * 2.0 - 1.0;
-            vec4 clip = inv_proj_matrix * vec4(ndc.x, ndc.y, -1.0, 1.0);
+            // Reversed-Z with a [0,1] clip range puts the near plane at ndc.z = 1.
+        vec4 clip = inv_proj_matrix * vec4(ndc.x, ndc.y, 1.0, 1.0);
             vec3 dir  = normalize(mat3(inv_view_matrix) * normalize(clip.xyz));
             Ray  probe;
             probe.origin    = camera_position;

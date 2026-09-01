@@ -125,13 +125,12 @@ void RestirPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BIND_SURFACES_CURRENT, surfCurrentId);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BIND_SURFACES_PREV, surfPrevId);
 
-    // Bind current gbuffer as samplers 5/6 (raster pass already does this, but
-    // rebinding keeps the pass self-contained), and the previous-frame gbuffer
-    // as 7/8 for temporal validation.
-    glBindTextureUnit(5, targets.gbuf.pos_matid.handle);
+    // Current G-buffer: normal at 6, depth at 10. World position is reconstructed from the
+    // depth rather than stored. The previous frame's G-buffer is no longer bound — temporal
+    // reuse validates against the resampling-surface history (binding 25) instead, which is
+    // what the reservoir actually describes.
     glBindTextureUnit(6, targets.gbuf.normal.handle);
-    glBindTextureUnit(7, targets.gbuf_prev.pos_matid.handle);
-    glBindTextureUnit(8, targets.gbuf_prev.normal.handle);
+    glBindTextureUnit(10, targets.gbuf.depth.handle);
 
     initial.use();
     initial.setIVec2("image_size", width, height);

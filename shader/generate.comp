@@ -5,10 +5,9 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/queue.glsl"
 #include "common/rng.glsl"
 #include "common/scene_buffers.glsl"
+#include "common/gbuffer.glsl"
 #include "common/envmap.glsl"
 
-layout(binding = 5) uniform sampler2D gbuf_pos_matid_tex;
-layout(binding = 6) uniform sampler2D gbuf_normal_tex;
 layout(location = 0) uniform ivec2 image_size;
 layout(location = 1) uniform int frame_index;
 layout(location = 3) uniform int time;
@@ -18,8 +17,7 @@ void main() {
     if (px.x >= image_size.x || px.y >= image_size.y) return;
     uint pid = uint(px.y * image_size.x + px.x);
 
-    vec4 pm = texelFetch(gbuf_pos_matid_tex, px, 0);
-    vec3 n = texelFetch(gbuf_normal_tex, px, 0).xyz;
+    vec3 n = gbuffer_raw_normal(px);
 
     // Build the whole PathState in registers and store it once. Writing the fields
     // individually turned one contiguous 96-byte store into eight scattered ones to the
@@ -39,12 +37,13 @@ void main() {
 
     // Sky test: gbuffer normal of length zero means no primitive was rasterized.
     // Any real hit has a unit normal.
-    if (dot(n, n) < 0.5) {
+    if (gbuffer_is_sky(n)) {
         // Primary sky — sample the envmap (or return black if unbound). Reconstruct
         // the view ray from pixel coords via the inverse camera matrices. Directly
         // visible, so no indirect clamp applies here.
         vec2 ndc = (vec2(px) + 0.5) / vec2(image_size) * 2.0 - 1.0;
-        vec4 clip = inv_proj_matrix * vec4(ndc.x, ndc.y, -1.0, 1.0);
+        // Reversed-Z with a [0,1] clip range puts the near plane at ndc.z = 1.
+        vec4 clip = inv_proj_matrix * vec4(ndc.x, ndc.y, 1.0, 1.0);
         vec3 view_dir = normalize(mat3(inv_view_matrix) * clip.xyz);
         s.radiance = sample_envmap(view_dir);
         s.hit_point = vec3(0.0);
@@ -56,13 +55,14 @@ void main() {
         return; // path stays out of every queue
     }
 
-    uint matid = floatBitsToUint(pm.w);
-    s.hit_point = pm.xyz;
+    uint matid = gbuffer_matid(px);
+    vec3 P = gbuffer_world_pos(px, image_size);
+    s.hit_point = P;
     s.hit_normal = normalize(n);
     s.hit_matid = matid;
     // Camera-to-hit direction. shade_metal/dielectric reflect/refract `ray_dir` on the
     // first bounce, so it must be initialized — the gbuffer-fed primary "ray" is the view ray.
-    s.ray_dir = normalize(pm.xyz - camera_position);
+    s.ray_dir = normalize(P - camera_position);
     s.ray_origin = camera_position;
     states[pid] = s;
 

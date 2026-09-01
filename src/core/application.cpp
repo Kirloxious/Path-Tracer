@@ -105,8 +105,6 @@ int Application::run() {
         window.getFrameBufferSize();
         if (input.debugGBufferNormal) {
             renderer.blitGBufferAttachmentToSwapChain(GBuffer::ATTACH_NORMAL, window.width, window.height);
-        } else if (input.debugGBufferPosition) {
-            renderer.blitGBufferAttachmentToSwapChain(GBuffer::ATTACH_POS_MATID, window.width, window.height);
         } else {
             renderer.blitToSwapChain(window.width, window.height);
         }

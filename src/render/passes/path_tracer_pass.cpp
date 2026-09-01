@@ -177,8 +177,8 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     const int maxBounces = ctx.camera.settings.max_bounces;
 
     // ---- Bind read-only inputs from the raster gbuffer ----
-    glBindTextureUnit(5, targets.gbuf.pos_matid.handle);
     glBindTextureUnit(6, targets.gbuf.normal.handle);
+    glBindTextureUnit(10, targets.gbuf.depth.handle); // world position is reconstructed from this
 
     // Envmap texture at unit 9 (envmap.glsl declares binding=9). Bind unconditionally —
     // if the scene has no envmap, sample_envmap() returns black via the env_map_valid uniform.

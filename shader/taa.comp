@@ -1,11 +1,11 @@
 #version 460 core
 layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/scene_buffers.glsl"
+#include "common/gbuffer.glsl"
 
 layout(rgb10_a2, binding = 0) readonly  uniform image2D current_image; // tonemap output
 layout(rgb10_a2, binding = 2) writeonly uniform image2D taa_output_image;
 
-layout(binding = 5) uniform sampler2D gbuf_pos_matid_tex;      // world-space primary hit
 layout(binding = 7) uniform sampler2D taa_history_tex;         // previous frame's TAA output (LINEAR filtered)
 
 layout(location = 0) uniform ivec2 image_size;
@@ -85,15 +85,15 @@ void main() {
     // Sky pixels have no valid gbuffer world position; skip reprojection there. The
     // envmap is view-locked, so keeping the current color for sky is correct — history
     // reprojection would only introduce ghosting when the camera rotates.
-    vec4 pm = texelFetch(gbuf_pos_matid_tex, px, 0);
-    if (dot(pm.xyz, pm.xyz) == 0.0) {
+    if (gbuffer_is_sky(gbuffer_raw_normal(px))) {
         imageStore(taa_output_image, px, vec4(cur, 1.0));
         return;
     }
+    vec3 primary_pos = gbuffer_world_pos(px, image_size);
 
     // Reproject the primary hit's world pos through the un-jittered previous view*proj
     // (see camera.cpp: prev_view_proj is deliberately built from baseProjection).
-    vec4 clip_prev = prev_view_proj_matrix * vec4(pm.xyz, 1.0);
+    vec4 clip_prev = prev_view_proj_matrix * vec4(primary_pos, 1.0);
     if (clip_prev.w <= 0.0) {
         imageStore(taa_output_image, px, vec4(cur, 1.0));
         return;

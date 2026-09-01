@@ -98,7 +98,9 @@ void RasterGBufferPass::execute(const RenderContext&, RenderTargets& targets) {
     glViewport(0, 0, targets.gbuf.width, targets.gbuf.height);
 
     glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
+    // Reversed-Z: the projection maps far to 0 and near to 1, so "closer" is now "greater".
+    // Must stay in lockstep with makeReversedZProjection() and the 0.0 depth clear below.
+    glDepthFunc(GL_GREATER);
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
     // Scenes here don't enforce a consistent winding (e.g. Cornell-box lids wind inward),
@@ -106,10 +108,8 @@ void RasterGBufferPass::execute(const RenderContext&, RenderTargets& targets) {
     // mirroring the path tracer's own set_face_normal convention.
     glDisable(GL_CULL_FACE);
 
-    const float zeroPosMatid[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     const float zeroNormal[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    const float clearDepth = 1.0f;
-    glClearNamedFramebufferfv(targets.gbuf.fb.handle, GL_COLOR, GBuffer::ATTACH_POS_MATID, zeroPosMatid);
+    const float clearDepth = 0.0f; // reversed-Z: 0 is the far plane
     glClearNamedFramebufferfv(targets.gbuf.fb.handle, GL_COLOR, GBuffer::ATTACH_NORMAL, zeroNormal);
     glClearNamedFramebufferfv(targets.gbuf.fb.handle, GL_DEPTH, 0, &clearDepth);
 

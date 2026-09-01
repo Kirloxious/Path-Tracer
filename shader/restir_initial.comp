@@ -7,6 +7,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/restir_common.glsl"
 #include "common/lights.glsl"
 #include "common/restir_surface.glsl"
+#include "common/gbuffer.glsl"
 #include "common/geom.glsl"
 
 layout(std430, binding = 18) restrict buffer RestirReservoirsCurrent {
@@ -17,8 +18,6 @@ layout(std430, binding = 24) restrict writeonly buffer RestirSurfaceCurrent {
     RestirSurface surfaces[];
 };
 
-layout(binding = 5) uniform sampler2D gbuf_pos_matid_tex;
-layout(binding = 6) uniform sampler2D gbuf_normal_tex;
 
 layout(location = 0) uniform ivec2 image_size;
 layout(location = 1) uniform int frame_index;
@@ -127,20 +126,19 @@ void main() {
     }
 
     // Read primary surface from the gbuffer.
-    vec4 pm = texelFetch(gbuf_pos_matid_tex, px, 0);
-    vec3 n = texelFetch(gbuf_normal_tex, px, 0).xyz;
+    vec3 n = gbuffer_raw_normal(px);
 
     // Sky / no hit: zero-length normal sentinel.
-    if (dot(n, n) < 0.5) {
+    if (gbuffer_is_sky(n)) {
         reservoirs[pid] = r;
         surface_invalidate(pid);
         return;
     }
 
-    uint matid = floatBitsToUint(pm.w);
-    Material mat = mats[matid];
-    vec3 P = pm.xyz;
-    vec3 N = normalize(n);
+    uint     matid = gbuffer_matid(px);
+    Material mat   = mats[matid];
+    vec3     P     = gbuffer_world_pos(px, image_size);
+    vec3     N     = normalize(n);
 
     // Follow the specular chain to the first diffuse surface, and resample there.
     //
