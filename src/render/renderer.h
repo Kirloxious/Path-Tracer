@@ -106,7 +106,7 @@ public:
 
 private:
     RenderTargets targets;
-    Buffer        lightGroupsSSBO, matsSSBO, camUBO, bvhNodesSSBO, trianglesSSBO, verticesSSBO;
+    Buffer        lightGroupsSSBO, matsSSBO, camUBO, bvhNodesSSBO, trianglesSSBO, verticesSSBO, triRefsSSBO;
     EnvMap        envMap;
     PassTimings   passTimings;
 

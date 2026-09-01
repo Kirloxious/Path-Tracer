@@ -1,14 +1,16 @@
 #version 460 core
+#include "common/subgroup.glsl"
 layout(local_size_x = 64) in;
 
 #include "common/path_state.glsl"
 #include "common/queue.glsl"
 #include "common/scene_buffers.glsl"
 #include "common/rng.glsl"
+#include "common/uniform_locations.glsl"
 #include "common/geom.glsl"
 
-layout(location = 12) uniform int bounce_index;
-layout(location = 13) uniform int max_bounces;
+layout(location = LOC_BOUNCE_INDEX) uniform int bounce_index;
+layout(location = LOC_MAX_BOUNCES) uniform int max_bounces;
 
 void main() {
     uint qid = gl_GlobalInvocationID.x;
@@ -34,9 +36,20 @@ void main() {
         s.ray_dir     = dir;
         s.bounce++;
         s.flags      &= ~(FLAG_PREV_NON_SPECULAR | FLAG_RESTIR_HANDLED);   // specular bounce — emissive hit next gets full Le (no MIS weighting, ReSTIR's primary scope doesn't extend past a specular interface)
+        // A fuzzed reflection is drawn from this kernel's own RNG, so restir_initial's
+        // walk — which follows plain reflect() — cannot have landed on the same vertex.
+        // Drop out of the chain; this path falls back to inline NEE at its next diffuse hit.
+        if (mat.fuzz != 0.0) {
+            s.flags &= ~FLAG_SPECULAR_PREFIX;
+        }
 
         if (s.bounce > 2) {
-            float p = max(s.throughput.r, max(s.throughput.g, s.throughput.b));
+            // Survival probability is capped at 0.95. Uncapped, a throughput that has
+            // grown past 1 through earlier roulette divisions gives p > 1, and
+            // `random_unilateral() > p` can then never fire — roulette stops terminating
+            // anything and every path runs to max_bounces. The `p <= 0` early kill is
+            // kept so a fully absorbed path still dies immediately.
+            float p = min(max(s.throughput.r, max(s.throughput.g, s.throughput.b)), 0.95);
             if (p <= 0.0 || random_unilateral(rng) > p) alive = false;
             else s.throughput /= p;
         }

@@ -37,6 +37,17 @@ constexpr int NUM_QUEUE_SLOTS = 6;
 // stride anyway; the .w padding just makes the layout explicit). glDispatchComputeIndirect
 // reads 3 uints from `slot * DISPATCH_ARG_STRIDE` bytes.
 constexpr GLintptr DISPATCH_ARG_STRIDE = 16;
+
+// Counter slots each prepare_indirect dispatch zeroes once it has written their args.
+// A slot can only be cleared after every kernel that reads it as a loop bound has run.
+//
+//   pass A runs before the shade kernels. ray and shadow were drained last iteration
+//          (by trace and trace_shadow), so they are free to reset here; hit_* must
+//          survive, because the shade kernels are about to read them as bounds.
+//   pass B runs after the shade kernels. hit_* are now drained, while ray and shadow
+//          have just been filled and are read by trace/trace_shadow below.
+constexpr GLuint CLEAR_MASK_PRE_SHADE = (1u << SLOT_RAY) | (1u << SLOT_SHADOW);
+constexpr GLuint CLEAR_MASK_POST_SHADE = (1u << SLOT_LAMB) | (1u << SLOT_METAL) | (1u << SLOT_DIELECTRIC) | (1u << SLOT_EMISSIVE);
 } // namespace
 
 PathTracerPass::PathTracerPass(int w, int h)
@@ -81,31 +92,41 @@ PathTracerPass::PathTracerPass(int w, int h)
 
 void PathTracerPass::uploadUniforms(const Scene& scene, const Camera& camera) {
     // Static (per-scene) uniforms. Per-frame uniforms are set in execute().
-    const int   bvhRoot = scene.world.bvh.root;
+    const int bvhRoot = scene.world.bvh.root;
+    // Only the kernels that actually call is_visible() get this: elsewhere the uniform is
+    // dead-stripped by the compiler and setting it would log a spurious "not found".
+    const int   emissiveLast = scene.world.emissiveLastIndex;
     const int   numLightGroups = static_cast<int>(scene.world.lightGroups.size());
     const int   maxBounces = camera.settings.max_bounces;
     const bool  envValid = !scene.envMapPath.empty();
     const float envIntensity = scene.envIntensity;
+    const float indirectClamp = camera.settings.indirect_clamp;
 
+    // Uniform locations come from shader/common/uniform_locations.glsl; the named
+    // setters go through ShaderProgram's location cache, so there is no reason to
+    // hand-write the raw glUniform*(location, ...) calls these used to use.
     trace.use();
     trace.setInt("bvh_root_index", bvhRoot);
-    // envmap.glsl uses layout(location=20) / location=21 for these.
-    glUniform1i(20, envValid ? 1 : 0);
-    glUniform1f(21, envIntensity);
+    trace.setInt("env_map_valid", envValid ? 1 : 0);
+    trace.setFloat("env_map_intensity", envIntensity);
+    trace.setFloat("indirect_clamp", indirectClamp);
 
     generate.use();
-    glUniform1i(20, envValid ? 1 : 0);
-    glUniform1f(21, envIntensity);
+    generate.setInt("env_map_valid", envValid ? 1 : 0);
+    generate.setFloat("env_map_intensity", envIntensity);
 
     traceShadow.use();
     traceShadow.setInt("bvh_root_index", bvhRoot);
+    traceShadow.setInt("emissive_last_index", emissiveLast);
 
     shadeLambertian.use();
     shadeLambertian.setInt("num_light_groups", numLightGroups);
     shadeLambertian.setInt("max_bounces", maxBounces);
+    shadeLambertian.setFloat("indirect_clamp", indirectClamp);
 
     shadeEmissive.use();
     shadeEmissive.setInt("num_light_groups", numLightGroups);
+    shadeEmissive.setFloat("indirect_clamp", indirectClamp);
 
     shadeMetal.use();
     shadeMetal.setInt("max_bounces", maxBounces);
@@ -171,7 +192,7 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
 
     // Every barrier below combines storage + indirect visibility so the next
     // glDispatchComputeIndirect can read the freshly-written args.
-    constexpr GLbitfield BARRIER = GL_SHADER_STORAGE_BARRIER_BIT | GL_COMMAND_BARRIER_BIT;
+    constexpr GLbitfield BARRIER = GL_SHADER_STORAGE_BARRIER_BIT | GL_COMMAND_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT;
 
     // ---- Clear all queue counters ----
     queueCounters.clearAll();
@@ -189,6 +210,7 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
         // Rebuild hit_{L,M,D,E} indirect args from the queue counters that generate
         // (bounce 0) or the previous iteration's trace (bounce > 0) just filled.
         prepareIndirect.use();
+        prepareIndirect.setUInt("clear_mask", CLEAR_MASK_PRE_SHADE);
         glDispatchCompute(1, 1, 1);
         glMemoryBarrier(BARRIER);
 
@@ -212,8 +234,10 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
 
         glMemoryBarrier(BARRIER);
 
-        // Refresh args for the shadow_queue and ray_queue that shades just filled.
+        // Refresh args for the shadow_queue and ray_queue that shades just filled, and reset
+        // the hit_* counters the shades have now drained.
         prepareIndirect.use();
+        prepareIndirect.setUInt("clear_mask", CLEAR_MASK_POST_SHADE);
         glDispatchCompute(1, 1, 1);
         glMemoryBarrier(BARRIER);
 
@@ -222,19 +246,11 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
         glDispatchComputeIndirect(SLOT_SHADOW * DISPATCH_ARG_STRIDE);
         glMemoryBarrier(BARRIER);
 
-        // Hit_X consumed by shade; shadow consumed by traceShadow. Reset for next iter.
-        hitLambertian.clear();
-        hitMetal.clear();
-        hitDielectric.clear();
-        hitEmissive.clear();
-        shadowQueue.clear();
-
         // Trace continuation rays (skip on the last bounce — there's no "next" hit to write).
         if (b + 1 < maxBounces) {
             trace.use();
             glDispatchComputeIndirect(SLOT_RAY * DISPATCH_ARG_STRIDE);
             glMemoryBarrier(BARRIER);
-            rayQueue.clear();
         }
     }
 

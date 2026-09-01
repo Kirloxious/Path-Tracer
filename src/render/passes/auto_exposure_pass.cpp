@@ -68,8 +68,14 @@ void AutoExposurePass::execute(const RenderContext& ctx, RenderTargets& targets)
     histogramShader.setFloat("log_luma_min", logLumaMin);
     histogramShader.setFloat("inv_log_luma_range", invLogLumaRange);
 
-    const int gx = (width + 15) / 16;
-    const int gy = (height + 15) / 16;
+    // Each workgroup is 16x16 threads and each thread walks ROWS_PER_THREAD rows, so a
+    // group covers 16 columns x (16 * ROWS_PER_THREAD) rows. Must match the constant in
+    // luminance_histogram.comp — too few groups silently drops the bottom of the image
+    // from the histogram, which shows up as exposure drifting on dark floors.
+    constexpr int HIST_ROWS_PER_THREAD = 8;
+    constexpr int HIST_ROWS_PER_GROUP = 16 * HIST_ROWS_PER_THREAD;
+    const int     gx = (width + 15) / 16;
+    const int     gy = (height + HIST_ROWS_PER_GROUP - 1) / HIST_ROWS_PER_GROUP;
     glDispatchCompute(gx, gy, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 

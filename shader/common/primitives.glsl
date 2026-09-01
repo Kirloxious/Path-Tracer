@@ -28,7 +28,7 @@ struct Triangle
     vec3 e1; // v1 - v0
     float area; // 0.5 * |e1 x e2|, precomputed on CPU
     vec3 e2; // v2 - v0
-    float cdf_in_group; // emissive: cumulative-area CDF within group; 1.0 at last; 0.0 elsewhere
+    uint alias_packed;  // emissive: alias-table entry — bits 31..16 unorm16 accept probability, bits 15..0 alias offset from group.begin
 };
 
 struct LightGroup
@@ -54,12 +54,21 @@ struct Material
     uint type;
 };
 
+// 32 bytes: two vec4s, with the link data bit-cast into the .w lanes the box does not use.
+// Two nodes per 64-byte cache line instead of 1.33 — traversal is bound on node fetches.
+//
+// The left child is implicit. BVH::flatten emits [self, left subtree, right subtree] depth
+// first, so a node's left child is always the next slot and only the right one is stored.
+//
+//   interior: aabb_min.w = right child index,  aabb_max.w = 0
+//   leaf:     aabb_min.w = first triangle ref, aabb_max.w = triangle count (> 0)
+//
+// Read the .w lanes back with floatBitsToInt. A count of 0 is what marks a node interior,
+// so every leaf carries at least one triangle.
 struct BVHNodeFlat
 {
     vec4 aabb_min;
     vec4 aabb_max;
-    ivec4 meta; // interior: x=left, y=right, z=-1,           w=skip
-    // leaf:     x=-1,   y=0,     z=triangleIdx,  w=skip
 };
 
 #endif

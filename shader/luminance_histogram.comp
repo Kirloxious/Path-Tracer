@@ -5,7 +5,7 @@ layout(local_size_x = 16, local_size_y = 16) in;
 // so 256 threads per workgroup atomically-hit a local histogram, then merge to
 // the global one — cheaper than a global-atomic-only version by ~100x.
 
-layout(rgba32f, binding = 0) readonly uniform image2D src_image;
+layout(rgba16f, binding = 0) readonly uniform image2D src_image;
 
 layout(std430, binding = 31) buffer HistogramBuffer {
     uint bins[256];
@@ -16,6 +16,13 @@ layout(location = 1) uniform float log_luma_min;
 layout(location = 2) uniform float inv_log_luma_range;
 
 shared uint local_bins[256];
+
+// Rows each thread walks. A workgroup therefore covers 16 columns x (16 * this) rows
+// instead of a single 16x16 tile, amortising the fixed per-workgroup cost — zeroing 256
+// shared bins and merging them back — over that many more samples. At one pixel per
+// thread a 1080p frame launched ~3200 workgroups and paid ~820k global atomics just for
+// the merges; at 8 rows per thread it launches ~450.
+const int ROWS_PER_THREAD = 8;
 
 uint luma_to_bin(float luma) {
     if (luma < 1e-4) return 0u; // reserve bin 0 for "essentially black" pixels
@@ -30,14 +37,25 @@ void main() {
     local_bins[local_index] = 0u;
     barrier();
 
-    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
-    if (p.x < image_size.x && p.y < image_size.y) {
-        vec3 c = imageLoad(src_image, p).rgb;
-        float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
-        uint bin = luma_to_bin(luma);
-        atomicAdd(local_bins[bin], 1u);
+    int rows_per_group = int(gl_WorkGroupSize.y) * ROWS_PER_THREAD;
+    int x  = int(gl_GlobalInvocationID.x);
+    int y0 = int(gl_WorkGroupID.y) * rows_per_group + int(gl_LocalInvocationID.y);
+    if (x < image_size.x) {
+        for (int k = 0; k < ROWS_PER_THREAD; ++k) {
+            int y = y0 + k * int(gl_WorkGroupSize.y);
+            if (y >= image_size.y) break;
+            vec3 c = imageLoad(src_image, ivec2(x, y)).rgb;
+            float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+            atomicAdd(local_bins[luma_to_bin(luma)], 1u);
+        }
     }
     barrier();
 
-    atomicAdd(hist.bins[local_index], local_bins[local_index]);
+    // Most bins in any one tile are empty — a tile of sky or of shadow occupies a
+    // handful of adjacent bins — so skipping the zero merges removes the large
+    // majority of this kernel's global atomic traffic.
+    uint count = local_bins[local_index];
+    if (count != 0u) {
+        atomicAdd(hist.bins[local_index], count);
+    }
 }

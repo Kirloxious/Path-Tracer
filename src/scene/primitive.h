@@ -55,11 +55,23 @@ struct alignas(16) Triangle
     glm::vec3  e1 = glm::vec3(0.0f); ///< v1 - v0, baked at construction.
     float      area = 0.0f;          ///< 0.5 * |e1 x e2|, used by NEE.
     glm::vec3  e2 = glm::vec3(0.0f); ///< v2 - v0.
-    /// For emissive triangles: cumulative area within their light group, normalized so
-    /// the last triangle of each group reads exactly 1.0. Drives area-weighted NEE
-    /// sampling so a tessellated emissive sphere behaves like one uniform area light.
-    /// Zero for non-emissive triangles; filled in by World::buildLightGroups().
-    float cdf_in_group = 0.0f;
+    /// For emissive triangles: packed alias-table entry for area-weighted sampling within
+    /// their light group, so a tessellated emissive sphere behaves like one uniform area
+    /// light. Zero for non-emissive triangles; filled in by World::buildLightGroups().
+    ///
+    ///   bits 31..16  acceptance probability, as a unorm16
+    ///   bits 15..0   alias target, as an offset from LightGroup::begin
+    ///
+    /// This replaced a cumulative-area CDF that NEE binary-searched. That search was a
+    /// chain of dependent scattered loads — log2(count) of them per candidate, each
+    /// pulling a whole 48-byte Triangle to read one float — and restir_initial draws 32
+    /// candidates per pixel. An alias table samples the same distribution in O(1) from a
+    /// single load. It reuses the CDF's slot so Triangle stays 48 bytes and needs no new
+    /// SSBO binding; shade_lambertian is already at 15 of NVIDIA's 16.
+    ///
+    /// The 16-bit alias offset caps a light group at 65535 triangles, which
+    /// World::buildLightGroups() asserts on.
+    uint32_t alias_packed = 0u;
 
     Triangle() = default;
 };
@@ -78,7 +90,7 @@ static_assert(sizeof(Triangle) == 48, "Triangle must be 48 bytes for std430");
  * @param i1             Second vertex index.
  * @param i2             Third vertex index.
  * @param material_index Index into World::materials, matching all three vertices'.
- * @return The constructed triangle. `cdf_in_group` is left at 0 for World::buildLightGroups().
+ * @return The constructed triangle. `alias_packed` is left at 0 for World::buildLightGroups().
  */
 inline Triangle makeTriangle(const std::vector<Vertex>& vertices, uint32_t i0, uint32_t i1, uint32_t i2, uint32_t material_index) {
     Triangle t;

@@ -31,6 +31,25 @@ struct alignas(16) ReservoirData
 static_assert(sizeof(ReservoirData) == 32, "Reservoir size must match std430 layout");
 
 /**
+ * @brief CPU-side mirror of `RestirSurface` in `shader/common/restir_surface.glsl`.
+ *
+ * The surface a pixel's reservoir describes. For a diffuse primary that is the G-buffer hit;
+ * past a mirror it is the reflected diffuse surface `restir_initial.comp` walked to, which
+ * the G-buffer knows nothing about. Never uploaded from the CPU — the static_assert exists to
+ * pin the layout.
+ */
+struct alignas(16) RestirSurfaceData
+{
+    glm::vec3 position; ///< World-space resampling vertex.
+    uint32_t  valid;    ///< 0 when this pixel has no diffuse resampling vertex.
+    glm::vec3 normal;   ///< Shading normal there.
+    uint32_t  matid;    ///< Material at the resampling vertex, for reuse validation.
+    glm::vec3 albedo;   ///< Lambertian albedo there.
+    float     _pad;
+};
+static_assert(sizeof(RestirSurfaceData) == 48, "RestirSurface size must match std430 layout");
+
+/**
  * @brief ReSTIR DI at primary surfaces, producing one reservoir per pixel.
  *
  * Three back-to-back compute stages, all operating on the G-buffer hit as the shading surface:
@@ -94,5 +113,14 @@ private:
     /// buffer as scratch through binding 20.
     Buffer reservoirsA;
     Buffer reservoirsB;
-    bool   useAAsCurrent = true;
+
+    /// Resampling surfaces, ping-ponged alongside the reservoirs: binding 24 is this
+    /// frame's (written by `restir_initial`, read by the spatial passes), binding 25 is
+    /// last frame's, which `restir_temporal` validates reuse against. They must rotate in
+    /// lockstep with the reservoirs — a reservoir paired with the wrong frame's surface
+    /// would be re-weighted against geometry it never saw.
+    Buffer surfacesA;
+    Buffer surfacesB;
+
+    bool useAAsCurrent = true;
 };

@@ -173,8 +173,8 @@ private:
      * @brief Coalesces emissive triangles into LightGroups and bakes their sampling CDF.
      *
      * Groups consecutive emissive triangles that share a material into a single light, then
-     * writes an area-weighted cumulative CDF into each emissive triangle's `cdf_in_group`.
-     * NEE samples a group uniformly, then binary-searches the CDF to pick a triangle
+     * writes an area-weighted alias table into each emissive triangle's `alias_packed`.
+     * NEE samples a group uniformly, then draws from the alias table to pick a triangle
      * proportional to area — making a tessellated sphere or quad behave like one uniform area
      * light regardless of how its triangles are sized (poles vs. equator on a sphere).
      *

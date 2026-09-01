@@ -2,14 +2,15 @@
 #define ENVMAP_GLSL
 
 #include "rng.glsl"  // for PI
+#include "uniform_locations.glsl"
 
 // Sampled by generate.comp (primary sky) and trace.comp (continuation miss).
 // v1 is miss-sampling only — no NEE toward the env, no importance-sampled CDF.
 // This means an overcast HDR converges in seconds; a sunny HDR fireflies until
 // env-IS lands (deferred to a future pass).
 layout(binding = 9) uniform sampler2D env_map_tex;
-layout(location = 20) uniform int   env_map_valid;      // 0 = no envmap bound → return black
-layout(location = 21) uniform float env_map_intensity;  // per-scene scale
+layout(location = LOC_ENV_MAP_VALID) uniform int   env_map_valid;      // 0 = no envmap bound → return black
+layout(location = LOC_ENV_MAP_INTENSITY) uniform float env_map_intensity;  // per-scene scale
 
 // Equirectangular (lat-long) lookup. Input direction must be unit length.
 // Y-up convention matches the rest of the tracer (glm::vec3(0, 1, 0) = vup).

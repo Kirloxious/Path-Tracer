@@ -1,21 +1,33 @@
 #version 460 core
+#include "common/subgroup.glsl"
 layout(local_size_x = 64) in;
 
 #include "common/path_state.glsl"
 #include "common/queue.glsl"
 #include "common/scene_buffers.glsl"
+#include "common/uniform_locations.glsl"
+#include "common/clamp.glsl"
 
-layout(location = 11) uniform int num_light_groups;
+layout(location = LOC_NUM_LIGHT_GROUPS) uniform int num_light_groups;
 
-// Linear scan over light groups (typically <10) to find which group owns `tri_idx`.
+// Which light group owns `tri_idx`. buildLightGroups() emits groups as runs of
+// consecutive emissive triangles, so `begin` is strictly increasing and the group is
+// found by binary search — a fixed log2(G) steps with no early-out, rather than a
+// linear scan whose trip count diverges across a warp.
 int find_owning_group(int tri_idx) {
-    for (int g = 0; g < num_light_groups; ++g) {
-        LightGroup grp = light_groups[g];
-        if (tri_idx >= grp.begin && tri_idx < grp.begin + grp.count) {
-            return g;
-        }
+    if (num_light_groups <= 0) return -1;
+
+    // Largest g such that light_groups[g].begin <= tri_idx.
+    int lo = 0;
+    int hi = num_light_groups - 1;
+    while (lo < hi) {
+        int mid = (lo + hi + 1) >> 1;
+        if (light_groups[mid].begin <= tri_idx) lo = mid;
+        else hi = mid - 1;
     }
-    return -1;
+
+    LightGroup grp = light_groups[lo];
+    return (tri_idx >= grp.begin && tri_idx < grp.begin + grp.count) ? lo : -1;
 }
 
 // Solid-angle pdf at receiver `p` for a sample on `tri`, treating its whole light group
@@ -69,7 +81,11 @@ void main() {
         }
     }
 
-    s.radiance += s.throughput * mat.color * mat.emission * weight;
+    // Primary hits are the camera looking straight at a light: that is the emitter's
+    // authored radiance, not an estimator output, so it is exempt from the firefly
+    // clamp. Everything past bounce 0 arrived through a sampled path and is not.
+    vec3 contribution = s.throughput * mat.color * mat.emission * weight;
+    s.radiance += is_primary ? contribution : clamp_indirect(contribution);
     states[pid] = s;
     // Path terminates at an emissive — no enqueue.
 }

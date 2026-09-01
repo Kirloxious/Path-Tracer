@@ -1,14 +1,16 @@
 #version 460 core
+#include "common/subgroup.glsl"
 layout(local_size_x = 64) in;
 
 #include "common/path_state.glsl"
 #include "common/queue.glsl"
 #include "common/scene_buffers.glsl"
 #include "common/rng.glsl"
+#include "common/uniform_locations.glsl"
 #include "common/geom.glsl"
 
-layout(location = 12) uniform int bounce_index;
-layout(location = 13) uniform int max_bounces;
+layout(location = LOC_BOUNCE_INDEX) uniform int bounce_index;
+layout(location = LOC_MAX_BOUNCES) uniform int max_bounces;
 
 float reflectance(float cosine, float ref_idx) {
     cosine = clamp(cosine, 0.0, 1.0);
@@ -66,11 +68,18 @@ void main() {
     s.ray_dir = dir;
     // Dielectric is colorless (mat_color = 1) — leave throughput alone.
     s.bounce++;
-    s.flags &= ~(FLAG_PREV_NON_SPECULAR | FLAG_RESTIR_HANDLED); // specular bounce — no MIS weighting on next emissive, ReSTIR's primary scope doesn't extend past a specular interface
+    // The reflect-vs-refract branch above is a coin flip on this kernel's RNG, so
+    // restir_initial's deterministic walk never follows a dielectric. Leave the chain.
+    s.flags &= ~(FLAG_PREV_NON_SPECULAR | FLAG_RESTIR_HANDLED | FLAG_SPECULAR_PREFIX); // specular bounce — no MIS weighting on next emissive, ReSTIR's primary scope doesn't extend past a specular interface
 
     bool alive = true;
     if (s.bounce > 2) {
-        float p = max(s.throughput.r, max(s.throughput.g, s.throughput.b));
+        // Survival probability is capped at 0.95. Uncapped, a throughput that has
+        // grown past 1 through earlier roulette divisions gives p > 1, and
+        // `random_unilateral() > p` can then never fire — roulette stops terminating
+        // anything and every path runs to max_bounces. The `p <= 0` early kill is
+        // kept so a fully absorbed path still dies immediately.
+        float p = min(max(s.throughput.r, max(s.throughput.g, s.throughput.b)), 0.95);
         if (p <= 0.0 || random_unilateral(rng) > p) alive = false;
         else s.throughput /= p;
     }

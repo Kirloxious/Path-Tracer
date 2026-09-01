@@ -1,4 +1,5 @@
 #version 460 core
+#include "common/subgroup.glsl"
 layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/path_state.glsl"
 #include "common/queue.glsl"
@@ -20,33 +21,50 @@ void main() {
     vec4 pm = texelFetch(gbuf_pos_matid_tex, px, 0);
     vec3 n = texelFetch(gbuf_normal_tex, px, 0).xyz;
 
-    // Initialize *every* pixel's PathState. Pixels that miss the gbuffer
-    // simply don't enter ray_queue and contribute zero radiance.
-    states[pid].throughput = vec3(1);
-    states[pid].radiance = vec3(0);
-    states[pid].bounce = 0;
-    states[pid].rng_state = init_rng(pid, frame_index, uint(time));
-    states[pid].flags = FLAG_FRONT_FACE; // raster pass renders front faces only
+    // Build the whole PathState in registers and store it once. Writing the fields
+    // individually turned one contiguous 96-byte store into eight scattered ones to the
+    // same cache line, and every pixel on screen pays it.
+    PathState s;
+    s.throughput = vec3(1);
+    s.radiance = vec3(0);
+    s.bounce = 0;
+    s.rng_state = init_rng(pid, frame_index, uint(time));
+    // FLAG_SPECULAR_PREFIX starts set: with no vertices behind it the prefix is
+    // vacuously all-specular, so a diffuse primary is its own resampling vertex and
+    // behaves exactly as before. A mirror primary keeps the flag through shade_metal
+    // and hands it to whatever diffuse surface the reflection lands on.
+    s.flags = FLAG_FRONT_FACE | FLAG_SPECULAR_PREFIX; // raster pass renders front faces only
+    s.pdf_bsdf = 0.0;
+    s.hit_triangle_idx = 0u;
 
     // Sky test: gbuffer normal of length zero means no primitive was rasterized.
     // Any real hit has a unit normal.
     if (dot(n, n) < 0.5) {
         // Primary sky — sample the envmap (or return black if unbound). Reconstruct
-        // the view ray from pixel coords via the inverse camera matrices.
+        // the view ray from pixel coords via the inverse camera matrices. Directly
+        // visible, so no indirect clamp applies here.
         vec2 ndc = (vec2(px) + 0.5) / vec2(image_size) * 2.0 - 1.0;
         vec4 clip = inv_proj_matrix * vec4(ndc.x, ndc.y, -1.0, 1.0);
-        vec3 view_dir = normalize(mat3(inv_view_matrix) * normalize(clip.xyz));
-        states[pid].radiance = sample_envmap(view_dir);
+        vec3 view_dir = normalize(mat3(inv_view_matrix) * clip.xyz);
+        s.radiance = sample_envmap(view_dir);
+        s.hit_point = vec3(0.0);
+        s.hit_normal = vec3(0.0);
+        s.hit_matid = 0u;
+        s.ray_origin = camera_position;
+        s.ray_dir = view_dir;
+        states[pid] = s;
         return; // path stays out of every queue
     }
 
     uint matid = floatBitsToUint(pm.w);
-    states[pid].hit_point = pm.xyz;
-    states[pid].hit_normal = normalize(n);
-    states[pid].hit_matid = matid;
+    s.hit_point = pm.xyz;
+    s.hit_normal = normalize(n);
+    s.hit_matid = matid;
     // Camera-to-hit direction. shade_metal/dielectric reflect/refract `ray_dir` on the
     // first bounce, so it must be initialized — the gbuffer-fed primary "ray" is the view ray.
-    states[pid].ray_dir = normalize(pm.xyz - camera_position);
+    s.ray_dir = normalize(pm.xyz - camera_position);
+    s.ray_origin = camera_position;
+    states[pid] = s;
 
     // ray_queue_push(pid);
     // Skip the first trace by pushing straight to the per-material hit queue.

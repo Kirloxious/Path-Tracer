@@ -1,6 +1,7 @@
 #include "scene/world.h"
 
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <numbers>
@@ -130,22 +131,61 @@ void World::buildLightGroups() {
     }
     const int end = emissiveLastIndex + 1;
 
+    // Vose alias-table construction over the group's triangles, weighted by area. Sampling
+    // is then: draw a uniform slot, accept it with `prob`, otherwise take its alias — O(1),
+    // one load, versus the log2(count) chain of dependent scattered loads a CDF search cost.
     auto closeGroup = [&](int begin, int last) {
+        const int count = last - begin + 1;
+        assert(count <= 0xFFFF && "light group exceeds the 16-bit alias offset in Triangle::alias_packed");
+
         float total = 0.0f;
         for (int i = begin; i <= last; ++i) {
             total += triangles[i].area;
         }
-        float cumulative = 0.0f;
-        for (int i = begin; i <= last; ++i) {
-            cumulative += triangles[i].area;
-            triangles[i].cdf_in_group = (total > 0.0f) ? (cumulative / total) : 0.0f;
+
+        // Scaled probabilities: p[i] = count * area[i] / total, so the mean is exactly 1
+        // and each slot is either under- or over-full.
+        std::vector<float> p(static_cast<std::size_t>(count));
+        std::vector<int>   alias(static_cast<std::size_t>(count), 0);
+        std::vector<float> prob(static_cast<std::size_t>(count), 1.0f);
+        std::vector<int>   small;
+        std::vector<int>   large;
+        small.reserve(count);
+        large.reserve(count);
+
+        for (int i = 0; i < count; ++i) {
+            p[i] = (total > 0.0f) ? (static_cast<float>(count) * triangles[begin + i].area / total) : 1.0f;
+            (p[i] < 1.0f ? small : large).push_back(i);
         }
-        // Anchor the last entry so a binary search with r in [0, 1) always lands.
-        triangles[last].cdf_in_group = 1.0f;
+
+        // Pair each under-full slot with an over-full one until one list empties.
+        while (!small.empty() && !large.empty()) {
+            const int l = small.back();
+            small.pop_back();
+            const int g = large.back();
+            large.pop_back();
+
+            prob[l] = p[l];
+            alias[l] = g;
+            p[g] = (p[g] + p[l]) - 1.0f;
+            (p[g] < 1.0f ? small : large).push_back(g);
+        }
+        // Whatever remains is full to within rounding; accept it unconditionally.
+        for (const int i : large) {
+            prob[i] = 1.0f;
+        }
+        for (const int i : small) {
+            prob[i] = 1.0f;
+        }
+
+        for (int i = 0; i < count; ++i) {
+            const uint32_t q = static_cast<uint32_t>(std::lround(std::clamp(prob[i], 0.0f, 1.0f) * 65535.0f));
+            triangles[begin + i].alias_packed = (q << 16) | (static_cast<uint32_t>(alias[i]) & 0xFFFFu);
+        }
 
         LightGroup g;
         g.begin = begin;
-        g.count = last - begin + 1;
+        g.count = count;
         g.total_area = total;
         lightGroups.push_back(g);
     };

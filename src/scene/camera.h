@@ -17,9 +17,14 @@
  */
 struct CameraSettings
 {
-    float     aspect_ratio = 1.0f;
-    int       image_width = 1200;
-    int       max_bounces = 16;     ///< Path-tracer bounce budget per sample.
+    float aspect_ratio = 1.0f;
+    int   image_width = 1200;
+    int   max_bounces = 16; ///< Path-tracer bounce budget per sample.
+    /// Ceiling on any single *indirect* radiance contribution (NEE, envmap miss, an
+    /// emissive hit past bounce 0). Trades a little energy for far fewer fireflies.
+    /// Directly-visible emission is deliberately exempt, so a light authored at
+    /// emission = 8 still renders at the brightness the scene asked for.
+    float     indirect_clamp = 10.0f;
     float     vfov = 90.0f;         ///< Vertical field of view in degrees.
     float     focus_dist = 10.0f;   ///< Distance to the plane in perfect focus.
     float     defocus_angle = 0.0f; ///< Aperture angle in degrees; 0 disables depth of field.

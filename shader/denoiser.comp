@@ -1,48 +1,78 @@
 #version 460 core
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(rgba32f, binding = 0) readonly uniform image2D src_image;
-layout(rgba16f, binding = 1) readonly uniform image2D normals_image;
-layout(rgba32f, binding = 2) writeonly uniform image2D dst_image;
+// Inputs are sampled, not image-loaded, for two reasons. Formats: pass 0 reads `accum`
+// (rgba32f) while passes 1-3 read the rgba16f ping-pong targets, and a single image
+// uniform can only declare one format qualifier — samplers carry no format at all.
+// Speed: image loads bypass the texture cache's 2D-swizzled path, and this kernel does
+// 25 colour + 25 normal taps per pixel with strong 2D locality.
+layout(binding = 0) uniform sampler2D src_tex;
+layout(binding = 1) uniform sampler2D normals_tex;
+layout(rgba16f, binding = 2) writeonly uniform image2D dst_image;
 
 layout(location = 0) uniform int step_size;
-layout(location = 1) uniform vec2 image_size;
+layout(location = 1) uniform ivec2 image_size;
 layout(location = 2) uniform float sigma_color;
 layout(location = 3) uniform float sigma_normal;
 
 // Separable Gaussian kernel: 2D weight = h[i] * h[j]
 const float h[5] = float[5](1.0 / 16.0, 1.0 / 4.0, 3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0);
 
+// How much tighter the colour edge-stop is on specular surfaces than on diffuse ones.
+// Lower = more reflection detail preserved and less noise removed. This file hot-reloads,
+// so it is worth scrubbing between ~0.15 and ~0.6 on the mirror-floor scene to taste.
+const float SPECULAR_SIGMA_COLOR_SCALE = 0.6;
+
 void main() {
     ivec2 p = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 size = ivec2(image_size);
-    if (p.x >= size.x || p.y >= size.y) return;
+    if (p.x >= image_size.x || p.y >= image_size.y) return;
 
-    vec4 normals_sample = imageLoad(normals_image, p);
-    vec3 c_p = imageLoad(src_image, p).rgb;
+    vec4 normals_sample = texelFetch(normals_tex, p, 0);
+    vec3 c_p = texelFetch(src_tex, p, 0).rgb;
     vec3 n_p = normals_sample.rgb * 2.0 - 1.0;
     float mat_type = normals_sample.a;
 
-    // Only Lambertian surfaces benefit from spatial denoising. Metal/dielectric (1/2)
-    // carry view-dependent reflected/refracted content that the A-Trous edge-stops can't
-    // protect; emissives (3) are zero-noise — denoising them just bleeds light across
-    // their silhouette into neighbouring darker geometry.
-    bool denoise_skip = (mat_type > 0.5);
-    if (denoise_skip) {
+    // Emissives (3) are zero-noise, and filtering them bleeds light across their
+    // silhouette into neighbouring darker geometry — those still skip outright.
+    if (mat_type > 2.5) {
         imageStore(dst_image, p, vec4(c_p, 1.0));
         return;
     }
 
-    float inv_sigma_color_sq = 1.0 / (sigma_color * sigma_color + 1e-6);
+    // Metal (1) and dielectric (2) used to skip as well, on the grounds that the A-Trous
+    // edge-stops describe the primary surface and say nothing about the reflected or
+    // refracted content carried on it. True — but skipping outright leaves those pixels as
+    // raw path-tracer output, and specular surfaces are the *noisiest* in the image: a
+    // diffuse primary gets ReSTIR's several-hundred effective light samples, while whatever
+    // a mirror ray lands on gets one NEE sample per frame. On a mirror floor that reads as
+    // heavy grain, worst during camera motion when few frames have accumulated.
+    //
+    // So filter them, but only across near-identical colour. The normal edge-stop still
+    // runs (it is what keeps the filter inside a curved specular silhouette); the colour
+    // sigma is tightened so structured reflection detail survives while isolated noise,
+    // which by definition differs sharply from its neighbours, is averaged away.
+    bool is_specular = (mat_type > 0.5);
+    float sigma_c = is_specular ? sigma_color * SPECULAR_SIGMA_COLOR_SCALE : sigma_color;
+
+    float inv_sigma_color_sq = 1.0 / (sigma_c * sigma_c + 1e-6);
 
     vec3 sum = vec3(0.0);
     float wsum = 0.0;
 
     for (int j = -2; j <= 2; ++j) {
         for (int i = -2; i <= 2; ++i) {
-            ivec2 q = clamp(p + ivec2(i, j) * step_size, ivec2(0), size - 1);
-            vec3 c_q = imageLoad(src_image, q).rgb;
-            vec3 n_q = imageLoad(normals_image, q).rgb * 2.0 - 1.0;
+            ivec2 q = p + ivec2(i, j) * step_size;
+
+            // Skip taps that fall outside the image rather than clamping them to the
+            // edge. Clamping made border pixels count their edge neighbour up to five
+            // times over, which at step_size = 8 shows up as a brightness and blur bias
+            // in the outer band of the frame.
+            if (any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, image_size))) continue;
+
+            // The centre tap is already loaded; i and j are compile-time constants after
+            // the unroll, so this costs no branch and saves two fetches.
+            vec3 c_q = (i == 0 && j == 0) ? c_p : texelFetch(src_tex, q, 0).rgb;
+            vec3 n_q = (i == 0 && j == 0) ? n_p : texelFetch(normals_tex, q, 0).rgb * 2.0 - 1.0;
 
             vec3 diff = c_p - c_q;
             float w_c = exp(-dot(diff, diff) * inv_sigma_color_sq);

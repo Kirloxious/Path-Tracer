@@ -1,4 +1,5 @@
 #version 460 core
+#include "common/subgroup.glsl"
 layout(local_size_x = 64) in;
 
 #include "common/path_state.glsl"
@@ -6,6 +7,9 @@ layout(local_size_x = 64) in;
 #include "common/queue.glsl"
 #include "common/scene_buffers.glsl"
 #include "common/rng.glsl"
+#include "common/uniform_locations.glsl"
+#include "common/clamp.glsl"
+#include "common/lights.glsl"
 #include "common/restir_common.glsl"
 #include "common/geom.glsl"
 
@@ -13,9 +17,9 @@ layout(std430, binding = 18) restrict readonly buffer RestirReservoirsCurrent {
     Reservoir reservoirs[];
 };
 
-layout(location = 11) uniform int num_light_groups;
-layout(location = 12) uniform int bounce_index;
-layout(location = 13) uniform int max_bounces;
+layout(location = LOC_NUM_LIGHT_GROUPS) uniform int num_light_groups;
+layout(location = LOC_BOUNCE_INDEX) uniform int bounce_index;
+layout(location = LOC_MAX_BOUNCES) uniform int max_bounces;
 
 vec2 sample_triangle_bary(inout uint state) {
     float r1 = random_unilateral(state);
@@ -42,7 +46,13 @@ void main() {
 
     bool nee_setup = false;
 
-    bool use_restir = (s.bounce == 0) && (res.light_tri_idx != RESTIR_INVALID_TRI) && (res.W > 0.0);
+    // This vertex owns the pixel's reservoir when every bounce behind it was a perfect
+    // mirror — that is exactly the chain restir_initial walked, so its reservoir describes
+    // this surface. For a diffuse primary the prefix is empty and this reduces to the old
+    // `bounce == 0` test; past a mirror floor it moves the estimator to the reflected hit,
+    // which previously got one NEE sample per frame against ReSTIR's several hundred.
+    bool at_restir_anchor = (s.flags & FLAG_SPECULAR_PREFIX) != 0u;
+    bool use_restir = at_restir_anchor && (res.light_tri_idx != RESTIR_INVALID_TRI) && (res.W > 0.0);
     if (use_restir) {
         Triangle tri = triangles[res.light_tri_idx];
         Material lmat = mats[tri.material_index];
@@ -58,30 +68,23 @@ void main() {
         // each shadow-test the chosen sample at the receiver's surface and
         // zero W on occlusion). Apply directly to skip shadow_queue_push and
         // the redundant trace_shadow ray.
-        s.radiance += s.throughput * (albedo / PI) * lmat.emission * cos_theta * res.W;
+        // res.W is an estimator weight, not authored radiance — it spikes when the
+        // chosen sample had a tiny target_pdf, so it takes the indirect clamp.
+        s.radiance += clamp_indirect(s.throughput * (albedo / PI) * lmat.emission * cos_theta * res.W);
         // Leave nee_setup = false so this path doesn't enter shadow_queue.
     }
-    else if (s.bounce == 0) {
-        // ReSTIR was the chosen NEE technique for primary direct lighting but
-        // produced no usable sample (empty reservoir or W=0). Don't fall back
-        // to inline NEE here — it would double-sample relative to the light
-        // pdf ReSTIR is already approximating, and the ReSTIR path tested
-        // visibility, so a zero contribution is correct.
+    else if (at_restir_anchor) {
+        // ReSTIR was the chosen NEE technique for this vertex but produced no usable
+        // sample (empty reservoir or W=0). Don't fall back to inline NEE here — it
+        // would double-sample relative to the light pdf ReSTIR is already
+        // approximating, and the ReSTIR path tested visibility, so a zero
+        // contribution is correct.
     }
     else if (num_light_groups > 0) {
-        int gi = int(random_unilateral(rng) * float(num_light_groups));
-        gi = min(gi, num_light_groups - 1);
+        int        gi  = sample_light_group(num_light_groups, rng);
         LightGroup grp = light_groups[gi];
 
-        // Binary search the per-triangle CDF within this group.
-        int lo = grp.begin;
-        int hi = grp.begin + grp.count - 1;
-        float r = random_unilateral(rng);
-        while (lo < hi) {
-            int mid = (lo + hi) >> 1;
-            if (triangles[mid].cdf_in_group < r) lo = mid + 1;
-            else hi = mid;
-        }
+        int      lo  = sample_light_triangle(grp, rng);
         Triangle tri = triangles[lo];
         vec2 bary = sample_triangle_bary(rng);
         vec3 v0 = vertices[tri.indices.x].position;
@@ -106,8 +109,8 @@ void main() {
                 float mis_weight = light_pdf_combined / (light_pdf_combined + bsdf_pdf_for_nee);
 
                 // Lambertian BRDF = albedo / π.
-                vec3 contrib = s.throughput * albedo * lmat.emission * cos_theta * mis_weight /
-                        (light_pdf_combined * PI);
+                vec3 contrib = clamp_indirect(s.throughput * albedo * lmat.emission * cos_theta * mis_weight /
+                        (light_pdf_combined * PI));
 
                 shadow_states[pid].nee_dir = light_dir;
                 shadow_states[pid].nee_dist = dist;
@@ -147,7 +150,9 @@ void main() {
     //   against the analytic light pdf (FLAG_PREV_NON_SPECULAR).
     // - Neither (e.g. ReSTIR-W=0 at primary, or back-facing/degenerate analytic NEE):
     //   no competing estimator ran, so the next emissive hit takes weight 1.
-    s.flags &= ~(FLAG_PREV_NON_SPECULAR | FLAG_RESTIR_HANDLED);
+    // This vertex is diffuse, so the prefix behind the *next* one is no longer all
+    // specular — the chain ends here whether or not the reservoir was usable.
+    s.flags &= ~(FLAG_PREV_NON_SPECULAR | FLAG_RESTIR_HANDLED | FLAG_SPECULAR_PREFIX);
     if (use_restir) {
         s.flags |= FLAG_RESTIR_HANDLED;
     } else if (nee_setup) {
@@ -157,7 +162,12 @@ void main() {
     // Russian roulette after a few bounces.
     bool alive = true;
     if (s.bounce > 2) {
-        float p = max(s.throughput.r, max(s.throughput.g, s.throughput.b));
+        // Survival probability is capped at 0.95. Uncapped, a throughput that has
+        // grown past 1 through earlier roulette divisions gives p > 1, and
+        // `random_unilateral() > p` can then never fire — roulette stops terminating
+        // anything and every path runs to max_bounces. The `p <= 0` early kill is
+        // kept so a fully absorbed path still dies immediately.
+        float p = min(max(s.throughput.r, max(s.throughput.g, s.throughput.b)), 0.95);
         if (p <= 0.0 || random_unilateral(rng) > p) alive = false;
         else s.throughput /= p;
     }

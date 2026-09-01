@@ -7,7 +7,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 // more heavily to preserve detail across the halving step.
 
 layout(binding = 0) uniform sampler2D src_tex;             // source mip (or hdr on the first pass)
-layout(rgba32f, binding = 1) writeonly uniform image2D dst_image; // destination mip
+layout(rgba16f, binding = 1) writeonly uniform image2D dst_image; // destination mip
 
 layout(location = 0) uniform ivec2 dst_size;
 layout(location = 1) uniform int   apply_threshold; // 1 on the first (hdr → mip0) pass, 0 elsewhere
@@ -45,28 +45,43 @@ void main() {
     vec2  ts = 1.0 / vec2(textureSize(src_tex, 0));
 
     // 13-tap footprint — a, b, c, d, e, f, g are the outer ring; h, i, j, k are inner.
-    vec3 a = texture(src_tex, uv + ts * vec2(-2.0, -2.0)).rgb;
-    vec3 b = texture(src_tex, uv + ts * vec2( 0.0, -2.0)).rgb;
-    vec3 c = texture(src_tex, uv + ts * vec2( 2.0, -2.0)).rgb;
-    vec3 d = texture(src_tex, uv + ts * vec2(-2.0,  0.0)).rgb;
-    vec3 e = texture(src_tex, uv + ts * vec2( 0.0,  0.0)).rgb;
-    vec3 f = texture(src_tex, uv + ts * vec2( 2.0,  0.0)).rgb;
-    vec3 g = texture(src_tex, uv + ts * vec2(-2.0,  2.0)).rgb;
-    vec3 h = texture(src_tex, uv + ts * vec2( 0.0,  2.0)).rgb;
-    vec3 i = texture(src_tex, uv + ts * vec2( 2.0,  2.0)).rgb;
-    vec3 j = texture(src_tex, uv + ts * vec2(-1.0, -1.0)).rgb;
-    vec3 k = texture(src_tex, uv + ts * vec2( 1.0, -1.0)).rgb;
-    vec3 l = texture(src_tex, uv + ts * vec2(-1.0,  1.0)).rgb;
-    vec3 m = texture(src_tex, uv + ts * vec2( 1.0,  1.0)).rgb;
+    vec3 a = textureLod(src_tex, uv + ts * vec2(-2.0, -2.0), 0.0).rgb;
+    vec3 b = textureLod(src_tex, uv + ts * vec2( 0.0, -2.0), 0.0).rgb;
+    vec3 c = textureLod(src_tex, uv + ts * vec2( 2.0, -2.0), 0.0).rgb;
+    vec3 d = textureLod(src_tex, uv + ts * vec2(-2.0,  0.0), 0.0).rgb;
+    vec3 e = textureLod(src_tex, uv + ts * vec2( 0.0,  0.0), 0.0).rgb;
+    vec3 f = textureLod(src_tex, uv + ts * vec2( 2.0,  0.0), 0.0).rgb;
+    vec3 g = textureLod(src_tex, uv + ts * vec2(-2.0,  2.0), 0.0).rgb;
+    vec3 h = textureLod(src_tex, uv + ts * vec2( 0.0,  2.0), 0.0).rgb;
+    vec3 i = textureLod(src_tex, uv + ts * vec2( 2.0,  2.0), 0.0).rgb;
+    vec3 j = textureLod(src_tex, uv + ts * vec2(-1.0, -1.0), 0.0).rgb;
+    vec3 k = textureLod(src_tex, uv + ts * vec2( 1.0, -1.0), 0.0).rgb;
+    vec3 l = textureLod(src_tex, uv + ts * vec2(-1.0,  1.0), 0.0).rgb;
+    vec3 m = textureLod(src_tex, uv + ts * vec2( 1.0,  1.0), 0.0).rgb;
 
-    // Partial-Karis inside each of the five 2x2 sub-quads.
-    vec3 box_center = karis_average(j, k, l, m);              // inner 2x2 gets 0.5 weight
-    vec3 box_tl     = karis_average(a, b, d, e);
-    vec3 box_tr     = karis_average(b, c, e, f);
-    vec3 box_bl     = karis_average(d, e, g, h);
-    vec3 box_br     = karis_average(e, f, h, i);
-
-    vec3 result = box_center * 0.5 + (box_tl + box_tr + box_bl + box_br) * 0.125;
+    // Partial-Karis inside each of the five 2x2 sub-quads — but only on the first
+    // downsample, which is the step that reads the raw HDR image and therefore the only
+    // one that can see a single-pixel firefly. `apply_threshold` marks exactly that pass.
+    //
+    // The 1/(1+luma) weighting is a nonlinear energy sink: applied again at every mip it
+    // compounds, progressively darkening the bloom and flattening its falloff. COD/Jimenez
+    // apply it once, for this reason.
+    vec3 result;
+    if (apply_threshold == 1) {
+        vec3 box_center = karis_average(j, k, l, m);              // inner 2x2 gets 0.5 weight
+        vec3 box_tl     = karis_average(a, b, d, e);
+        vec3 box_tr     = karis_average(b, c, e, f);
+        vec3 box_bl     = karis_average(d, e, g, h);
+        vec3 box_br     = karis_average(e, f, h, i);
+        result = box_center * 0.5 + (box_tl + box_tr + box_bl + box_br) * 0.125;
+    } else {
+        vec3 box_center = (j + k + l + m) * 0.25;
+        vec3 box_tl     = (a + b + d + e) * 0.25;
+        vec3 box_tr     = (b + c + e + f) * 0.25;
+        vec3 box_bl     = (d + e + g + h) * 0.25;
+        vec3 box_br     = (e + f + h + i) * 0.25;
+        result = box_center * 0.5 + (box_tl + box_tr + box_bl + box_br) * 0.125;
+    }
 
     if (apply_threshold == 1) {
         result = prefilter(result);

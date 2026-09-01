@@ -5,9 +5,16 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/bvh_traversal.glsl"
 #include "common/rng.glsl"
 #include "common/restir_common.glsl"
+#include "common/lights.glsl"
+#include "common/restir_surface.glsl"
+#include "common/geom.glsl"
 
 layout(std430, binding = 18) restrict buffer RestirReservoirsCurrent {
     Reservoir reservoirs[];
+};
+
+layout(std430, binding = 24) restrict writeonly buffer RestirSurfaceCurrent {
+    RestirSurface surfaces[];
 };
 
 layout(binding = 5) uniform sampler2D gbuf_pos_matid_tex;
@@ -18,6 +25,25 @@ layout(location = 1) uniform int frame_index;
 layout(location = 2) uniform int m_initial;
 layout(location = 3) uniform int time;
 layout(location = 4) uniform int num_light_groups;
+
+// How many perfect-mirror bounces the walk below will follow before giving up. A mirror
+// facing a mirror can recurse indefinitely; 4 covers anything worth resampling and bounds
+// the cost of the walk on pathological geometry.
+const int MAX_MIRROR_DEPTH = 4;
+
+// Zero the whole record, not just the flag. Consumers check `valid` first, but leaving
+// last frame's position and normal behind makes any future bug read as plausible garbage
+// instead of an obvious zero.
+void surface_invalidate(uint pid) {
+    RestirSurface s;
+    s.position = vec3(0.0);
+    s.valid = 0u;
+    s.normal = vec3(0.0);
+    s.matid = 0u;
+    s.albedo = vec3(0.0);
+    s._pad = 0.0;
+    surfaces[pid] = s;
+}
 
 vec2 sample_triangle_bary(inout uint state) {
     float r1 = random_unilateral(state);
@@ -39,20 +65,11 @@ bool sample_candidate(vec3 P,
     out vec2 out_bary,
     out float out_source_pdf_omega,
     out float out_target_pdf) {
-    int gi = int(random_unilateral(rng) * float(num_light_groups));
-    gi = min(gi, num_light_groups - 1);
+    int        gi  = sample_light_group(num_light_groups, rng);
     LightGroup grp = light_groups[gi];
     if (grp.total_area <= 0.0 || grp.count <= 0) return false;
 
-    // Binary search the per-triangle CDF within this group.
-    int lo = grp.begin;
-    int hi = grp.begin + grp.count - 1;
-    float r = random_unilateral(rng);
-    while (lo < hi) {
-        int mid = (lo + hi) >> 1;
-        if (triangles[mid].cdf_in_group < r) lo = mid + 1;
-        else hi = mid;
-    }
+    int      lo  = sample_light_triangle(grp, rng);
     Triangle tri = triangles[lo];
     vec2 bary = sample_triangle_bary(rng);
     vec3 v0 = vertices[tri.indices.x].position;
@@ -105,6 +122,7 @@ void main() {
     // No light sampling possible — write empty reservoir and return.
     if (num_light_groups <= 0) {
         reservoirs[pid] = r;
+        surface_invalidate(pid);
         return;
     }
 
@@ -115,22 +133,74 @@ void main() {
     // Sky / no hit: zero-length normal sentinel.
     if (dot(n, n) < 0.5) {
         reservoirs[pid] = r;
+        surface_invalidate(pid);
         return;
     }
 
     uint matid = floatBitsToUint(pm.w);
     Material mat = mats[matid];
-    // v1 scope: diffuse-only ReSTIR DI. Non-Lambertian primary hits get a
-    // null reservoir and continue to use the existing inline NEE in their
-    // respective shade kernels.
+    vec3 P = pm.xyz;
+    vec3 N = normalize(n);
+
+    // Follow the specular chain to the first diffuse surface, and resample there.
+    //
+    // Only perfect mirrors (metal, fuzz == 0) are followed. shade_metal's scatter is
+    // `reflect(ray_dir, N) + fuzz * random_unit_vector(rng)`, which is bit-identical to
+    // plain reflect() when fuzz is 0 — so this walk and the path tracer provably land on
+    // the same vertex, which is what lets shade_lambertian consume a reservoir that was
+    // built by a completely separate traversal. With fuzz > 0, or through a dielectric
+    // (whose reflect/refract branch is a coin flip on its own RNG), the two would diverge
+    // and the reservoir would describe the wrong surface — those fall through to the null
+    // reservoir and keep using inline NEE, exactly as before.
+    vec3 ray_dir = normalize(P - camera_position);
+    // Origin offset normal, tracked separately from the shading normal N because
+    // shade_metal offsets along the *geometric* normal once past the primary. N drives
+    // reflect() and ends up in the resampling surface; offset_n only nudges ray origins.
+    vec3 offset_n = N;
+
+    for (int depth = 0; depth < MAX_MIRROR_DEPTH; ++depth) {
+        if (mat.type != MAT_METAL || mat.fuzz != 0.0) {
+            break;
+        }
+
+        Ray refl;
+        refl.direction = reflect(ray_dir, N);
+        refl.origin = P + 0.001 * offset_n;
+
+        HitRecord hit;
+        int tri_index;
+        if (!world_hit_stackless(refl, 0.001, 1e30, hit, tri_index)) {
+            reservoirs[pid] = r;
+            surface_invalidate(pid);
+            return; // mirror looking at the sky — nothing to resample
+        }
+
+        ray_dir = refl.direction;
+        P = hit.point;
+        N = hit.normal;
+        offset_n = triangle_geom_normal(uint(tri_index), hit.front_face);
+        matid = hit.mat_index;
+        mat = mats[matid];
+    }
+
+    // Only a diffuse vertex can anchor a reservoir. A chain that bottoms out on an
+    // emissive, on a fuzzy metal, or on a dielectric gets no reservoir.
     if (mat.type != MAT_LAMBERTIAN) {
         reservoirs[pid] = r;
+        surface_invalidate(pid);
         return;
     }
 
-    vec3 P = pm.xyz;
-    vec3 N = normalize(n);
     vec3 albedo = mat.color;
+
+    RestirSurface surf;
+    surf.position = P;
+    surf.valid = 1u;
+    surf.normal = N;
+    surf.matid = matid;
+    surf.albedo = albedo;
+    surf._pad = 0.0;
+    surfaces[pid] = surf;
 
     // RNG seeded distinctly from the path tracer's so reservoir noise is
     // independent of scattering noise.

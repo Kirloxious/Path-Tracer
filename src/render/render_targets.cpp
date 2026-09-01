@@ -18,13 +18,23 @@ void RenderTargets::resize(int w, int h) {
 }
 
 void RenderTargets::allocate(int w, int h) {
-    accum = Texture(w, h);
+    // Only `accum` needs full float32: it carries the progressive running average across
+    // thousands of frames, where half-float rounding would compound. Everything else is
+    // either bounded HDR (rgba16f handles radiance far past anything a tonemap keeps) or
+    // already tonemapped and sRGB-encoded into [0,1], which rgba8 stores exactly.
+    // At 1080p this is ~231 MB of targets down to ~66 MB, and proportionally less traffic
+    // in every post pass that reads or writes them.
+    accum = Texture(w, h, GL_RGBA32F);
     normals = Texture(w, h, GL_RGBA16F);
-    denoised_ping = Texture(w, h);
-    hdr = Texture(w, h);
-    display = Texture(w, h);
-    taa_history = Texture(w, h);
-    taa_output = Texture(w, h);
+    denoised_ping = Texture(w, h, GL_RGBA16F);
+    hdr = Texture(w, h, GL_RGBA16F);
+    // RGB10_A2, not RGBA8. These three carry tonemapped sRGB values in [0,1], which 8 bits
+    // stores fine as a one-shot image — but taa_output feeds back into taa_history and is
+    // re-blended every frame at up to 0.9 history weight, and 8-bit rounding inside that
+    // loop never settles. 10 bits per channel costs the same 4 bytes and kills it.
+    display = Texture(w, h, GL_RGB10_A2);
+    taa_history = Texture(w, h, GL_RGB10_A2);
+    taa_output = Texture(w, h, GL_RGB10_A2);
     gbuf = GBuffer(w, h);
     gbuf_prev = GBuffer(w, h);
     fb = FrameBuffer(display);

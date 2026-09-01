@@ -1,10 +1,12 @@
 #version 460 core
+#include "common/subgroup.glsl"
 layout(local_size_x = 64) in;
 
 #include "common/path_state.glsl"
 #include "common/queue.glsl"
 #include "common/bvh_traversal.glsl"
 #include "common/envmap.glsl"
+#include "common/clamp.glsl"
 
 void main() {
     uint qid = gl_GlobalInvocationID.x;
@@ -20,16 +22,23 @@ void main() {
     if (!world_hit_stackless(r, 0.001, 1e30, hit, tri_index)) {
         // Miss — env contribution × throughput. Path dies (does not enqueue).
         // v1 uses miss-sampling only; no MIS weight needed here (no NEE toward env).
-        states[pid].radiance += states[pid].throughput * sample_envmap(r.direction);
+        // Only continuation rays reach trace.comp — generate.comp handles the primary
+        // sky directly — so this contribution is always indirect.
+        states[pid].radiance += clamp_indirect(states[pid].throughput * sample_envmap(r.direction));
         return;
     }
 
-    states[pid].hit_point         = hit.point;
-    states[pid].hit_normal        = hit.normal;
-    states[pid].hit_matid         = hit.mat_index;
-    states[pid].hit_triangle_idx  = uint(tri_index);
-    if (hit.front_face) states[pid].flags |=  FLAG_FRONT_FACE;
-    else                states[pid].flags &= ~FLAG_FRONT_FACE;
+    // One read-modify-write on `flags`, not two. The old pair of `|=` / `&=~` branches
+    // both touch the same dword, so a warp that diverges on front_face paid two full
+    // round-trips to it instead of one.
+    uint flags = states[pid].flags;
+    flags = hit.front_face ? (flags | FLAG_FRONT_FACE) : (flags & ~FLAG_FRONT_FACE);
+
+    states[pid].hit_point        = hit.point;
+    states[pid].hit_normal       = hit.normal;
+    states[pid].hit_matid        = hit.mat_index;
+    states[pid].hit_triangle_idx = uint(tri_index);
+    states[pid].flags            = flags;
 
     uint t = mats[hit.mat_index].type;
     if      (t == MAT_LAMBERTIAN) hit_lambertian_push(pid);

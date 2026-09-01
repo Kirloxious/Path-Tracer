@@ -6,7 +6,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 // the contribution.
 
 layout(binding = 0) uniform sampler2D src_tex;                    // smaller mip
-layout(rgba32f, binding = 1) uniform image2D dst_image;           // larger mip (or hdr)
+layout(rgba16f, binding = 1) uniform image2D dst_image;           // larger mip (or hdr)
 
 layout(location = 0) uniform ivec2 dst_size;
 layout(location = 1) uniform float radius;   // tent-filter radius in *destination* texels
@@ -21,15 +21,15 @@ void main() {
 
     // 3x3 tent kernel (1 2 1 / 2 4 2 / 1 2 1) / 16.
     vec3 s =
-        texture(src_tex, uv + vec2(-ts.x, -ts.y)).rgb * 1.0 +
-        texture(src_tex, uv + vec2( 0.0,  -ts.y)).rgb * 2.0 +
-        texture(src_tex, uv + vec2( ts.x, -ts.y)).rgb * 1.0 +
-        texture(src_tex, uv + vec2(-ts.x,  0.0 )).rgb * 2.0 +
-        texture(src_tex, uv + vec2( 0.0,   0.0 )).rgb * 4.0 +
-        texture(src_tex, uv + vec2( ts.x,  0.0 )).rgb * 2.0 +
-        texture(src_tex, uv + vec2(-ts.x,  ts.y)).rgb * 1.0 +
-        texture(src_tex, uv + vec2( 0.0,   ts.y)).rgb * 2.0 +
-        texture(src_tex, uv + vec2( ts.x,  ts.y)).rgb * 1.0;
+        textureLod(src_tex, uv + vec2(-ts.x, -ts.y), 0.0).rgb * 1.0 +
+        textureLod(src_tex, uv + vec2( 0.0,  -ts.y), 0.0).rgb * 2.0 +
+        textureLod(src_tex, uv + vec2( ts.x, -ts.y), 0.0).rgb * 1.0 +
+        textureLod(src_tex, uv + vec2(-ts.x,  0.0 ), 0.0).rgb * 2.0 +
+        textureLod(src_tex, uv + vec2( 0.0,   0.0 ), 0.0).rgb * 4.0 +
+        textureLod(src_tex, uv + vec2( ts.x,  0.0 ), 0.0).rgb * 2.0 +
+        textureLod(src_tex, uv + vec2(-ts.x,  ts.y), 0.0).rgb * 1.0 +
+        textureLod(src_tex, uv + vec2( 0.0,   ts.y), 0.0).rgb * 2.0 +
+        textureLod(src_tex, uv + vec2( ts.x,  ts.y), 0.0).rgb * 1.0;
     vec3 upsampled = s / 16.0;
 
     vec3 dst = imageLoad(dst_image, p).rgb;

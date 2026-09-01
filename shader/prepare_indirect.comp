@@ -1,4 +1,5 @@
 #version 460 core
+#include "common/subgroup.glsl"
 layout(local_size_x = 6) in;
 
 // Reads the current queue counters and writes a matching glDispatchCompute-Indirect
@@ -16,11 +17,29 @@ layout(std430, binding = 23) restrict writeonly buffer DispatchArgsBuffer {
 // this kernel branchless.
 const uint LOCAL_SIZE = 64u;
 
+// Bitmask of counter slots to zero after their dispatch args have been written.
+//
+// The counter clears used to be six glNamedBufferSubData calls per bounce on the CPU —
+// ~200 driver round-trips per frame at 32 bounces, each one a client-side buffer update
+// that also had to be ordered against shader writes with GL_BUFFER_UPDATE_BARRIER_BIT.
+// This kernel already runs at exactly the points where a queue has just been drained and
+// already has the counter bound, so it does the zeroing itself.
+//
+// A slot may only be cleared once every kernel that reads it as a loop bound has run:
+// the shade kernels bound on hit_*, trace_shadow on shadow, trace on ray. The two
+// dispatches per bounce therefore clear different halves — see PathTracerPass::execute.
+layout(location = 0) uniform uint clear_mask;
+
 void main() {
     uint i = gl_GlobalInvocationID.x;
-    if (i >= 6u) return;
+    if (i >= NUM_QUEUES) return;
 
     uint c = q_count[i];
     uint g = (c + LOCAL_SIZE - 1u) / LOCAL_SIZE;
     dispatch_args[i] = uvec4(g, 1u, 1u, 0u);
+
+    // Each thread owns exactly one slot, so this races with nothing.
+    if ((clear_mask & (1u << i)) != 0u) {
+        q_count[i] = 0u;
+    }
 }

@@ -22,6 +22,10 @@ void Renderer::loadScene(const Scene& scene, const Camera& camera) {
     bvhNodesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 3, scene.world.bvh.nodes, GL_STATIC_DRAW);
     trianglesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 4, scene.world.triangles, GL_STATIC_DRAW);
     verticesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 5, scene.world.vertices, GL_STATIC_DRAW);
+    // Leaf triangle references. A BVH leaf owns a contiguous run here; each entry indexes
+    // trianglesSSBO. The indirection is what lets leaves batch several triangles without
+    // disturbing the emissive-first triangle ordering that NEE and the shadow ray rely on.
+    triRefsSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 26, scene.world.bvh.triRefs, GL_STATIC_DRAW);
 
     // Rebuild (or clear) the envmap. Empty path → EnvMap() default-constructs
     // to invalid, which makes `targets.envMap->valid()` false.

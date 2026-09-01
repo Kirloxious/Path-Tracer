@@ -18,11 +18,11 @@ layout(std430, binding = 30) buffer ExposureBuffer {
 layout(location = 0) uniform float log_luma_min;
 layout(location = 1) uniform float log_luma_range;
 layout(location = 2) uniform float dt;
-layout(location = 3) uniform float tau;             // EMA time constant in seconds
-layout(location = 4) uniform float target_luma;     // desired luminance (e.g. 0.18 middle-gray)
+layout(location = 3) uniform float tau; // EMA time constant in seconds
+layout(location = 4) uniform float target_luma; // desired luminance (e.g. 0.18 middle-gray)
 layout(location = 5) uniform float min_exposure;
 layout(location = 6) uniform float max_exposure;
-layout(location = 7) uniform int   reset_exposure;  // 1 → skip EMA, snap directly
+layout(location = 7) uniform int reset_exposure; // 1 → skip EMA, snap directly
 
 void main() {
     // Thread 0 does the whole reduction; the other 255 threads only exist so
@@ -48,11 +48,12 @@ void main() {
         float target_exposure = clamp(target_luma / max(avg_luma, 1e-4), min_exposure, max_exposure);
 
         float alpha = 1.0 - exp(-dt / max(tau, 1e-3));
-        float next  = (reset_exposure == 1) ? target_exposure : mix(expo.exposure, target_exposure, clamp(alpha, 0.0, 1.0));
+        float next = (reset_exposure == 1) ? target_exposure : mix(expo.exposure, target_exposure, clamp(alpha, 0.0, 1.0));
         expo.exposure = next;
     }
 
     // All 256 threads cooperate to zero the histogram for next frame.
+    memoryBarrierBuffer();
     barrier();
     hist.bins[gl_LocalInvocationIndex] = 0u;
 }

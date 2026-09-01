@@ -54,6 +54,8 @@ public:
     /** @param name Uniform name in the shader. @param v Value to write. */
     void setInt(const std::string& name, int v) const;
     /** @param name Uniform name in the shader. @param v Value to write. */
+    void setUInt(const std::string& name, unsigned int v) const;
+    /** @param name Uniform name in the shader. @param v Value to write. */
     void setFloat(const std::string& name, float v) const;
     /** @param name Uniform name in the shader. @param v Value to write. */
     void setVec2(const std::string& name, const glm::vec2& v) const;

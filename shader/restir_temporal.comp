@@ -5,6 +5,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/bvh_traversal.glsl"
 #include "common/rng.glsl"
 #include "common/restir_common.glsl"
+#include "common/restir_surface.glsl"
 
 layout(std430, binding = 18) restrict buffer RestirReservoirsCurrent {
     Reservoir reservoirs[];
@@ -14,10 +15,19 @@ layout(std430, binding = 19) restrict readonly buffer RestirReservoirsPrev {
     Reservoir prev_reservoirs[];
 };
 
+layout(std430, binding = 24) restrict readonly buffer RestirSurfaceCurrent {
+    RestirSurface surfaces[];
+};
+
+layout(std430, binding = 25) restrict readonly buffer RestirSurfacePrev {
+    RestirSurface prev_surfaces[];
+};
+
 layout(binding = 5) uniform sampler2D gbuf_pos_matid_tex;
 layout(binding = 6) uniform sampler2D gbuf_normal_tex;
-layout(binding = 7) uniform sampler2D prev_gbuf_pos_matid_tex;
-layout(binding = 8) uniform sampler2D prev_gbuf_normal_tex;
+// The previous frame's G-buffer is no longer read here: validation moved to the
+// resampling-surface history (binding 25), which describes what the reservoir actually
+// covers. gbuf_prev is still produced and rotated by RasterGBufferPass for future use.
 
 layout(location = 0) uniform ivec2 image_size;
 layout(location = 1) uniform int   frame_index;
@@ -39,20 +49,23 @@ void main() {
     // here saves the gbuffer fetches and reprojection math.
     if (frame_index <= 1) return;
 
-    // Read current surface.
+    // The reservoir describes the resampling surface, which past a mirror is not the
+    // surface this pixel rasterized — so validation compares resampling surfaces, while
+    // reprojection still uses the G-buffer, because which pixel saw this reflection last
+    // frame is a question about the primary hit.
+    RestirSurface cur_surf = surfaces[pid];
+    if (cur_surf.valid == 0u) return;
+
     vec4 pm = texelFetch(gbuf_pos_matid_tex, px, 0);
     vec3 n  = texelFetch(gbuf_normal_tex, px, 0).xyz;
     if (dot(n, n) < 0.5) return;
-    uint     matid = floatBitsToUint(pm.w);
-    Material mat   = mats[matid];
-    if (mat.type != MAT_LAMBERTIAN) return;
 
-    vec3 P      = pm.xyz;
-    vec3 N      = normalize(n);
-    vec3 albedo = mat.color;
+    vec3 P      = cur_surf.position;
+    vec3 N      = cur_surf.normal;
+    vec3 albedo = cur_surf.albedo;
 
-    // Reproject into the previous frame's un-jittered NDC.
-    vec4 prev_clip = prev_view_proj_matrix * vec4(P, 1.0);
+    // Reproject the *primary* hit into the previous frame's un-jittered NDC.
+    vec4 prev_clip = prev_view_proj_matrix * vec4(pm.xyz, 1.0);
     if (prev_clip.w <= 0.0) return;
     vec3 prev_ndc = prev_clip.xyz / prev_clip.w;
     if (any(lessThan(prev_ndc.xy, vec2(-1.0))) || any(greaterThan(prev_ndc.xy, vec2(1.0)))) return;
@@ -61,16 +74,16 @@ void main() {
     ivec2 prev_px = clamp(ivec2(prev_uv * vec2(image_size)), ivec2(0), image_size - 1);
     uint  prev_pid = uint(prev_px.y * image_size.x + prev_px.x);
 
-    // Validate against prev gbuffer: same material, similar normal, no large
-    // world-space discontinuity (catches disocclusions where reprojection
-    // lands on a foreground/background swap).
-    vec4 prev_pm = texelFetch(prev_gbuf_pos_matid_tex, prev_px, 0);
-    vec3 prev_n_raw = texelFetch(prev_gbuf_normal_tex, prev_px, 0).xyz;
-    if (dot(prev_n_raw, prev_n_raw) < 0.5) return;
-    uint prev_matid = floatBitsToUint(prev_pm.w);
-    if (prev_matid != matid) return;
-    if (dot(normalize(prev_n_raw), N) < NORMAL_DOT_THRESHOLD) return;
-    vec3 dp = prev_pm.xyz - P;
+    // Validate against the previous frame's resampling surface: same material, similar
+    // normal, no large world-space discontinuity. This subsumes the G-buffer checks the
+    // pass used to do — a disocclusion or a foreground/background swap moves the
+    // resampling vertex too, and a mirror that stopped being a mirror invalidates it
+    // outright.
+    RestirSurface prev_surf = prev_surfaces[prev_pid];
+    if (prev_surf.valid == 0u) return;
+    if (prev_surf.matid != cur_surf.matid) return;
+    if (dot(prev_surf.normal, N) < NORMAL_DOT_THRESHOLD) return;
+    vec3 dp = prev_surf.position - P;
     if (dot(dp, dp) > WORLD_POS_DELTA * WORLD_POS_DELTA) return;
 
     Reservoir prev = prev_reservoirs[prev_pid];

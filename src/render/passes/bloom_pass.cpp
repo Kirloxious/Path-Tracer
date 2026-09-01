@@ -29,12 +29,12 @@ void BloomPass::buildMips(int w, int h) {
     for (int i = 0; i < MIP_COUNT; ++i) {
         mw = std::max(mw / 2, MIN_MIP_DIM);
         mh = std::max(mh / 2, MIN_MIP_DIM);
-        // Must match the `layout(rgba32f, ...)` in bloom_{down,up}sample.comp — the
-        // upsample shader's final dispatch writes into targets.hdr (rgba32f), so
-        // all intermediate mips need to be in the same image-format compatibility
-        // class (rgba16f ≠ rgba32f per Table 8.27), otherwise imageLoad/imageStore
-        // return undefined values (visible as a magenta blob elsewhere in the frame).
-        mips.emplace_back(mw, mh, GL_RGBA32F);
+        // Must match the `layout(rgba16f, ...)` in bloom_{down,up}sample.comp — the
+        // upsample shader's final dispatch writes into targets.hdr, so all intermediate
+        // mips need to be in the same image-format compatibility class as it (rgba16f ≠
+        // rgba32f per Table 8.27), otherwise imageLoad/imageStore return undefined
+        // values (visible as a magenta blob elsewhere in the frame).
+        mips.emplace_back(mw, mh, GL_RGBA16F);
         // Bilinear so the 13-tap downsample and 3x3 tent upsample can sample
         // between texels without hand-rolling weights per corner.
         glTextureParameteri(mips.back().handle, GL_TEXTURE_MIN_FILTER, GL_LINEAR);

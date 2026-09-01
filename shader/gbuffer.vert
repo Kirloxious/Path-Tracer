@@ -25,5 +25,8 @@ void main() {
     v_world_normal = a_normal;
     v_matid = a_matid;
 
-    gl_Position = camera.projection * camera.view * vec4(a_pos, 1.0);
+    // Parenthesised deliberately: GLSL is left-associative, so `projection * view * v`
+    // evaluates (projection * view) — a full mat4xmat4, 64 multiplies and 48 adds — for
+    // every vertex. Grouping the vector first makes it two mat4xvec4 instead.
+    gl_Position = camera.projection * (camera.view * vec4(a_pos, 1.0));
 }

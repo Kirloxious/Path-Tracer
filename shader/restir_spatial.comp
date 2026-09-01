@@ -5,6 +5,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/bvh_traversal.glsl"
 #include "common/rng.glsl"
 #include "common/restir_common.glsl"
+#include "common/restir_surface.glsl"
 
 layout(std430, binding = 18) restrict buffer RestirReservoirsCurrent {
     Reservoir reservoirs[];
@@ -17,8 +18,11 @@ layout(std430, binding = 20) restrict readonly buffer RestirSpatialInput {
     Reservoir spatial_input[];
 };
 
-layout(binding = 5) uniform sampler2D gbuf_pos_matid_tex;
-layout(binding = 6) uniform sampler2D gbuf_normal_tex;
+layout(std430, binding = 24) restrict readonly buffer RestirSurfaceCurrent {
+    RestirSurface surfaces[];
+};
+
+// No G-buffer reads: this pass works entirely in terms of resampling surfaces now.
 
 layout(location = 0) uniform ivec2 image_size;
 layout(location = 1) uniform int   frame_index;
@@ -26,6 +30,10 @@ layout(location = 2) uniform int   k_neighbors;
 layout(location = 3) uniform int   time;
 layout(location = 4) uniform float radius_pixels;
 layout(location = 5) uniform int   pass_index;
+// 0 on every spatial pass but the last. The chosen sample is re-validated by whichever
+// pass runs last, so testing it in an intermediate pass buys nothing and costs a full
+// screen's worth of BVH shadow traversals.
+layout(location = 6) uniform int   test_visibility;
 
 const float NORMAL_DOT_THRESHOLD = 0.9;
 const float WORLD_POS_DELTA      = 0.5;
@@ -38,25 +46,21 @@ void main() {
     // Read self reservoir from the input buffer (binding 20).
     Reservoir cur = spatial_input[pid];
 
-    // Read current surface.
-    vec4 pm = texelFetch(gbuf_pos_matid_tex, px, 0);
-    vec3 n  = texelFetch(gbuf_normal_tex, px, 0).xyz;
-    if (dot(n, n) < 0.5) {
-        // Sky / no hit — pass through without spatial work.
+    // Neighbours are compared as resampling surfaces, not as G-buffer surfaces. Two
+    // adjacent mirror-floor pixels rasterize the same flat quad — identical normal,
+    // identical material — but reflect parts of the scene metres apart, and combining
+    // their reservoirs on that basis would smear the reflection. The surfaces buffer is
+    // what actually distinguishes them.
+    RestirSurface self_surf = surfaces[pid];
+    if (self_surf.valid == 0u) {
+        // Sky, emissive, or a specular chain with no diffuse end — nothing to reuse.
         reservoirs[pid] = cur;
         return;
     }
 
-    uint     matid = floatBitsToUint(pm.w);
-    Material mat   = mats[matid];
-    if (mat.type != MAT_LAMBERTIAN) {
-        reservoirs[pid] = cur;
-        return;
-    }
-
-    vec3 P      = pm.xyz;
-    vec3 N      = normalize(n);
-    vec3 albedo = mat.color;
+    vec3 P      = self_surf.position;
+    vec3 N      = self_surf.normal;
+    vec3 albedo = self_surf.albedo;
 
     // RNG seeded distinctly from initial/temporal so neighbor draws don't
     // alias with prior RNG sequences. pass_index folds in so the two spatial
@@ -74,15 +78,13 @@ void main() {
         if (npx.x < 0 || npx.y < 0 || npx.x >= image_size.x || npx.y >= image_size.y) continue;
         uint npid = uint(npx.y * image_size.x + npx.x);
 
-        // Validate neighbor surface against ours: same material, similar
-        // normal, no large world-space gap. Same thresholds as temporal.
-        vec4 npm = texelFetch(gbuf_pos_matid_tex, npx, 0);
-        vec3 nn  = texelFetch(gbuf_normal_tex, npx, 0).xyz;
-        if (dot(nn, nn) < 0.5) continue;
-        uint nmatid = floatBitsToUint(npm.w);
-        if (nmatid != matid) continue;
-        if (dot(normalize(nn), N) < NORMAL_DOT_THRESHOLD) continue;
-        vec3 dp = npm.xyz - P;
+        // Validate the neighbour's resampling surface against ours: same material,
+        // similar normal, no large world-space gap. Same thresholds as temporal.
+        RestirSurface nb = surfaces[npid];
+        if (nb.valid == 0u) continue;
+        if (nb.matid != self_surf.matid) continue;
+        if (dot(nb.normal, N) < NORMAL_DOT_THRESHOLD) continue;
+        vec3 dp = nb.position - P;
         if (dot(dp, dp) > WORLD_POS_DELTA * WORLD_POS_DELTA) continue;
 
         Reservoir other = spatial_input[npid];
@@ -101,8 +103,10 @@ void main() {
 
     // Shadow-test the (possibly updated) chosen sample at our surface. A
     // neighbor's sample was tested at the neighbor's surface, so visibility
-    // here is not guaranteed — if we skip this, light leaks across silhouettes.
-    if (cur.W > 0.0 && cur.light_tri_idx != RESTIR_INVALID_TRI) {
+    // here is not guaranteed — if we skip this on the final pass, light leaks
+    // across silhouettes. Intermediate passes skip it: their output is only ever
+    // consumed by the next spatial pass, which tests whatever sample survives.
+    if (test_visibility != 0 && cur.W > 0.0 && cur.light_tri_idx != RESTIR_INVALID_TRI) {
         Triangle tri = triangles[cur.light_tri_idx];
         vec3     v0  = vertices[tri.indices.x].position;
         vec3     sp  = v0 + cur.bary.x * tri.e1 + cur.bary.y * tri.e2;

@@ -5,6 +5,7 @@
 const uint FLAG_FRONT_FACE         = 1u << 0; // last hit's face was front-facing
 const uint FLAG_PREV_NON_SPECULAR  = 1u << 1; // previous bounce ran analytic NEE — shade_emissive applies balance-heuristic MIS using s.pdf_bsdf and the analytic light pdf
 const uint FLAG_RESTIR_HANDLED     = 1u << 2; // previous bounce was a ReSTIR-resolved primary with W>0 — shade_emissive skips its contribution to avoid double-counting the same direct-lighting estimator
+const uint FLAG_SPECULAR_PREFIX    = 1u << 3; // every vertex so far has been a perfect mirror, so this path is still tracking the chain restir_initial walked — the next diffuse vertex it reaches is that pixel's ReSTIR resampling surface
 
 // 96 bytes. Every `vec3 + scalar` pair fits in one 16-byte std430 slot.
 // NEE fields (nee_dir/nee_dist/nee_le) intentionally live in ShadowState below —

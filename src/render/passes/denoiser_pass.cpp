@@ -14,7 +14,7 @@ DenoiserPass::DenoiserPass(const std::filesystem::path& shaderPath) {
 
 void DenoiserPass::uploadUniforms(const Scene&, const Camera& camera) {
     shader.use();
-    shader.setVec2("image_size", glm::vec2(camera.image_width, camera.image_height));
+    shader.setIVec2("image_size", camera.image_width, camera.image_height);
     shader.setFloat("sigma_normal", 64.0f);
 }
 
@@ -24,7 +24,7 @@ bool DenoiserPass::reloadIfChanged(const RenderContext&) {
 
 void DenoiserPass::resize(int w, int h) {
     shader.use();
-    shader.setVec2("image_size", glm::vec2(w, h));
+    shader.setIVec2("image_size", w, h);
 }
 
 void DenoiserPass::execute(const RenderContext& ctx, RenderTargets& targets) {
@@ -46,8 +46,11 @@ void DenoiserPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     shader.use();
     shader.setFloat("sigma_color", adaptiveSigmaColor);
     for (int pass = 0; pass < 4; ++pass) {
-        srcs[pass]->bind(0, GL_READ_ONLY);
-        targets.normals.bind(1, GL_READ_ONLY);
+        // Source and normals are sampled, not image-bound: pass 0 reads `accum` (rgba32f)
+        // and later passes read the rgba16f ping-pong pair, which a single image format
+        // qualifier could not cover. Only the destination stays an image.
+        glBindTextureUnit(0, srcs[pass]->handle);
+        glBindTextureUnit(1, targets.normals.handle);
         dsts[pass]->bind(2, GL_WRITE_ONLY);
         shader.setInt("step_size", steps[pass]);
         glDispatchCompute(targets.numGroupsX, targets.numGroupsY, 1);
