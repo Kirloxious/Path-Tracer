@@ -82,10 +82,10 @@ Scene Scene::CornellBox() {
     // Small models — rotated 180 to face the camera
     constexpr float PI = 3.14159265f;
 
-    uint32_t bunnyMat = w.addMaterial(Material::Metal(glm::vec3(0.9f, 0.7f, 0.3f), 0.05f));
+    uint32_t bunnyMat = w.addMaterial(Material::Principled(glm::vec3(0.9f, 0.7f, 0.3f), 1.0f, 0.224f));
     w.addMesh(loadOBJ("assets/standford-bunny.obj", bunnyMat, 80.0f, glm::vec3(S * 0.5f, shortH - 2.6f, S * 0.35f), PI));
 
-    uint32_t suzanneMat = w.addMaterial(Material::Dielectric(1.5f));
+    uint32_t suzanneMat = w.addMaterial(Material::Glass(1.5f));
     w.addMesh(loadOBJ("assets/suzanne.obj", suzanneMat, 4.0f, glm::vec3(S * 0.66f, tallH + 4.0f, S * 0.63f), PI));
 
     w.sortEmissiveFirst();
@@ -126,18 +126,18 @@ Scene Scene::SphereWorld() {
                 w.addSphere(center, 0.2f, Material::Lambertian(color), tinyLat, tinyLon);
             } else if (choose_mat < 0.95f) {
                 glm::vec3 color = glm::vec3(randomFloat(), randomFloat(), randomFloat());
-                float     fuzz = 0.5f * randomFloat();
-                w.addSphere(center, 0.2f, Material::Metal(color, fuzz), tinyLat, tinyLon);
+                float     roughness = 0.7f * randomFloat();
+                w.addSphere(center, 0.2f, Material::Principled(color, 1.0f, roughness), tinyLat, tinyLon);
             } else if (choose_mat < 0.99f) {
                 w.addSphere(center, 0.2f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(4.0f, 6.0f, 2.0f)), tinyLat, tinyLon);
             } else {
-                w.addSphere(center, 0.2f, Material::Dielectric(1.5f), tinyLat, tinyLon);
+                w.addSphere(center, 0.2f, Material::Glass(1.5f), tinyLat, tinyLon);
             }
         }
     }
 
-    w.addSphere(glm::vec3(0.0f, 1.0f, 4.0f), 1.0f, Material::Dielectric(1.5f), tinyLat, tinyLon);
-    w.addSphere(glm::vec3(4.0f, 1.0f, 0.0f), 1.0f, Material::Metal(glm::vec3(0.7f, 0.6f, 0.5f), 0.0f), tinyLat, tinyLon);
+    w.addSphere(glm::vec3(0.0f, 1.0f, 4.0f), 1.0f, Material::Glass(1.5f), tinyLat, tinyLon);
+    w.addSphere(glm::vec3(4.0f, 1.0f, 0.0f), 1.0f, Material::Principled(glm::vec3(0.7f, 0.6f, 0.5f), 1.0f, 0.0f), tinyLat, tinyLon);
     w.addSphere(glm::vec3(-4.0f, 1.0f, 0.0f), 1.0f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(10.0f, 6.0f, 2.0f)), tinyLat, tinyLon);
     w.addSphere(glm::vec3(-8.0f, 1.0f, 0.0f), 1.0f, Material::Emissive(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(10.0f, 6.0f, 2.0f)), tinyLat, tinyLon);
 
@@ -180,13 +180,13 @@ Scene Scene::Showcase() {
     uint32_t spotMat = w.addMaterial(Material::Lambertian(glm::vec3(0.9f, 0.85f, 0.7f)));
     w.addMesh(loadOBJ("assets/spot.obj", spotMat, 1.0f, glm::vec3(-3.0f, 0.737f, 0.0f)));
 
-    uint32_t suzanneMat = w.addMaterial(Material::Metal(glm::vec3(0.9f, 0.7f, 0.3f), 0.1f));
+    uint32_t suzanneMat = w.addMaterial(Material::Principled(glm::vec3(0.9f, 0.7f, 0.3f), 1.0f, 0.316f));
     w.addMesh(loadOBJ("assets/suzanne.obj", suzanneMat, 0.7f, glm::vec3(4.75f, 0.6f, -2.87f)));
 
-    uint32_t dragonMat = w.addMaterial(Material::Dielectric(1.5f));
+    uint32_t dragonMat = w.addMaterial(Material::Glass(1.5f));
     w.addMesh(loadOBJ("assets/xyzrgb_dragon.obj", dragonMat, 0.015f, glm::vec3(0.0f, 0.94f, -2.5f)));
 
-    w.addSphere(glm::vec3(2.5f, 0.5f, 2.0f), 0.5f, Material::Dielectric(1.5f));
+    w.addSphere(glm::vec3(2.5f, 0.5f, 2.0f), 0.5f, Material::Glass(1.5f));
 
     w.sortEmissiveFirst();
     Log::info("Total triangles: {}", w.triangles.size());
@@ -249,7 +249,7 @@ Scene Scene::MirrorFloor() {
     // Mirror floor: a single flat quad. addTriQuad winds CCW around cross(u, v), so picking
     // u = +x and v pointing back toward the wall (negative z) makes the front face point at +y.
     // fuzz=0 keeps reflections sharp; near-white albedo preserves the reflected colours.
-    uint32_t floorMat = w.addMaterial(Material::Metal(glm::vec3(0.95f, 0.95f, 0.95f), 0.0f));
+    uint32_t floorMat = w.addMaterial(Material::Principled(glm::vec3(0.95f, 0.95f, 0.95f), 1.0f, 0.0f));
     w.addTriQuad(glm::vec3(-floorSpan, floorY, floorFwd), glm::vec3(2.0f * floorSpan, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, wallZ - floorFwd), floorMat);
 
     // Backsplash wall: a single quad behind the subjects, normal facing the camera (+z).
@@ -267,7 +267,7 @@ Scene Scene::MirrorFloor() {
     w.addMesh(loadStanding("assets/suzanne.obj", suzanneMat, 1.0f, -0.5f, -5.0f));
 
     // Metal gold dragon in the middle — fuzz softens the highlights without going full mirror.
-    uint32_t dragonMat = w.addMaterial(Material::Metal(glm::vec3(0.9f, 0.75f, 0.4f), 0.05f));
+    uint32_t dragonMat = w.addMaterial(Material::Principled(glm::vec3(0.9f, 0.75f, 0.4f), 1.0f, 0.224f));
     w.addMesh(loadStanding("assets/xyzrgb_dragon.obj", dragonMat, 0.02f, 0.0f, subjectsZ));
 
     // Lambertian sphere on the right — radius 1, centre at y = floorY + 1, so its bottom sits exactly on the floor.
@@ -316,16 +316,16 @@ Scene Scene::SphereWorldEnvLit() {
                 w.addSphere(center, 0.2f, Material::Lambertian(color), tinyLat, tinyLon);
             } else if (choose_mat < 0.95f) {
                 glm::vec3 color = glm::vec3(randomFloat(), randomFloat(), randomFloat());
-                float     fuzz = 0.5f * randomFloat();
-                w.addSphere(center, 0.2f, Material::Metal(color, fuzz), tinyLat, tinyLon);
+                float     roughness = 0.7f * randomFloat();
+                w.addSphere(center, 0.2f, Material::Principled(color, 1.0f, roughness), tinyLat, tinyLon);
             } else {
-                w.addSphere(center, 0.2f, Material::Dielectric(1.5f), tinyLat, tinyLon);
+                w.addSphere(center, 0.2f, Material::Glass(1.5f), tinyLat, tinyLon);
             }
         }
     }
 
-    w.addSphere(glm::vec3(0.0f, 1.0f, 4.0f), 1.0f, Material::Dielectric(1.5f), tinyLat, tinyLon);
-    w.addSphere(glm::vec3(4.0f, 1.0f, 0.0f), 1.0f, Material::Metal(glm::vec3(0.7f, 0.6f, 0.5f), 0.0f), tinyLat, tinyLon);
+    w.addSphere(glm::vec3(0.0f, 1.0f, 4.0f), 1.0f, Material::Glass(1.5f), tinyLat, tinyLon);
+    w.addSphere(glm::vec3(4.0f, 1.0f, 0.0f), 1.0f, Material::Principled(glm::vec3(0.7f, 0.6f, 0.5f), 1.0f, 0.0f), tinyLat, tinyLon);
     w.addSphere(glm::vec3(-4.0f, 1.0f, 0.0f), 1.0f, Material::Lambertian(glm::vec3(0.4f, 0.2f, 0.1f)), tinyLat, tinyLon);
 
     w.sortEmissiveFirst();
@@ -363,13 +363,13 @@ Scene Scene::ShowcaseEnvLit() {
     uint32_t spotMat = w.addMaterial(Material::Lambertian(glm::vec3(0.9f, 0.85f, 0.7f)));
     w.addMesh(loadOBJ("assets/spot.obj", spotMat, 1.0f, glm::vec3(-3.0f, 0.737f, 0.0f)));
 
-    uint32_t suzanneMat = w.addMaterial(Material::Metal(glm::vec3(0.9f, 0.7f, 0.3f), 0.1f));
+    uint32_t suzanneMat = w.addMaterial(Material::Principled(glm::vec3(0.9f, 0.7f, 0.3f), 1.0f, 0.316f));
     w.addMesh(loadOBJ("assets/suzanne.obj", suzanneMat, 0.7f, glm::vec3(4.75f, 0.6f, -2.87f)));
 
-    uint32_t dragonMat = w.addMaterial(Material::Dielectric(1.5f));
+    uint32_t dragonMat = w.addMaterial(Material::Glass(1.5f));
     w.addMesh(loadOBJ("assets/xyzrgb_dragon.obj", dragonMat, 0.015f, glm::vec3(0.0f, 0.94f, -2.5f)));
 
-    w.addSphere(glm::vec3(2.5f, 0.5f, 2.0f), 0.5f, Material::Dielectric(1.5f));
+    w.addSphere(glm::vec3(2.5f, 0.5f, 2.0f), 0.5f, Material::Glass(1.5f));
 
     w.sortEmissiveFirst();
     Log::info("Total triangles: {}", w.triangles.size());

@@ -1,9 +1,12 @@
 #ifndef RNG_GLSL
 #define RNG_GLSL
 
-const uint MAT_LAMBERTIAN = 0u;
-const uint MAT_METAL = 1u;
-const uint MAT_DIELECTRIC = 2u;
+// Derived MaterialClass values (see src/scene/material.h). Numbering is unchanged from the
+// old authored MaterialType, so denoiser.comp's edge-stop thresholds and resolve.comp's
+// material-id write keep working without modification.
+const uint MAT_DIFFUSE = 0u;
+const uint MAT_SPECULAR = 1u;
+const uint MAT_TRANSMISSIVE = 2u;
 const uint MAT_EMISSIVE = 3u;
 
 const float infinity = 1.0 / 0.0;

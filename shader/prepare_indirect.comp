@@ -1,16 +1,15 @@
 #version 460 core
 #include "common/subgroup.glsl"
-layout(local_size_x = 6) in;
+#include "common/queue.glsl"
+layout(local_size_x = NUM_QUEUES) in;
 
 // Reads the current queue counters and writes a matching glDispatchCompute-Indirect
 // arg triple per queue slot. Called before each group of shade/trace dispatches so
 // they only launch the workgroups they actually need (huge savings at late bounces
 // where 95% of paths have died).
 
-#include "common/queue.glsl"
-
 layout(std430, binding = 23) restrict writeonly buffer DispatchArgsBuffer {
-    uvec4 dispatch_args[6]; // uvec4 (with .w unused) keeps 16-byte std430 alignment
+    uvec4 dispatch_args[NUM_QUEUES]; // uvec4 (with .w unused) keeps 16-byte std430 alignment
 };
 
 // All shade/trace/traceShadow kernels are `local_size_x = 64`. Hardcoded to keep
@@ -19,7 +18,7 @@ const uint LOCAL_SIZE = 64u;
 
 // Bitmask of counter slots to zero after their dispatch args have been written.
 //
-// The counter clears used to be six glNamedBufferSubData calls per bounce on the CPU —
+// The counter clears used to be one glNamedBufferSubData call per queue per bounce —
 // ~200 driver round-trips per frame at 32 bounces, each one a client-side buffer update
 // that also had to be ordered against shader writes with GL_BUFFER_UPDATE_BARRIER_BIT.
 // This kernel already runs at exactly the points where a queue has just been drained and

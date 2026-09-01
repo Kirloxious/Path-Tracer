@@ -61,7 +61,7 @@ void main() {
 
     vec3 P      = cur_surf.position;
     vec3 N      = cur_surf.normal;
-    vec3 albedo = cur_surf.albedo;
+    vec3 V = cur_surf.view_dir;
 
     // Reproject the *primary* hit into the previous frame's un-jittered NDC.
     vec4 prev_clip = prev_view_proj_matrix * vec4(primary_pos, 1.0);
@@ -95,7 +95,7 @@ void main() {
     // and BRDF terms shift because the receiver moved. If the sample is back-
     // facing the new surface (or the new surface is back-facing the light),
     // skip combining entirely rather than diluting cur.M with a useless sample.
-    float p_hat_prev_at_current = restir_target_pdf_lambertian(P, N, albedo, prev.light_tri_idx, prev.bary);
+    float p_hat_prev_at_current = restir_target_pdf(P, N, V, cur_surf.matid, prev.light_tri_idx, prev.bary);
     if (p_hat_prev_at_current <= 0.0) return;
 
     Reservoir cur = reservoirs[pid];

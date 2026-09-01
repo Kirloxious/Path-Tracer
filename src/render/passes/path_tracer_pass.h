@@ -58,9 +58,8 @@ static_assert(sizeof(ShadowState) == 32, "ShadowState size must match std430 lay
  * coherent dispatches:
  *
  *     generate          (8x8 over image)             → hit_X queues
- *     shadeLambertian   (linear over hit_lambertian) → rayQueue + shadowQueue
- *     shadeMetal                                     → rayQueue
- *     shadeDielectric                                → rayQueue
+ *     shadeOpaque          (linear over hit_opaque)        → rayQueue + shadowQueue
+ *     shadeTransmissive                                → rayQueue
  *     shadeEmissive                                  → terminal (accumulates Le)
  *     traceShadow       (linear over shadow_queue)   → states[].radiance
  *     trace             (linear over ray_queue)      → hit_X queues  (refill)
@@ -104,9 +103,8 @@ private:
 
     ComputeShader generate;
     ComputeShader trace;
-    ComputeShader shadeLambertian;
-    ComputeShader shadeMetal;
-    ComputeShader shadeDielectric;
+    ComputeShader shadeOpaque;
+    ComputeShader shadeTransmissive;
     ComputeShader shadeEmissive;
     ComputeShader traceShadow;
     ComputeShader resolve;
@@ -122,9 +120,8 @@ private:
 
     QueueCounters queueCounters;
     Queue         rayQueue;
-    Queue         hitLambertian;
-    Queue         hitMetal;
-    Queue         hitDielectric;
+    Queue         hitOpaque;
+    Queue         hitTransmissive;
     Queue         hitEmissive;
     Queue         shadowQueue;
 };

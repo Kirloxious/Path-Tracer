@@ -41,8 +41,7 @@ void main() {
     states[pid].flags            = flags;
 
     uint t = mats[hit.mat_index].type;
-    if      (t == MAT_LAMBERTIAN) hit_lambertian_push(pid);
-    else if (t == MAT_METAL)      hit_metal_push(pid);
-    else if (t == MAT_DIELECTRIC) hit_dielectric_push(pid);
-    else                          hit_emissive_push(pid);
+    if      (t == MAT_DIFFUSE || t == MAT_SPECULAR) hit_opaque_push(pid);
+    else if (t == MAT_TRANSMISSIVE)                 hit_transmissive_push(pid);
+    else                                            hit_emissive_push(pid);
 }

@@ -13,13 +13,18 @@
 // G-buffer to get (P, N, albedo) for a reservoir reads this instead; the G-buffer is still
 // what drives *reprojection*, because that is about which pixel sees the reflection.
 //
+// Stores the view direction rather than a cached albedo: the target pdf evaluates the full
+// metallic-roughness BRDF, which is view-dependent and needs every material parameter, so it
+// refetches the Material through `matid` instead. That keeps the struct at 48 bytes — it is
+// read k=5 times per spatial pass, twice per frame, so growing it is not free.
+//
 // 48 bytes, std430.
 struct RestirSurface {
     vec3 position;  // world-space resampling vertex
     uint valid;     // 0 = this pixel has no diffuse resampling vertex (sky, emissive, fuzzy specular)
     vec3 normal;    // shading normal there, already normalized and front-facing
     uint matid;     // material at the resampling vertex, for reuse validation
-    vec3 albedo;    // Lambertian albedo there
+    vec3 view_dir;  // unit vector from the resampling vertex toward the viewer, for the BRDF
     float _pad;
 };
 

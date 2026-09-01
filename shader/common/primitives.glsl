@@ -45,13 +45,19 @@ struct Vertex
     vec3 normal;
 };
 
+// Mirrors src/scene/material.h. `roughness` is perceptual — GGX alpha is roughness^2.
+// `type` is a derived MaterialClass cached on the CPU by Material::classify(), never authored,
+// so every routing test below stays an exact integer compare.
 struct Material
 {
-    vec3 color;
-    float fuzz;
+    vec3 base_color;    // albedo (dielectric) or F0 tint (conductor)
+    float metallic;     // 0 = dielectric, 1 = conductor
     vec3 emission;
-    float refractive_index;
-    uint type;
+    float roughness;    // perceptual; alpha = roughness^2, 0 = perfect mirror
+    float ior;          // dielectric F0 = ((ior-1)/(ior+1))^2
+    float transmission; // 0 = opaque, 1 = fully refractive
+    uint type;          // MAT_* — cached MaterialClass
+    float _pad0;
 };
 
 // 32 bytes: two vec4s, with the link data bit-cast into the .w lanes the box does not use.

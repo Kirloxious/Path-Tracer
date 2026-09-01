@@ -60,7 +60,7 @@ void main() {
 
     vec3 P      = self_surf.position;
     vec3 N      = self_surf.normal;
-    vec3 albedo = self_surf.albedo;
+    vec3 V      = self_surf.view_dir;
 
     // RNG seeded distinctly from initial/temporal so neighbor draws don't
     // alias with prior RNG sequences. pass_index folds in so the two spatial
@@ -93,7 +93,7 @@ void main() {
         // Re-evaluate the neighbor's sample at *our* surface. Geometry and
         // BRDF terms shift because the receiver is different. Skip if the
         // sample doesn't even illuminate us (back-facing either way).
-        float p_hat_at_self = restir_target_pdf_lambertian(P, N, albedo, other.light_tri_idx, other.bary);
+        float p_hat_at_self = restir_target_pdf(P, N, V, self_surf.matid, other.light_tri_idx, other.bary);
         if (p_hat_at_self <= 0.0) continue;
 
         reservoir_combine(cur, other, p_hat_at_self, rng);

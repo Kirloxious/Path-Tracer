@@ -95,7 +95,7 @@ void main() {
                 Material m = mats[gbuffer_matid(p)];
                 // For emissives, the "color" slot is unused — fall back to emission
                 // clamped into a legible range.
-                rgb = (m.type == MAT_EMISSIVE) ? clamp(m.emission, 0.0, 1.0) : m.color;
+                rgb = (m.type == MAT_EMISSIVE) ? clamp(m.emission, 0.0, 1.0) : m.base_color;
             }
             break;
         }

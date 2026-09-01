@@ -39,7 +39,7 @@ void surface_invalidate(uint pid) {
     s.valid = 0u;
     s.normal = vec3(0.0);
     s.matid = 0u;
-    s.albedo = vec3(0.0);
+    s.view_dir = vec3(0.0);
     s._pad = 0.0;
     surfaces[pid] = s;
 }
@@ -58,7 +58,8 @@ vec2 sample_triangle_bary(inout uint state) {
 // — that happens once on the chosen sample after RIS.
 bool sample_candidate(vec3 P,
     vec3 N,
-    vec3 albedo,
+    vec3 V,
+    uint matid,
     inout uint rng,
     out uint out_tri_idx,
     out vec2 out_bary,
@@ -94,12 +95,14 @@ bool sample_candidate(vec3 P,
 
     Material lmat = mats[tri.material_index];
     // Scalar target: luminance of f * Le * G with G already collapsed into the
-    // pdf above. shade_lambertian's NEE contribution (sans MIS) is
-    //   throughput * albedo * Le * cos_theta / (PI * source_pdf_omega).
+    // pdf above. shade_surface's NEE contribution (sans MIS) is
+    //   throughput * f * Le * cos_theta / source_pdf_omega.
     // We strip throughput (constant per pixel here) and the 1/source_pdf_omega
     // factor (since target_pdf is the integrand, not the estimator). The
-    // resulting integrand per unit solid angle is albedo * Le * cos_theta / PI.
-    vec3 contrib_rgb = albedo * lmat.emission * cos_theta * (1.0 / PI);
+    // resulting integrand per unit solid angle is f * Le * cos_theta.
+    float ignored_pdf;
+    vec3 f = bsdf_eval(mats[matid], N, V, light_dir, ignored_pdf);
+    vec3 contrib_rgb = f * lmat.emission * cos_theta;
     float p_hat = restir_luminance(contrib_rgb);
     if (p_hat <= 0.0) return false;
 
@@ -146,7 +149,7 @@ void main() {
     // `reflect(ray_dir, N) + fuzz * random_unit_vector(rng)`, which is bit-identical to
     // plain reflect() when fuzz is 0 — so this walk and the path tracer provably land on
     // the same vertex, which is what lets shade_lambertian consume a reservoir that was
-    // built by a completely separate traversal. With fuzz > 0, or through a dielectric
+    // built by a completely separate traversal. With a non-delta roughness, or through a transmissive surface
     // (whose reflect/refract branch is a coin flip on its own RNG), the two would diverge
     // and the reservoir would describe the wrong surface — those fall through to the null
     // reservoir and keep using inline NEE, exactly as before.
@@ -157,7 +160,10 @@ void main() {
     vec3 offset_n = N;
 
     for (int depth = 0; depth < MAX_MIRROR_DEPTH; ++depth) {
-        if (mat.type != MAT_METAL || mat.fuzz != 0.0) {
+        // Must agree exactly with bsdf_sample()'s delta branch: that is the one scatter
+        // reproducible by a plain reflect(), which is what lets a reservoir built by this
+        // separate traversal describe the same vertex the path tracer lands on.
+        if (mat.type != MAT_SPECULAR || !bsdf_is_delta(mat)) {
             break;
         }
 
@@ -181,22 +187,22 @@ void main() {
         mat = mats[matid];
     }
 
-    // Only a diffuse vertex can anchor a reservoir. A chain that bottoms out on an
-    // emissive, on a fuzzy metal, or on a dielectric gets no reservoir.
-    if (mat.type != MAT_LAMBERTIAN) {
+    // A chain that bottoms out on an emissive, a perfect mirror or a transmissive surface
+    // gets no reservoir — see restir_can_anchor().
+    if (!restir_can_anchor(mat)) {
         reservoirs[pid] = r;
         surface_invalidate(pid);
         return;
     }
 
-    vec3 albedo = mat.color;
+    vec3 V = normalize(-ray_dir);
 
     RestirSurface surf;
     surf.position = P;
     surf.valid = 1u;
     surf.normal = N;
     surf.matid = matid;
-    surf.albedo = albedo;
+    surf.view_dir = V;
     surf._pad = 0.0;
     surfaces[pid] = surf;
 
@@ -210,7 +216,7 @@ void main() {
         vec2 bary;
         float source_pdf_omega;
         float p_hat;
-        if (!sample_candidate(P, N, albedo, rng, tri_idx, bary, source_pdf_omega, p_hat)) {
+        if (!sample_candidate(P, N, V, matid, rng, tri_idx, bary, source_pdf_omega, p_hat)) {
             // Degenerate candidate still increments M (it was drawn from the source distribution
             // and rejected by target=0). This keeps the RIS estimator unbiased.
             r.M += 1.0;

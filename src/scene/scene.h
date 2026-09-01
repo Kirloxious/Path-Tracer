@@ -31,7 +31,7 @@ struct Scene
     float envIntensity = 1.0f;
 
     /// @return The Cornell box: red/green/white diffuse walls, two boxes, an emissive ceiling
-    ///         sphere, plus a metal bunny and a dielectric Suzanne.
+    ///         sphere, plus a metal bunny and a glass Suzanne.
     static Scene CornellBox();
     /// @return An open sphere field exercising all four material types, lit by emissive spheres.
     static Scene SphereWorld();

@@ -39,7 +39,7 @@ void main() {
         return;
     }
 
-    // Metal (1) and dielectric (2) used to skip as well, on the grounds that the A-Trous
+    // Specular (1) and transmissive (2) used to skip as well, on the grounds that the A-Trous
     // edge-stops describe the primary surface and say nothing about the reflected or
     // refracted content carried on it. True — but skipping outright leaves those pixels as
     // raw path-tracer output, and specular surfaces are the *noisiest* in the image: a

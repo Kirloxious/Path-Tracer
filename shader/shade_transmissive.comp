@@ -1,0 +1,45 @@
+#version 460 core
+#include "common/subgroup.glsl"
+layout(local_size_x = 64) in;
+
+#include "common/path_state.glsl"
+#include "common/queue.glsl"
+#include "common/scene_buffers.glsl"
+#include "common/rng.glsl"
+#include "common/uniform_locations.glsl"
+#include "common/geom.glsl"
+#include "common/bsdf.glsl"
+#include "common/path_continue.glsl"
+
+void main() {
+    uint qid = gl_GlobalInvocationID.x;
+    if (qid >= hit_transmissive_count) return;
+    uint pid = hit_transmissive_idx[qid];
+
+    PathState s = states[pid];
+    uint rng = s.rng_state;
+
+    Material mat        = mats[s.hit_matid];
+    vec3     N          = s.hit_normal;
+    vec3     V          = normalize(-s.ray_dir);
+    bool     front_face = (s.flags & FLAG_FRONT_FACE) != 0u;
+    float    eta        = front_face ? (1.0 / mat.ior) : mat.ior;
+
+    vec3 dir;
+    vec3 weight;
+    bool transmitted;
+    bool alive = bsdf_sample_transmissive(mat, N, V, eta, rng, dir, weight, transmitted);
+
+    if (alive) {
+        // `weight` carries the G2/G1 masking ratio and, on the transmitted branch, the glass
+        // tint. Material::Glass leaves base_color white, so ordinary glass stays colourless.
+        s.throughput *= weight;
+
+        // No NEE flags: the reflect-vs-refract branch is a coin flip on this kernel's RNG, so
+        // restir_initial's deterministic walk can never follow a transmissive surface. The
+        // specular prefix ends here and the next emissive hit takes full weight.
+        alive = path_continue(s, rng, dir, transmitted, false, 0u);
+    }
+
+    path_commit(pid, s, rng, alive);
+}

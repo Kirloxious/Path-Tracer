@@ -60,7 +60,7 @@ void main() {
     s.hit_point = P;
     s.hit_normal = normalize(n);
     s.hit_matid = matid;
-    // Camera-to-hit direction. shade_metal/dielectric reflect/refract `ray_dir` on the
+    // Camera-to-hit direction. shade_opaque/transmissive reflect/refract `ray_dir` on the
     // first bounce, so it must be initialized — the gbuffer-fed primary "ray" is the view ray.
     s.ray_dir = normalize(P - camera_position);
     s.ray_origin = camera_position;
@@ -70,8 +70,7 @@ void main() {
     // Skip the first trace by pushing straight to the per-material hit queue.
     // Subsequent bounces go through trace.comp
     uint t = mats[matid].type;
-    if (t == MAT_LAMBERTIAN) hit_lambertian_push(pid);
-    else if (t == MAT_METAL) hit_metal_push(pid);
-    else if (t == MAT_DIELECTRIC) hit_dielectric_push(pid);
+    if (t == MAT_DIFFUSE || t == MAT_SPECULAR) hit_opaque_push(pid);
+    else if (t == MAT_TRANSMISSIVE) hit_transmissive_push(pid);
     else hit_emissive_push(pid);
 }

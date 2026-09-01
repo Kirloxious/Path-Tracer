@@ -16,22 +16,20 @@ constexpr int WORK_GROUP_64 = 64;
 constexpr GLuint BIND_PATH_STATE = 10;
 constexpr GLuint BIND_QUEUE_COUNTERS = 11;
 constexpr GLuint BIND_RAY_QUEUE_INDICES = 12;
-constexpr GLuint BIND_HIT_LAMBERTIAN_INDICES = 13;
-constexpr GLuint BIND_HIT_METAL_INDICES = 14;
-constexpr GLuint BIND_HIT_DIELECTRIC_INDICES = 15;
-constexpr GLuint BIND_HIT_EMISSIVE_INDICES = 16;
-constexpr GLuint BIND_SHADOW_QUEUE_INDICES = 17;
+constexpr GLuint BIND_HIT_OPAQUE_INDICES = 13;
+constexpr GLuint BIND_HIT_TRANSMISSIVE_INDICES = 14;
+constexpr GLuint BIND_HIT_EMISSIVE_INDICES = 15;
+constexpr GLuint BIND_SHADOW_QUEUE_INDICES = 16;
 constexpr GLuint BIND_SHADOW_STATE = 22;
 constexpr GLuint BIND_DISPATCH_ARGS = 23;
 
 // Counter-array slot indices — must match shader/common/queue.glsl Q_*.
 constexpr int SLOT_RAY = 0;
-constexpr int SLOT_LAMB = 1;
-constexpr int SLOT_METAL = 2;
-constexpr int SLOT_DIELECTRIC = 3;
-constexpr int SLOT_EMISSIVE = 4;
-constexpr int SLOT_SHADOW = 5;
-constexpr int NUM_QUEUE_SLOTS = 6;
+constexpr int SLOT_OPAQUE = 1;
+constexpr int SLOT_TRANSMISSIVE = 2;
+constexpr int SLOT_EMISSIVE = 3;
+constexpr int SLOT_SHADOW = 4;
+constexpr int NUM_QUEUE_SLOTS = 5;
 
 // prepare_indirect writes uvec4 per slot (uvec3 in std430 arrays has a 16-byte
 // stride anyway; the .w padding just makes the layout explicit). glDispatchComputeIndirect
@@ -47,7 +45,7 @@ constexpr GLintptr DISPATCH_ARG_STRIDE = 16;
 //   pass B runs after the shade kernels. hit_* are now drained, while ray and shadow
 //          have just been filled and are read by trace/trace_shadow below.
 constexpr GLuint CLEAR_MASK_PRE_SHADE = (1u << SLOT_RAY) | (1u << SLOT_SHADOW);
-constexpr GLuint CLEAR_MASK_POST_SHADE = (1u << SLOT_LAMB) | (1u << SLOT_METAL) | (1u << SLOT_DIELECTRIC) | (1u << SLOT_EMISSIVE);
+constexpr GLuint CLEAR_MASK_POST_SHADE = (1u << SLOT_OPAQUE) | (1u << SLOT_TRANSMISSIVE) | (1u << SLOT_EMISSIVE);
 } // namespace
 
 PathTracerPass::PathTracerPass(int w, int h)
@@ -58,9 +56,8 @@ PathTracerPass::PathTracerPass(int w, int h)
 
     generate = ComputeShader("shader/generate.comp");
     trace = ComputeShader("shader/trace.comp");
-    shadeLambertian = ComputeShader("shader/shade_lambertian.comp");
-    shadeMetal = ComputeShader("shader/shade_metal.comp");
-    shadeDielectric = ComputeShader("shader/shade_dielectric.comp");
+    shadeOpaque = ComputeShader("shader/shade_opaque.comp");
+    shadeTransmissive = ComputeShader("shader/shade_transmissive.comp");
     shadeEmissive = ComputeShader("shader/shade_emissive.comp");
     traceShadow = ComputeShader("shader/trace_shadow.comp");
     resolve = ComputeShader("shader/resolve.comp");
@@ -70,7 +67,7 @@ PathTracerPass::PathTracerPass(int w, int h)
     pathStateSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, BIND_PATH_STATE, nullptr, numPixels * sizeof(PathState), GL_DYNAMIC_COPY);
     shadowStateSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, BIND_SHADOW_STATE, nullptr, numPixels * sizeof(ShadowState), GL_DYNAMIC_COPY);
 
-    // 6 slots × 16 B (uvec4 stride in std430). Same GL buffer serves as SSBO (write, from
+    // NUM_QUEUE_SLOTS × 16 B (uvec4 stride in std430). Same GL buffer serves as SSBO (write, from
     // prepare_indirect) and GL_DISPATCH_INDIRECT_BUFFER (read, by glDispatchComputeIndirect).
     dispatchArgsSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, BIND_DISPATCH_ARGS, nullptr, NUM_QUEUE_SLOTS * DISPATCH_ARG_STRIDE, GL_DYNAMIC_COPY);
 
@@ -83,9 +80,8 @@ PathTracerPass::PathTracerPass(int w, int h)
     //
     // Each queue's `indices` is sized for the worst case (every pixel in this queue).
     rayQueue = Queue(queueCounters, SLOT_RAY, BIND_RAY_QUEUE_INDICES, numPixels);
-    hitLambertian = Queue(queueCounters, SLOT_LAMB, BIND_HIT_LAMBERTIAN_INDICES, numPixels);
-    hitMetal = Queue(queueCounters, SLOT_METAL, BIND_HIT_METAL_INDICES, numPixels);
-    hitDielectric = Queue(queueCounters, SLOT_DIELECTRIC, BIND_HIT_DIELECTRIC_INDICES, numPixels);
+    hitOpaque = Queue(queueCounters, SLOT_OPAQUE, BIND_HIT_OPAQUE_INDICES, numPixels);
+    hitTransmissive = Queue(queueCounters, SLOT_TRANSMISSIVE, BIND_HIT_TRANSMISSIVE_INDICES, numPixels);
     hitEmissive = Queue(queueCounters, SLOT_EMISSIVE, BIND_HIT_EMISSIVE_INDICES, numPixels);
     shadowQueue = Queue(queueCounters, SLOT_SHADOW, BIND_SHADOW_QUEUE_INDICES, numPixels);
 }
@@ -119,20 +115,17 @@ void PathTracerPass::uploadUniforms(const Scene& scene, const Camera& camera) {
     traceShadow.setInt("bvh_root_index", bvhRoot);
     traceShadow.setInt("emissive_last_index", emissiveLast);
 
-    shadeLambertian.use();
-    shadeLambertian.setInt("num_light_groups", numLightGroups);
-    shadeLambertian.setInt("max_bounces", maxBounces);
-    shadeLambertian.setFloat("indirect_clamp", indirectClamp);
+    shadeOpaque.use();
+    shadeOpaque.setInt("num_light_groups", numLightGroups);
+    shadeOpaque.setInt("max_bounces", maxBounces);
+    shadeOpaque.setFloat("indirect_clamp", indirectClamp);
 
     shadeEmissive.use();
     shadeEmissive.setInt("num_light_groups", numLightGroups);
     shadeEmissive.setFloat("indirect_clamp", indirectClamp);
 
-    shadeMetal.use();
-    shadeMetal.setInt("max_bounces", maxBounces);
-
-    shadeDielectric.use();
-    shadeDielectric.setInt("max_bounces", maxBounces);
+    shadeTransmissive.use();
+    shadeTransmissive.setInt("max_bounces", maxBounces);
 }
 
 void PathTracerPass::resize(int w, int h) {
@@ -150,9 +143,8 @@ void PathTracerPass::resize(int w, int h) {
     // scale with pixel count, so they must be reallocated. Rebind their counter
     // to the same shared QueueCounters (still valid, unchanged).
     rayQueue = Queue(queueCounters, SLOT_RAY, BIND_RAY_QUEUE_INDICES, numPixels);
-    hitLambertian = Queue(queueCounters, SLOT_LAMB, BIND_HIT_LAMBERTIAN_INDICES, numPixels);
-    hitMetal = Queue(queueCounters, SLOT_METAL, BIND_HIT_METAL_INDICES, numPixels);
-    hitDielectric = Queue(queueCounters, SLOT_DIELECTRIC, BIND_HIT_DIELECTRIC_INDICES, numPixels);
+    hitOpaque = Queue(queueCounters, SLOT_OPAQUE, BIND_HIT_OPAQUE_INDICES, numPixels);
+    hitTransmissive = Queue(queueCounters, SLOT_TRANSMISSIVE, BIND_HIT_TRANSMISSIVE_INDICES, numPixels);
     hitEmissive = Queue(queueCounters, SLOT_EMISSIVE, BIND_HIT_EMISSIVE_INDICES, numPixels);
     shadowQueue = Queue(queueCounters, SLOT_SHADOW, BIND_SHADOW_QUEUE_INDICES, numPixels);
 }
@@ -161,7 +153,7 @@ bool PathTracerPass::reloadIfChanged(const RenderContext& ctx) {
     // Every kernel must be polled — `|=` on separate lines silently drifts when a new
     // stage is added, so enumerate them once here instead.
     const std::initializer_list<std::reference_wrapper<ComputeShader>> kernels = {
-        generate, trace, shadeLambertian, shadeMetal, shadeDielectric, shadeEmissive, traceShadow, resolve, prepareIndirect};
+        generate, trace, shadeOpaque, shadeTransmissive, shadeEmissive, traceShadow, resolve, prepareIndirect};
 
     bool any = false;
     for (ComputeShader& kernel : kernels) {
@@ -215,19 +207,15 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
         glMemoryBarrier(BARRIER);
 
         // Shade. Each kernel reads its own hit_X queue and writes ray_queue + shadow_queue
-        // via atomicAdd; they don't depend on each other's outputs, so we issue all four
+        // via atomicAdd; they don't depend on each other's outputs, so we issue all three
         // back-to-back and barrier once at the end.
-        shadeLambertian.use();
-        shadeLambertian.setInt("bounce_index", b);
-        glDispatchComputeIndirect(SLOT_LAMB * DISPATCH_ARG_STRIDE);
+        shadeOpaque.use();
+        shadeOpaque.setInt("bounce_index", b);
+        glDispatchComputeIndirect(SLOT_OPAQUE * DISPATCH_ARG_STRIDE);
 
-        shadeMetal.use();
-        shadeMetal.setInt("bounce_index", b);
-        glDispatchComputeIndirect(SLOT_METAL * DISPATCH_ARG_STRIDE);
-
-        shadeDielectric.use();
-        shadeDielectric.setInt("bounce_index", b);
-        glDispatchComputeIndirect(SLOT_DIELECTRIC * DISPATCH_ARG_STRIDE);
+        shadeTransmissive.use();
+        shadeTransmissive.setInt("bounce_index", b);
+        glDispatchComputeIndirect(SLOT_TRANSMISSIVE * DISPATCH_ARG_STRIDE);
 
         shadeEmissive.use();
         glDispatchComputeIndirect(SLOT_EMISSIVE * DISPATCH_ARG_STRIDE);

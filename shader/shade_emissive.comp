@@ -84,7 +84,7 @@ void main() {
     // Primary hits are the camera looking straight at a light: that is the emitter's
     // authored radiance, not an estimator output, so it is exempt from the firefly
     // clamp. Everything past bounce 0 arrived through a sampled path and is not.
-    vec3 contribution = s.throughput * mat.color * mat.emission * weight;
+    vec3 contribution = s.throughput * mat.base_color * mat.emission * weight;
     s.radiance += is_primary ? contribution : clamp_indirect(contribution);
     states[pid] = s;
     // Path terminates at an emissive — no enqueue.

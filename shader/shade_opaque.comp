@@ -1,0 +1,27 @@
+#version 460 core
+#include "common/subgroup.glsl"
+layout(local_size_x = 64) in;
+
+#include "common/restir_common.glsl"
+
+layout(std430, binding = 18) restrict readonly buffer RestirReservoirsCurrent {
+    Reservoir reservoirs[];
+};
+
+#include "common/shade_surface.glsl"
+
+// Every reflective surface — MaterialClass::Diffuse and MaterialClass::Specular alike.
+//
+// These were two kernels (shade_lambertian / shade_metal) back when the material model had
+// discrete types with genuinely different scatter code. The unified metallic-roughness BSDF
+// made them the same body, so they are now one queue and one dispatch. That deletes an SSBO
+// block from every kernel that includes queue.glsl, which is what buys back the binding
+// headroom the texture work needs (see common/queue.glsl).
+//
+// Transmission still has its own kernel: shade_transmissive.comp keeps the smooth
+// reflect/refract path, which the BSDF here does not model.
+void main() {
+    uint qid = gl_GlobalInvocationID.x;
+    if (qid >= hit_opaque_count) return;
+    shade_surface(hit_opaque_idx[qid]);
+}

@@ -3,6 +3,7 @@
 
 #include "rng.glsl"
 #include "scene_buffers.glsl"
+#include "bsdf.glsl"
 
 // Per-pixel reservoir for ReSTIR DI. Holds one resampled light sample plus
 // the bookkeeping needed to combine reservoirs across frames (temporal) and
@@ -42,14 +43,33 @@ const uint RESTIR_INVALID_TRI = 0xFFFFFFFFu;
 // Splitting them keeps shade_lambertian under NVIDIA's 16-SSBO cap while
 // letting the ReSTIR kernels still share the Reservoir struct and helpers here.
 
+// Which surfaces can hold a reservoir.
+//
+// Any non-delta reflective lobe: resampling only helps where an explicitly sampled light
+// direction has a non-zero BRDF, which a perfect mirror does not. Rough conductors qualify —
+// they used to fall through to one analytic NEE sample per frame while a diffuse surface
+// beside them got several hundred resampled candidates.
+//
+// restir_initial anchors on this and shade_surface consumes on it, so they must be the same
+// test. Splitting them would let a reservoir describe a different vertex than the one being
+// shaded, which is silent and very hard to see.
+bool restir_can_anchor(Material m) {
+    return (m.type == MAT_DIFFUSE || m.type == MAT_SPECULAR) && !bsdf_is_delta(m);
+}
+
 float restir_luminance(vec3 c) {
     return dot(c, vec3(0.2126, 0.7152, 0.0722));
 }
 
-// p_hat at receiver (P, N, albedo) for the light sample (tri_idx, bary).
-// Returns 0 if light back-facing or receiver back-facing. Lambertian-only
-// (matches v1 scope of restir_initial.comp).
-float restir_target_pdf_lambertian(vec3 P, vec3 N, vec3 albedo, uint tri_idx, vec2 bary) {
+// p_hat at receiver (P, N, V, matid) for the light sample (tri_idx, bary).
+// Returns 0 if the light is back-facing or the receiver faces away.
+//
+// Evaluates the full metallic-roughness BRDF rather than a Lambertian proxy, so a glossy
+// receiver resamples toward the lights its highlight actually sees. The target pdf is only
+// required to be *proportional* to the integrand for RIS to stay unbiased — an approximation
+// would also be valid, just worse at picking samples — but a view-dependent BRDF is exactly
+// where the Lambertian proxy misallocates the most.
+float restir_target_pdf(vec3 P, vec3 N, vec3 V, uint matid, uint tri_idx, vec2 bary) {
     if (tri_idx == RESTIR_INVALID_TRI) return 0.0;
 
     Triangle tri = triangles[tri_idx];
@@ -68,7 +88,9 @@ float restir_target_pdf_lambertian(vec3 P, vec3 N, vec3 albedo, uint tri_idx, ve
     if (cos_theta <= 0.0) return 0.0;
 
     Material lmat = mats[tri.material_index];
-    vec3  contrib_rgb = albedo * lmat.emission * cos_theta * (1.0 / PI);
+    float ignored_pdf;
+    vec3  f           = bsdf_eval(mats[matid], N, V, light_dir, ignored_pdf);
+    vec3  contrib_rgb = f * lmat.emission * cos_theta;
     return restir_luminance(contrib_rgb);
 }
 

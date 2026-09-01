@@ -2,35 +2,40 @@
 #define QUEUE_GLSL
 
 // All queue counters share one SSBO. NVIDIA caps GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS
-// at 16; with one counter per queue (×6) plus indices (×6) plus path_state (×1) plus
-// scene (×5) we hit 18 and the link fails ("error C5058: no buffers available for
-// bindable storage buffer"). Sharing the counter SSBO drops us to 13.
+// at 16; with one counter per queue plus one indices block each, plus path_state (×1) and
+// scene (×5), a counter-per-queue layout linked at 18 blocks and failed ("error C5058: no
+// buffers available for bindable storage buffer"). Sharing the counter SSBO fixed that.
+//
+// Unifying the material model then removed a queue outright: shade_lambertian and
+// shade_metal collapsed into shade_opaque once the metallic-roughness BSDF made their bodies
+// identical. Five queues instead of six means one fewer SSBO block declared in every kernel
+// that includes this header — the headroom the bindless-texture work will need.
 
-const uint Q_RAY        = 0u;
-const uint Q_LAMB       = 1u;
-const uint Q_METAL      = 2u;
-const uint Q_DIELECTRIC = 3u;
-const uint Q_EMISSIVE   = 4u;
-const uint Q_SHADOW     = 5u;
-const uint NUM_QUEUES   = 6u;
+const uint Q_RAY          = 0u;
+const uint Q_OPAQUE       = 1u;
+const uint Q_TRANSMISSIVE = 2u;
+const uint Q_EMISSIVE     = 3u;
+const uint Q_SHADOW       = 4u;
+
+// A #define, not a `const uint`, so it can size the local_size_x layout qualifier and the
+// dispatch-args array in prepare_indirect.comp.
+#define NUM_QUEUES 5u
 
 layout(std430, binding = 11) restrict buffer QueueCountersBuffer {
     uint q_count[NUM_QUEUES];
 };
 
-layout(std430, binding = 12) restrict buffer RayQueueIndices      { uint ray_queue_idx[]; };
-layout(std430, binding = 13) restrict buffer HitLambertianIndices { uint hit_lambertian_idx[]; };
-layout(std430, binding = 14) restrict buffer HitMetalIndices      { uint hit_metal_idx[]; };
-layout(std430, binding = 15) restrict buffer HitDielectricIndices { uint hit_dielectric_idx[]; };
-layout(std430, binding = 16) restrict buffer HitEmissiveIndices   { uint hit_emissive_idx[]; };
-layout(std430, binding = 17) restrict buffer ShadowQueueIndices   { uint shadow_queue_idx[]; };
+layout(std430, binding = 12) restrict buffer RayQueueIndices         { uint ray_queue_idx[]; };
+layout(std430, binding = 13) restrict buffer HitOpaqueIndices        { uint hit_opaque_idx[]; };
+layout(std430, binding = 14) restrict buffer HitTransmissiveIndices  { uint hit_transmissive_idx[]; };
+layout(std430, binding = 15) restrict buffer HitEmissiveIndices      { uint hit_emissive_idx[]; };
+layout(std430, binding = 16) restrict buffer ShadowQueueIndices      { uint shadow_queue_idx[]; };
 
-#define ray_queue_count      q_count[Q_RAY]
-#define hit_lambertian_count q_count[Q_LAMB]
-#define hit_metal_count      q_count[Q_METAL]
-#define hit_dielectric_count q_count[Q_DIELECTRIC]
-#define hit_emissive_count   q_count[Q_EMISSIVE]
-#define shadow_queue_count   q_count[Q_SHADOW]
+#define ray_queue_count        q_count[Q_RAY]
+#define hit_opaque_count       q_count[Q_OPAQUE]
+#define hit_transmissive_count q_count[Q_TRANSMISSIVE]
+#define hit_emissive_count     q_count[Q_EMISSIVE]
+#define shadow_queue_count     q_count[Q_SHADOW]
 
 // Queue append.
 //
@@ -73,11 +78,10 @@ uint ballot_bit_count(uint64_t mask) {
 
 #endif
 
-void ray_queue_push(uint pid)      { QUEUE_PUSH(Q_RAY,        ray_queue_idx,      pid) }
-void hit_lambertian_push(uint pid) { QUEUE_PUSH(Q_LAMB,       hit_lambertian_idx, pid) }
-void hit_metal_push(uint pid)      { QUEUE_PUSH(Q_METAL,      hit_metal_idx,      pid) }
-void hit_dielectric_push(uint pid) { QUEUE_PUSH(Q_DIELECTRIC, hit_dielectric_idx, pid) }
-void hit_emissive_push(uint pid)   { QUEUE_PUSH(Q_EMISSIVE,   hit_emissive_idx,   pid) }
-void shadow_queue_push(uint pid)   { QUEUE_PUSH(Q_SHADOW,     shadow_queue_idx,   pid) }
+void ray_queue_push(uint pid)        { QUEUE_PUSH(Q_RAY,          ray_queue_idx,        pid) }
+void hit_opaque_push(uint pid)       { QUEUE_PUSH(Q_OPAQUE,       hit_opaque_idx,       pid) }
+void hit_transmissive_push(uint pid) { QUEUE_PUSH(Q_TRANSMISSIVE, hit_transmissive_idx, pid) }
+void hit_emissive_push(uint pid)     { QUEUE_PUSH(Q_EMISSIVE,     hit_emissive_idx,     pid) }
+void shadow_queue_push(uint pid)     { QUEUE_PUSH(Q_SHADOW,       shadow_queue_idx,     pid) }
 
 #endif

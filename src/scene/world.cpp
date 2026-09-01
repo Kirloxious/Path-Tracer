@@ -10,6 +10,10 @@
 #include "core/log.h"
 
 uint32_t World::addMaterial(Material mat) {
+    // Derive the shading class on insert, before sortEmissiveFirst() or any upload can read
+    // it. The static factories already do this; refreshing here covers materials assembled
+    // field-by-field (which is what the scene editor will do).
+    mat.refreshType();
     materials.push_back(std::move(mat));
     return static_cast<uint32_t>(materials.size()) - 1;
 }
@@ -113,6 +117,12 @@ void World::create() {
     if (!validate()) {
         Log::error("World::create() aborted — scene failed validation");
         return;
+    }
+    // Idempotent: re-derive every cached MaterialClass so a material mutated in place since
+    // addMaterial() (scene editor, or a factory assigning fields directly) cannot ship a stale
+    // `type` to the GPU, where it decides queue routing.
+    for (Material& m : materials) {
+        m.refreshType();
     }
     buildLightGroups();
 
