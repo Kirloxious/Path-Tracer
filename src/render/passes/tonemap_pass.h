@@ -1,13 +1,28 @@
 #pragma once
 
+/**
+ * @file tonemap_pass.h
+ * @brief HDR to LDR conversion: exposure, ACES and sRGB encoding.
+ */
+
 #include "gpu/compute_shader.h"
 #include "render/render_pass.h"
 
-// Reads targets.hdr, applies exposure (from the persistent ExposureBuffer SSBO
-// written by AutoExposurePass) followed by ACES + sRGB, writes targets.display.
+/**
+ * @brief Converts `targets.hdr` into the LDR `targets.display` image.
+ *
+ * Applies exposure — read from the persistent ExposureBuffer SSBO that AutoExposurePass
+ * writes, so this pass never has to know whether exposure is automatic or manual — followed by
+ * the ACES filmic curve and linear-to-sRGB encoding.
+ */
 class TonemapPass : public RenderPass
 {
 public:
+    /**
+     * @brief Loads `tonemap.comp` and caches the dispatch dimensions.
+     * @param width  Framebuffer width in pixels.
+     * @param height Framebuffer height in pixels.
+     */
     TonemapPass(int width, int height);
 
     bool        reloadIfChanged(const RenderContext&) override;

@@ -4,7 +4,7 @@
 
 #include "core/log.h"
 
-FrameBuffer::FrameBuffer(const Texture& texture) {
+FrameBuffer::FrameBuffer(const Texture& texture) : width(texture.width), height(texture.height) {
     glCreateFramebuffers(1, &handle);
     glNamedFramebufferTexture(handle, GL_COLOR_ATTACHMENT0, texture.handle, 0);
     numColorAttachments = 1;
@@ -18,6 +18,11 @@ FrameBuffer::FrameBuffer(const Texture& texture) {
 
 FrameBuffer::FrameBuffer(const std::vector<const Texture*>& colorAttachments, const Texture* depthAttachment) {
     glCreateFramebuffers(1, &handle);
+
+    if (!colorAttachments.empty()) {
+        width = colorAttachments.front()->width;
+        height = colorAttachments.front()->height;
+    }
 
     std::vector<GLenum> drawBufs;
     drawBufs.reserve(colorAttachments.size());
@@ -48,7 +53,7 @@ FrameBuffer::~FrameBuffer() {
     }
 }
 
-FrameBuffer::FrameBuffer(FrameBuffer&& o) noexcept : handle(o.handle), numColorAttachments(o.numColorAttachments) {
+FrameBuffer::FrameBuffer(FrameBuffer&& o) noexcept : handle(o.handle), numColorAttachments(o.numColorAttachments), width(o.width), height(o.height) {
     o.handle = 0;
     o.numColorAttachments = 0;
 }
@@ -60,26 +65,28 @@ FrameBuffer& FrameBuffer::operator=(FrameBuffer&& o) noexcept {
         }
         handle = o.handle;
         numColorAttachments = o.numColorAttachments;
+        width = o.width;
+        height = o.height;
         o.handle = 0;
         o.numColorAttachments = 0;
     }
     return *this;
 }
 
-void FrameBuffer::blit(const Texture& texture, int dstWidth, int dstHeight) const {
+void FrameBuffer::blit(int dstWidth, int dstHeight) const {
     glBindFramebuffer(GL_READ_FRAMEBUFFER, handle);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // swapchain
     glNamedFramebufferReadBuffer(handle, GL_COLOR_ATTACHMENT0);
     // clang-format off
-    glBlitFramebuffer(0, 0, texture.width, texture.height,   // source rect
+    glBlitFramebuffer(0, 0, width, height,                   // source rect
                       0, 0, dstWidth, dstHeight,             // destination rect
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
     // clang-format on
 }
 
-void FrameBuffer::blitAttachment(int attachmentIndex, int srcWidth, int srcHeight, int dstWidth, int dstHeight) const {
+void FrameBuffer::blitAttachment(int attachmentIndex, int dstWidth, int dstHeight) const {
     glBindFramebuffer(GL_READ_FRAMEBUFFER, handle);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
     glNamedFramebufferReadBuffer(handle, static_cast<GLenum>(GL_COLOR_ATTACHMENT0 + attachmentIndex));
-    glBlitFramebuffer(0, 0, srcWidth, srcHeight, 0, 0, dstWidth, dstHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    glBlitFramebuffer(0, 0, width, height, 0, 0, dstWidth, dstHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 }

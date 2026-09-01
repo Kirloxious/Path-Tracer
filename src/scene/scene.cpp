@@ -15,7 +15,6 @@ Scene Scene::CornellBox() {
     scene.cameraSettings.aspect_ratio = 16.0f / 9.0f;
     scene.cameraSettings.image_width = 1200;
     scene.cameraSettings.max_bounces = 32;
-    scene.cameraSettings.samples_per_pixel = 4;
     scene.cameraSettings.vfov = 40.0f;
     scene.cameraSettings.lookfrom = glm::vec3(27.75f, 27.75f, -75.0f);
     scene.cameraSettings.lookat = glm::vec3(27.75f, 27.75f, 27.75f);
@@ -89,8 +88,7 @@ Scene Scene::CornellBox() {
     uint32_t suzanneMat = w.addMaterial(Material::Dielectric(1.5f));
     w.addMesh(loadOBJ("assets/suzanne.obj", suzanneMat, 4.0f, glm::vec3(S * 0.66f, tallH + 4.0f, S * 0.63f), PI));
 
-    w.emissiveLastIndex = w.sortEmissiveFirst();
-    Log::info("Emissive last index: {}", w.emissiveLastIndex);
+    w.sortEmissiveFirst();
     Log::info("Total triangles: {}", w.triangles.size());
 
     w.create();
@@ -105,7 +103,6 @@ Scene Scene::SphereWorld() {
     scene.cameraSettings.aspect_ratio = 16.0f / 9.0f;
     scene.cameraSettings.image_width = 1200;
     scene.cameraSettings.max_bounces = 16;
-    scene.cameraSettings.samples_per_pixel = 4;
     scene.cameraSettings.vfov = 20.0f;
     scene.cameraSettings.lookfrom = glm::vec3(13.0f, 2.0f, 3.0f);
     scene.cameraSettings.lookat = glm::vec3(0.0f, 0.0f, 0.0f);
@@ -151,8 +148,7 @@ Scene Scene::SphereWorld() {
     w.addTriangle(c, a, apex, triMat);
     w.addTriangle(a, c, b, triMat);
 
-    w.emissiveLastIndex = w.sortEmissiveFirst();
-    Log::info("Emissive last index: {}", w.emissiveLastIndex);
+    w.sortEmissiveFirst();
 
     w.create();
     return scene;
@@ -166,7 +162,6 @@ Scene Scene::Showcase() {
     scene.cameraSettings.aspect_ratio = 16.0f / 9.0f;
     scene.cameraSettings.image_width = 1200;
     scene.cameraSettings.max_bounces = 16;
-    scene.cameraSettings.samples_per_pixel = 4;
     scene.cameraSettings.vfov = 30.0f;
     scene.cameraSettings.lookfrom = glm::vec3(0.0f, 3.0f, 10.0f);
     scene.cameraSettings.lookat = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -193,8 +188,7 @@ Scene Scene::Showcase() {
 
     w.addSphere(glm::vec3(2.5f, 0.5f, 2.0f), 0.5f, Material::Dielectric(1.5f));
 
-    w.emissiveLastIndex = w.sortEmissiveFirst();
-    Log::info("Emissive last index: {}", w.emissiveLastIndex);
+    w.sortEmissiveFirst();
     Log::info("Total triangles: {}", w.triangles.size());
 
     w.create();
@@ -209,7 +203,6 @@ Scene Scene::MirrorFloor() {
     scene.cameraSettings.aspect_ratio = 16.0f / 9.0f;
     scene.cameraSettings.image_width = 1600;
     scene.cameraSettings.max_bounces = 16;
-    scene.cameraSettings.samples_per_pixel = 4;
     scene.cameraSettings.vfov = 30.0f;
     scene.cameraSettings.lookfrom = glm::vec3(0.0f, 3.0f, 10.0f);
     scene.cameraSettings.lookat = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -280,8 +273,7 @@ Scene Scene::MirrorFloor() {
     // Lambertian sphere on the right — radius 1, centre at y = floorY + 1, so its bottom sits exactly on the floor.
     w.addSphere(glm::vec3(3.5f, floorY + 1.0f, subjectsZ), 1.0f, Material::Lambertian(glm::vec3(0.25f, 0.55f, 0.8f)), sphereLat, sphereLon);
 
-    w.emissiveLastIndex = w.sortEmissiveFirst();
-    Log::info("Emissive last index: {}", w.emissiveLastIndex);
+    w.sortEmissiveFirst();
     Log::info("Total triangles: {}", w.triangles.size());
 
     w.create();
@@ -298,7 +290,6 @@ Scene Scene::SphereWorldEnvLit() {
     scene.cameraSettings.aspect_ratio = 16.0f / 9.0f;
     scene.cameraSettings.image_width = 1200;
     scene.cameraSettings.max_bounces = 16;
-    scene.cameraSettings.samples_per_pixel = 4;
     scene.cameraSettings.vfov = 20.0f;
     scene.cameraSettings.lookfrom = glm::vec3(13.0f, 2.0f, 3.0f);
     scene.cameraSettings.lookat = glm::vec3(0.0f, 0.0f, 0.0f);
@@ -337,8 +328,7 @@ Scene Scene::SphereWorldEnvLit() {
     w.addSphere(glm::vec3(4.0f, 1.0f, 0.0f), 1.0f, Material::Metal(glm::vec3(0.7f, 0.6f, 0.5f), 0.0f), tinyLat, tinyLon);
     w.addSphere(glm::vec3(-4.0f, 1.0f, 0.0f), 1.0f, Material::Lambertian(glm::vec3(0.4f, 0.2f, 0.1f)), tinyLat, tinyLon);
 
-    w.emissiveLastIndex = w.sortEmissiveFirst();
-    Log::info("Emissive last index: {}", w.emissiveLastIndex);
+    w.sortEmissiveFirst();
 
     w.create();
     return scene;
@@ -352,7 +342,6 @@ Scene Scene::ShowcaseEnvLit() {
     scene.cameraSettings.aspect_ratio = 16.0f / 9.0f;
     scene.cameraSettings.image_width = 1200;
     scene.cameraSettings.max_bounces = 16;
-    scene.cameraSettings.samples_per_pixel = 4;
     scene.cameraSettings.vfov = 30.0f;
     scene.cameraSettings.lookfrom = glm::vec3(0.0f, 3.0f, 10.0f);
     scene.cameraSettings.lookat = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -382,8 +371,7 @@ Scene Scene::ShowcaseEnvLit() {
 
     w.addSphere(glm::vec3(2.5f, 0.5f, 2.0f), 0.5f, Material::Dielectric(1.5f));
 
-    w.emissiveLastIndex = w.sortEmissiveFirst();
-    Log::info("Emissive last index: {}", w.emissiveLastIndex);
+    w.sortEmissiveFirst();
     Log::info("Total triangles: {}", w.triangles.size());
 
     w.create();

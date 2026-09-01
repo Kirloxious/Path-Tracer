@@ -99,7 +99,7 @@ int Application::run() {
         }
 
         gpuTimer.start();
-        Texture& output = renderer.render(ctx);
+        renderer.render(ctx);
         gpuTimer.end();
 
         window.getFrameBufferSize();
@@ -108,7 +108,7 @@ int Application::run() {
         } else if (input.debugGBufferPosition) {
             renderer.blitGBufferAttachmentToSwapChain(GBuffer::ATTACH_POS_MATID, window.width, window.height);
         } else {
-            renderer.blitToSwapChain(output, window.width, window.height);
+            renderer.blitToSwapChain(window.width, window.height);
         }
 
         Gui::endFrame();
@@ -134,6 +134,13 @@ void Application::applyPendingSceneSwitch() {
 
     scene = sceneEntries[idx].factory();
     camera = Camera(scene.cameraSettings);
+    // Camera() is built from the scene's *authored* resolution, so it discards any resize the
+    // window has seen since startup. Re-apply the live framebuffer size before loadScene(),
+    // which fires uploadUniforms() on every pass: DenoiserPass takes its `image_size` from
+    // camera.image_width/height there, and the camera UBO takes its projection — and hence
+    // aspect ratio — from this object. Render targets are already at the window size and are
+    // deliberately not reallocated here.
+    camera.resize(window.width, window.height);
     renderer.loadScene(scene, camera);
     window.setTitle(scene.name);
     frameIndex = 0;

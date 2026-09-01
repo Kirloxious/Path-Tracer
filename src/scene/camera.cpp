@@ -8,8 +8,7 @@
 Camera::Camera(const CameraSettings& settings)
     : settings(settings), image_width(settings.image_width), image_height(static_cast<int>(settings.image_width / settings.aspect_ratio)) {
 
-    Log::info(
-        "Camera: {}x{}, vfov={}°, spp={}, bounces={}", image_width, image_height, settings.vfov, settings.samples_per_pixel, settings.max_bounces);
+    Log::info("Camera: {}x{}, vfov={}°, bounces={}", image_width, image_height, settings.vfov, settings.max_bounces);
 
     data.lookfrom = settings.lookfrom;
     data.focus_distance = settings.focus_dist;
@@ -63,7 +62,7 @@ void Camera::applyJitter(int frameIndex) {
     data.inv_projection = glm::inverse(data.projection);
 }
 
-Camera& Camera::update(const InputState& input, float dt) {
+void Camera::update(const InputState& input, float dt) {
     // Snapshot last frame's un-jittered view*projection for temporal reprojection.
     // baseProjection is intentional: applyJitter overwrites data.projection per frame,
     // and we want motion vectors to ignore sub-pixel jitter so they describe surface
@@ -122,8 +121,6 @@ Camera& Camera::update(const InputState& input, float dt) {
     if (moving) {
         updateDirectionVectors();
     }
-
-    return *this;
 }
 
 void Camera::resize(int w, int h) {

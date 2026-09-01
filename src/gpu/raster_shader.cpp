@@ -6,7 +6,7 @@ RasterShader::RasterShader(const std::filesystem::path& vertPath, const std::fil
     ID = buildProgram();
 }
 
-GLuint RasterShader::buildProgram() const {
+GLuint RasterShader::buildProgram() {
     if (m_sources.size() < 2) {
         return 0;
     }

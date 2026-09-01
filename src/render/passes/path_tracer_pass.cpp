@@ -1,6 +1,8 @@
 #include "render/passes/path_tracer_pass.h"
 
 #include <filesystem>
+#include <functional>
+#include <initializer_list>
 
 #include "gpu/buffer.h"
 #include "gpu/env_map.h"
@@ -63,6 +65,11 @@ PathTracerPass::PathTracerPass(int w, int h)
 
     queueCounters = QueueCounters(BIND_QUEUE_COUNTERS, NUM_QUEUE_SLOTS);
 
+    // Each Queue below stores `&queueCounters` — a pointer into *this* object. That is only
+    // safe because RenderPass deletes copy and declares no move, and passes are always held
+    // via unique_ptr, so a PathTracerPass never changes address. Adding a move constructor
+    // here would leave every Queue pointing at the moved-from husk.
+    //
     // Each queue's `indices` is sized for the worst case (every pixel in this queue).
     rayQueue = Queue(queueCounters, SLOT_RAY, BIND_RAY_QUEUE_INDICES, numPixels);
     hitLambertian = Queue(queueCounters, SLOT_LAMB, BIND_HIT_LAMBERTIAN_INDICES, numPixels);
@@ -130,16 +137,15 @@ void PathTracerPass::resize(int w, int h) {
 }
 
 bool PathTracerPass::reloadIfChanged(const RenderContext& ctx) {
+    // Every kernel must be polled — `|=` on separate lines silently drifts when a new
+    // stage is added, so enumerate them once here instead.
+    const std::initializer_list<std::reference_wrapper<ComputeShader>> kernels = {
+        generate, trace, shadeLambertian, shadeMetal, shadeDielectric, shadeEmissive, traceShadow, resolve, prepareIndirect};
+
     bool any = false;
-    any |= generate.reloadIfChanged();
-    any |= trace.reloadIfChanged();
-    any |= shadeLambertian.reloadIfChanged();
-    any |= shadeMetal.reloadIfChanged();
-    any |= shadeDielectric.reloadIfChanged();
-    any |= shadeEmissive.reloadIfChanged();
-    any |= traceShadow.reloadIfChanged();
-    any |= resolve.reloadIfChanged();
-    any |= prepareIndirect.reloadIfChanged();
+    for (ComputeShader& kernel : kernels) {
+        any |= kernel.reloadIfChanged();
+    }
     if (any) {
         uploadUniforms(ctx.scene, ctx.camera);
     }

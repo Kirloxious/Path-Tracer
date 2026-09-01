@@ -54,7 +54,7 @@ void Renderer::updateCameraUbo(const Camera& cam) {
     camUBO.update(cam.data);
 }
 
-Texture& Renderer::render(RenderContext& ctx) {
+void Renderer::render(RenderContext& ctx) {
     // Pull in previous frame's per-pass timestamps before we overwrite them.
     passTimings.beginFrame();
     for (size_t i = 0; i < passes.size(); ++i) {
@@ -63,8 +63,6 @@ Texture& Renderer::render(RenderContext& ctx) {
         passTimings.endPass(static_cast<int>(i));
     }
     passTimings.endFrame();
-
-    return targets.display;
 }
 
 bool Renderer::reloadShadersIfChanged(RenderContext& ctx) {
@@ -80,8 +78,8 @@ void Renderer::addRenderPass(std::unique_ptr<RenderPass> pass) {
     passes.push_back(std::move(pass));
 }
 
-void Renderer::blitToSwapChain(Texture& renderOutput, int width, int height) {
-    targets.fb.blit(renderOutput, width, height);
+void Renderer::blitToSwapChain(int width, int height) {
+    targets.fb.blit(width, height);
 }
 
 void Renderer::blitGBufferAttachmentToSwapChain(int attachmentIndex, int width, int height) {

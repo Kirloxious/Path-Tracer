@@ -33,7 +33,7 @@ void TaaPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     // High history weight so per-frame jitter mostly cancels out. Catmull-Rom
     // resampling keeps this from turning into visible blur (which pure bilinear at
     // this weight would).
-    shader.setFloat("blend_alpha", 0.95f);
+    shader.setFloat("blend_alpha", 0.90f);
 
     glDispatchCompute(targets.numGroupsX, targets.numGroupsY, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);

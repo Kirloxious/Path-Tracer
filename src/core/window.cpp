@@ -31,7 +31,7 @@ static void requestFloatingOnHyprland(int width, int height) {
 #endif
 }
 
-Window::Window(int width, int height, std::string_view title) : width(width), height(height), title(title) {
+Window::Window(int width, int height, std::string_view windowTitle) : width(width), height(height), title(windowTitle) {
     Log::info("Creating window: {} x {} — '{}'", width, height, title);
     glfwSetErrorCallback(glfwErrorCallback);
 
@@ -55,7 +55,7 @@ Window::Window(int width, int height, std::string_view title) : width(width), he
 
     requestFloatingOnHyprland(width, height);
 
-    window = glfwCreateWindow(width, height, title.data(), nullptr, nullptr);
+    window = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
     if (!window) {
         Log::error("Failed to create GLFW window");
         return;
@@ -134,6 +134,7 @@ void Window::getFrameBufferSize() {
     glfwGetFramebufferSize(window, &width, &height);
 }
 
-void Window::setTitle(const std::string& newTitle) {
-    glfwSetWindowTitle(window, newTitle.c_str());
+void Window::setTitle(std::string_view newTitle) {
+    title = newTitle;
+    glfwSetWindowTitle(window, title.c_str());
 }

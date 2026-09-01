@@ -2,6 +2,7 @@
 
 #include "core/log.h"
 
+#include <algorithm>
 #include <fstream>
 #include <regex>
 #include <sstream>
@@ -13,7 +14,7 @@ ShaderProgram::~ShaderProgram() {
 }
 
 ShaderProgram::ShaderProgram(ShaderProgram&& o) noexcept
-    : ID(o.ID), m_sources(std::move(o.m_sources)), m_locationCache(std::move(o.m_locationCache)) {
+    : ID(o.ID), m_sources(std::move(o.m_sources)), m_includes(std::move(o.m_includes)), m_locationCache(std::move(o.m_locationCache)) {
     o.ID = 0;
 }
 
@@ -24,6 +25,7 @@ ShaderProgram& ShaderProgram::operator=(ShaderProgram&& o) noexcept {
         }
         ID = o.ID;
         m_sources = std::move(o.m_sources);
+        m_includes = std::move(o.m_includes);
         m_locationCache = std::move(o.m_locationCache);
         o.ID = 0;
     }
@@ -68,12 +70,14 @@ bool ShaderProgram::reloadIfChanged() {
     }
 
     bool anyChanged = false;
-    for (auto& src : m_sources) {
-        std::error_code ec;
-        auto            t = std::filesystem::last_write_time(src.path, ec);
-        if (!ec && t != src.writeTime) {
-            src.writeTime = t; // advance even on failure so we don't spam errors
-            anyChanged = true;
+    for (std::vector<Source>* list : {&m_sources, &m_includes}) {
+        for (Source& src : *list) {
+            std::error_code ec;
+            const auto      t = std::filesystem::last_write_time(src.path, ec);
+            if (!ec && t != src.writeTime) {
+                src.writeTime = t; // advance even on failure so we don't spam errors
+                anyChanged = true;
+            }
         }
     }
 
@@ -99,6 +103,28 @@ bool ShaderProgram::reloadIfChanged() {
 void ShaderProgram::trackSource(const std::filesystem::path& path) {
     std::error_code ec;
     m_sources.push_back({path, std::filesystem::last_write_time(path, ec)});
+}
+
+void ShaderProgram::recordIncludes(const std::unordered_set<std::string>& seen) {
+    // `seen` holds weakly_canonical paths and also contains the entry point itself, while
+    // m_sources holds the path exactly as the subclass passed it ("shader/foo.comp").
+    // Compare canonicalized on both sides, or every entry point gets re-registered as one
+    // of its own includes.
+    auto alreadyTracked = [this](const std::filesystem::path& canonical) {
+        auto same = [&canonical](const Source& s) {
+            return std::filesystem::weakly_canonical(s.path) == canonical;
+        };
+        return std::any_of(m_sources.begin(), m_sources.end(), same) || std::any_of(m_includes.begin(), m_includes.end(), same);
+    };
+
+    for (const std::string& entry : seen) {
+        const std::filesystem::path path(entry);
+        if (alreadyTracked(path)) {
+            continue;
+        }
+        std::error_code ec;
+        m_includes.push_back({path, std::filesystem::last_write_time(path, ec)});
+    }
 }
 
 std::string ShaderProgram::sourcesLabel() const {
@@ -128,8 +154,7 @@ GLint ShaderProgram::getLocation(const std::string& name) const {
 }
 
 std::string ShaderProgram::preprocessIncludes(const std::filesystem::path& path, std::unordered_set<std::string>& seen) {
-    Log::info("Prepocessing: {}", path.string());
-    auto canonical = std::filesystem::weakly_canonical(path).string();
+    const auto canonical = std::filesystem::weakly_canonical(path).string();
     if (!seen.insert(canonical).second) { // include guard
         return {};
     }
@@ -152,14 +177,12 @@ std::string ShaderProgram::preprocessIncludes(const std::filesystem::path& path,
         static const std::regex inc(R"(^\s*#include\s+\"([^\"]+)\")");
         std::smatch             m;
         if (std::regex_search(line, m, inc)) {
-            auto child = path.parent_path() / m[1].str();
-            Log::info("include: '{}' -> '{}'", line, m[1].str());
+            const auto child = path.parent_path() / m[1].str();
             out << "// >>> " << child.string() << "\n";
             out << preprocessIncludes(child, seen);
             out << "// <<< " << child.string() << "\n";
             // emit a #line so compile errors point at the right file:line
             out << "#line " << (lineno + 1) << "\n";
-            Log::info("Shader: Prepocessed {} for {}", m.str(), path.string());
         } else {
             out << line << "\n";
         }
@@ -171,6 +194,9 @@ std::string ShaderProgram::preprocessIncludes(const std::filesystem::path& path,
 GLuint ShaderProgram::compileStage(GLenum stage, const std::filesystem::path& path) {
     std::unordered_set<std::string> seen;
     std::string                     source = preprocessIncludes(path, seen);
+    // Register the headers we just walked even if the compile below fails — the whole point
+    // is to notice the *next* edit to the header that broke it.
+    recordIncludes(seen);
     if (source.empty()) {
         return 0;
     }
@@ -179,8 +205,6 @@ GLuint ShaderProgram::compileStage(GLenum stage, const std::filesystem::path& pa
         return 0;
     }
 
-    Log::info("compileStage: {} (stage = {})", path.string(), stage);
-    // Log::info("Source string: {}", source);
     const GLchar* src = source.c_str();
     GLuint        shader = glCreateShader(stage);
     glShaderSource(shader, 1, &src, nullptr);

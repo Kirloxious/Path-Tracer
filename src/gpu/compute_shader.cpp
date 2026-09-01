@@ -5,7 +5,7 @@ ComputeShader::ComputeShader(const std::filesystem::path& path) {
     ID = buildProgram();
 }
 
-GLuint ComputeShader::buildProgram() const {
+GLuint ComputeShader::buildProgram() {
     if (m_sources.empty()) {
         return 0;
     }

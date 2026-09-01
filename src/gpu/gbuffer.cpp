@@ -5,5 +5,5 @@ GBuffer::GBuffer(int w, int h) : pos_matid(w, h, GL_RGBA32F), normal(w, h, GL_RG
 }
 
 void GBuffer::blitAttachmentToSwapChain(int attachmentIndex, int dstWidth, int dstHeight) const {
-    fb.blitAttachment(attachmentIndex, width, height, dstWidth, dstHeight);
+    fb.blitAttachment(attachmentIndex, dstWidth, dstHeight);
 }
