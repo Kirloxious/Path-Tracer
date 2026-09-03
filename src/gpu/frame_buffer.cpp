@@ -1,7 +1,5 @@
 #include "gpu/frame_buffer.h"
 
-#include <GL/glext.h>
-
 #include "core/log.h"
 
 FrameBuffer::FrameBuffer(const Texture& texture) : width(texture.width), height(texture.height) {

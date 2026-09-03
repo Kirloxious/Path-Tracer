@@ -283,10 +283,15 @@ void World::buildLightGroups() {
         lightGroups.push_back(g);
     };
 
+    // Triangle::alias_packed stores the alias target as a 16-bit offset from LightGroup::begin,
+    // so a run longer than this has to become several groups. Splitting is sound: NEE picks a
+    // group uniformly and divides by that pdf, so more groups shifts variance, never the mean.
+    constexpr int MAX_GROUP_TRIANGLES = 0xFFFF;
+
     int      runBegin = 0;
     uint32_t runMat = triangles[0].material_index;
     for (int i = 1; i < end; ++i) {
-        if (triangles[i].material_index != runMat) {
+        if (triangles[i].material_index != runMat || i - runBegin == MAX_GROUP_TRIANGLES) {
             closeGroup(runBegin, i - 1);
             runBegin = i;
             runMat = triangles[i].material_index;

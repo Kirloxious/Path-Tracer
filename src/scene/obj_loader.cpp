@@ -3,6 +3,8 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tinyobjloader/tiny_obj_loader.h>
 
+#include <algorithm>
+#include <cmath>
 #include <unordered_map>
 
 #include "core/log.h"
@@ -57,21 +59,31 @@ OBJMesh loadOBJ(const std::filesystem::path& path, uint32_t material_index, floa
         Log::warn("OBJ: {}", err);
     }
 
-    bool  hasNormals = !attrib.normals.empty();
-    float cosY = cos(rotateY), sinY = sin(rotateY);
-    auto  rotY = [&](glm::vec3 v) -> glm::vec3 {
+    const bool  hasNormals = !attrib.normals.empty();
+    const float cosY = std::cos(rotateY), sinY = std::sin(rotateY);
+    auto        rotY = [&](glm::vec3 v) -> glm::vec3 {
         return glm::vec3(cosY * v.x + sinY * v.z, v.y, -sinY * v.x + cosY * v.z);
     };
 
-    // If the OBJ has no vertex normals, compute smooth normals by averaging face normals at shared vertices.
+    // A file can carry `vn` for some faces and omit it on others, so the fallback has to exist
+    // whenever *any* face vertex lacks a normal index — not only when the file has none.
+    const bool needsSmoothNormals = !hasNormals || std::any_of(shapes.begin(), shapes.end(), [](const tinyobj::shape_t& s) {
+        return std::any_of(s.mesh.indices.begin(), s.mesh.indices.end(), [](const tinyobj::index_t& i) { return i.normal_index < 0; });
+    });
+
+    // Smooth normals by averaging face normals at shared vertices.
     std::vector<glm::vec3> smoothNormals;
-    if (!hasNormals) {
+    if (needsSmoothNormals) {
         smoothNormals.resize(attrib.vertices.size() / 3, glm::vec3(0.0f));
 
         for (const auto& shape : shapes) {
             size_t indexOffset = 0;
             for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); ++f) {
                 int fv = shape.mesh.num_face_vertices[f];
+                if (fv < 3) {
+                    indexOffset += fv;
+                    continue;
+                }
 
                 auto      idx0 = shape.mesh.indices[indexOffset];
                 auto      idx1 = shape.mesh.indices[indexOffset + 1];
@@ -146,6 +158,10 @@ OBJMesh loadOBJ(const std::filesystem::path& path, uint32_t material_index, floa
         size_t indexOffset = 0;
         for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); ++f) {
             int fv = shape.mesh.num_face_vertices[f];
+            if (fv < 3) {
+                indexOffset += fv;
+                continue;
+            }
 
             uint32_t i0 = resolveVertex(shape.mesh.indices[indexOffset]);
 

@@ -33,7 +33,6 @@ struct KeyMappings
     int lookDown = GLFW_KEY_DOWN;
 
     int debugGBufferNormal = GLFW_KEY_F1;
-    int debugGBufferPosition = GLFW_KEY_F2;
 };
 
 /**
@@ -72,6 +71,13 @@ public:
      */
     Window(int width, int height, std::string_view title);
     ~Window();
+
+    // Owns the GLFW window *and* the library's global state, which the destructor tears down.
+    // Neither survives being duplicated or handed off, so copy and move are both gone.
+    Window(const Window&) = delete;
+    Window& operator=(const Window&) = delete;
+    Window(Window&&) = delete;
+    Window& operator=(Window&&) = delete;
 
     /// @return true once the user has closed the window or the context failed to create.
     [[nodiscard]] bool shouldClose() const;

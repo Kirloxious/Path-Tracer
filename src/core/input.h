@@ -31,6 +31,4 @@ struct InputState
     /// Show the G-buffer normal attachment instead of the final image (Application::run
     /// short-circuits the swap-chain blit while this is set).
     bool debugGBufferNormal = false;
-    /// Show the G-buffer world-position attachment instead of the final image.
-    bool debugGBufferPosition = false;
 };

@@ -41,7 +41,10 @@ void DenoiserPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     // frameIndex is large but per-pixel variance is still high.
     constexpr float sigmaColorScale = 0.5f;
     constexpr float sigmaColorFloor = 0.1f;
-    const float     adaptiveSigmaColor = std::max(sigmaColorScale / std::sqrt(static_cast<float>(ctx.frameIndex)), sigmaColorFloor);
+    // frameIndex is 0 on the frame a shader reload restarts accumulation; sqrt(0) there
+    // would hand the shader an infinite sigma, which stops nothing and blurs the whole image.
+    const float samples = static_cast<float>(std::max(ctx.frameIndex, 1));
+    const float adaptiveSigmaColor = std::max(sigmaColorScale / std::sqrt(samples), sigmaColorFloor);
 
     shader.use();
     shader.setFloat("sigma_color", adaptiveSigmaColor);

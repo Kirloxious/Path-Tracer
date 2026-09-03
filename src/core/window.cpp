@@ -101,7 +101,9 @@ Window::~Window() {
 }
 
 bool Window::shouldClose() const {
-    return glfwWindowShouldClose(window);
+    // A null window means construction failed. Without this the main loop spins forever:
+    // glfwWindowShouldClose(nullptr) raises GLFW_INVALID_VALUE and returns 0.
+    return window == nullptr || glfwWindowShouldClose(window);
 }
 
 void Window::makeCurrentContext() {
@@ -133,7 +135,6 @@ InputState Window::pollInput(const KeyMappings& keys) const {
         .lookUp = pressed(keys.lookUp),
         .lookDown = pressed(keys.lookDown),
         .debugGBufferNormal = pressed(keys.debugGBufferNormal),
-        .debugGBufferPosition = pressed(keys.debugGBufferPosition),
     };
 
     return inputState;

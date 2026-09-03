@@ -69,8 +69,8 @@ struct alignas(16) Triangle
     /// single load. It reuses the CDF's slot so Triangle stays 48 bytes and needs no new
     /// SSBO binding; shade_lambertian is already at 15 of NVIDIA's 16.
     ///
-    /// The 16-bit alias offset caps a light group at 65535 triangles, which
-    /// World::buildLightGroups() asserts on.
+    /// The 16-bit alias offset caps a light group at 65535 triangles;
+    /// World::buildLightGroups() splits longer runs so that stays true.
     uint32_t alias_packed = 0u;
 
     Triangle() = default;
