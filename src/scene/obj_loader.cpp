@@ -33,6 +33,7 @@ struct VertexKeyHash
 
 OBJMesh loadOBJ(const std::filesystem::path& path, uint32_t material_index, float scale, glm::vec3 offset, float rotateY) {
     OBJMesh mesh;
+    mesh.name = path.stem().string();
     mesh.material_index = material_index;
 
     if (!std::filesystem::exists(path)) {

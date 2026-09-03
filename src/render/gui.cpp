@@ -76,7 +76,24 @@ void drawSceneSwitcher(const std::vector<SceneEntry>& entries, SceneSwitchState&
 }
 
 void drawScene(const Scene& scene) {
-    ImGui::Text("Triangles  %zu", scene.world.triangles.size());
+    const World& world = scene.world;
+    ImGui::Text("Triangles  %zu", world.triangles.size());
+    ImGui::Text("Objects    %zu", world.objects.size());
+    ImGui::Text("Meshes     %zu", world.meshes.size());
+
+    if (world.objects.empty() || !ImGui::TreeNode("Object list")) {
+        return;
+    }
+
+    // Immediate-mode builders register one object per call, so Sphere World lists ~500.
+    if (ImGui::BeginChild("object-list", ImVec2(0.0f, 160.0f), ImGuiChildFlags_Borders)) {
+        for (const Object& o : world.objects) {
+            const char* meshName = (o.meshId < world.meshes.size()) ? world.meshes[o.meshId].name.c_str() : "-";
+            ImGui::Text("%-20s %6u tri  mat %-3u  %s", o.name.c_str(), o.triangleCount, o.material_index, meshName);
+        }
+    }
+    ImGui::EndChild();
+    ImGui::TreePop();
 }
 
 void drawCamera(const Camera& camera) {

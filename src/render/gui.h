@@ -71,7 +71,7 @@ void drawPerformance(const FPSTimer& fps, const GPUTimer& gpu);
 void drawSceneSwitcher(const std::vector<SceneEntry>& entries, SceneSwitchState& state);
 
 /**
- * @brief Draws read-only scene statistics (triangle count).
+ * @brief Draws read-only scene statistics and the collapsible object list.
  * @param scene Currently loaded scene.
  */
 void drawScene(const Scene& scene);

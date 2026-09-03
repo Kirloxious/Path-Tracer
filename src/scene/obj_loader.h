@@ -6,6 +6,7 @@
  */
 
 #include <filesystem>
+#include <string>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -20,6 +21,8 @@
  */
 struct OBJMesh
 {
+    /// Source file stem, e.g. "suzanne" for `assets/suzanne.obj`. Becomes Mesh::name.
+    std::string             name;
     std::vector<Vertex>     vertices;
     std::vector<glm::uvec3> indices; ///< One entry per triangle, each indexing into `vertices`.
     uint32_t                material_index = 0;

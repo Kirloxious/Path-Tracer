@@ -30,6 +30,7 @@ void RasterGBufferPass::releaseGeometry() {
         vao = 0;
     }
     indexCount = 0;
+    drawRanges.clear();
 }
 
 void RasterGBufferPass::buildGeometry(const World& world) {
@@ -40,12 +41,47 @@ void RasterGBufferPass::buildGeometry(const World& world) {
         return;
     }
 
-    std::vector<uint32_t> indices;
-    indices.reserve(world.triangles.size() * 3);
-    for (const Triangle& t : world.triangles) {
-        indices.push_back(t.indices.x);
-        indices.push_back(t.indices.y);
-        indices.push_back(t.indices.z);
+    // Gives each object one contiguous run; NO_OBJECT triangles land in a trailing bucket.
+    const std::size_t objectCount = world.objects.size();
+    const std::size_t bucketCount = objectCount + 1;
+    const std::size_t unownedBucket = objectCount;
+
+    auto bucketOf = [&](std::size_t triIndex) -> std::size_t {
+        if (triIndex >= world.triangleObjectId.size()) {
+            return unownedBucket;
+        }
+        const uint32_t id = world.triangleObjectId[triIndex];
+        return (id < objectCount) ? static_cast<std::size_t>(id) : unownedBucket;
+    };
+
+    std::vector<uint32_t> triCounts(bucketCount, 0);
+    for (std::size_t i = 0; i < world.triangles.size(); ++i) {
+        ++triCounts[bucketOf(i)];
+    }
+
+    std::vector<uint32_t> cursor(bucketCount, 0);
+    uint32_t              running = 0;
+    drawRanges.clear();
+    drawRanges.reserve(bucketCount);
+    for (std::size_t b = 0; b < bucketCount; ++b) {
+        cursor[b] = running;
+        if (triCounts[b] > 0) {
+            DrawRange range;
+            range.objectId = (b == unownedBucket) ? NO_OBJECT : static_cast<uint32_t>(b);
+            range.firstIndex = static_cast<GLint>(running * 3);
+            range.indexCount = static_cast<GLsizei>(triCounts[b] * 3);
+            drawRanges.push_back(range);
+        }
+        running += triCounts[b];
+    }
+
+    std::vector<uint32_t> indices(world.triangles.size() * 3);
+    for (std::size_t i = 0; i < world.triangles.size(); ++i) {
+        const Triangle&   t = world.triangles[i];
+        const std::size_t slot = cursor[bucketOf(i)]++;
+        indices[slot * 3 + 0] = t.indices.x;
+        indices[slot * 3 + 1] = t.indices.y;
+        indices[slot * 3 + 2] = t.indices.z;
     }
 
     indexCount = static_cast<GLsizei>(indices.size());
@@ -73,7 +109,11 @@ void RasterGBufferPass::buildGeometry(const World& world) {
     glVertexArrayAttribIFormat(vao, 2, 1, GL_UNSIGNED_INT, offsetof(Vertex, material_index));
     glVertexArrayAttribBinding(vao, 2, bindingIndex);
 
-    Log::info("RasterGBufferPass: {} vertices, {} indices ({} triangles)", world.vertices.size(), indexCount, indexCount / 3);
+    Log::info("RasterGBufferPass: {} vertices, {} indices ({} triangles) across {} object run(s)",
+              world.vertices.size(),
+              indexCount,
+              indexCount / 3,
+              drawRanges.size());
 }
 
 void RasterGBufferPass::uploadUniforms(const Scene& scene, const Camera&) {
@@ -103,8 +143,8 @@ void RasterGBufferPass::execute(const RenderContext&, RenderTargets& targets) {
     glDepthFunc(GL_GREATER);
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
-    // Scenes here don't enforce a consistent winding (e.g. Cornell-box lids wind inward),
-    // so we draw both sides and let the fragment shader flip normals via gl_FrontFacing —
+    // Scenes here don't enforce a consistent winding (e.g. Cornell-box lids wind inward), so
+    // we draw both sides and let the fragment shader flip normals against the view direction —
     // mirroring the path tracer's own set_face_normal convention.
     glDisable(GL_CULL_FACE);
 
@@ -116,6 +156,8 @@ void RasterGBufferPass::execute(const RenderContext&, RenderTargets& targets) {
     shader.use();
 
     glBindVertexArray(vao);
+    // `drawRanges` tiles the buffer exactly, so a draw per object would submit the same
+    // triangles at N times the CPU cost.
     glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
 

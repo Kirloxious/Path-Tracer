@@ -45,6 +45,10 @@ struct Scene
     /// @return A mirror metal floor and back wall with OBJ subjects under one emissive sphere —
     ///         a stress test for specular bounces.
     static Scene MirrorFloor();
+    /// @return Parameter sweeps across the metallic-roughness model: conductor roughness,
+    ///         dielectric roughness, metallic, transmission roughness and IOR, one row each,
+    ///         lit by an envmap plus a warm key and a cool fill.
+    static Scene MaterialGallery();
 };
 
 /// Pointer to one of the Scene static factories.

@@ -36,7 +36,7 @@ public:
      * @param scene The initial scene, moved into the Application. Its `name` becomes the
      *              window title and its CameraSettings seed the Camera.
      */
-    explicit Application(Scene scene);
+    explicit Application(Scene scene = Application::defaultScene());
     ~Application();
 
     /**
@@ -58,6 +58,8 @@ private:
     /// Rebuilds the GPU buffers and re-fires uploadUniforms() when the GUI has requested a
     /// different scene. No-op when `sceneSwitch.requested` is -1.
     void applyPendingSceneSwitch();
+
+    static Scene defaultScene() { return Scene::CornellBox(); };
 
     Scene    scene;
     Camera   camera;

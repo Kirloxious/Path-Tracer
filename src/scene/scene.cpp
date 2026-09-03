@@ -7,6 +7,8 @@
 #include "scene/obj_loader.h"
 #include "core/utils.h"
 
+#include <glm/gtc/matrix_transform.hpp>
+
 Scene Scene::CornellBox() {
     Scene scene;
     scene.name = "Cornell Box";
@@ -88,10 +90,8 @@ Scene Scene::CornellBox() {
     uint32_t suzanneMat = w.addMaterial(Material::Glass(1.5f));
     w.addMesh(loadOBJ("assets/suzanne.obj", suzanneMat, 4.0f, glm::vec3(S * 0.66f, tallH + 4.0f, S * 0.63f), PI));
 
-    w.sortEmissiveFirst();
-    Log::info("Total triangles: {}", w.triangles.size());
-
     w.create();
+    Log::info("Total triangles: {}", w.triangles.size());
     return scene;
 }
 
@@ -148,9 +148,8 @@ Scene Scene::SphereWorld() {
     w.addTriangle(c, a, apex, triMat);
     w.addTriangle(a, c, b, triMat);
 
-    w.sortEmissiveFirst();
-
     w.create();
+    Log::info("Total triangles: {}", w.triangles.size());
     return scene;
 }
 
@@ -174,24 +173,28 @@ Scene Scene::Showcase() {
         glm::vec3(-groundSpan, 0.0f, groundSpan), glm::vec3(2.0f * groundSpan, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -2.0f * groundSpan), groundMat);
     w.addSphere(glm::vec3(0.0f, 12.0f, 0.0f), 4.0f, Material::Emissive(glm::vec3(1.0f), glm::vec3(6.0f)));
 
+    // Loaded in object space and placed by transform: a second copy is one more addObject().
+    auto place = [&](const char* name, const char* path, uint32_t material, float scale, glm::vec3 offset) {
+        const uint32_t meshId = w.addMeshAsset(loadOBJ(path, 0));
+        return w.addObject(name, meshId, glm::scale(glm::translate(glm::mat4(1.0f), offset), glm::vec3(scale)), material);
+    };
+
     uint32_t bunnyMat = w.addMaterial(Material::Lambertian(glm::vec3(0.9f, 0.7f, 0.2f)));
-    w.addMesh(loadOBJ("assets/standford-bunny.obj", bunnyMat, 10.0f, glm::vec3(0.0f, -0.33f, 0.0f)));
+    place("Bunny", "assets/standford-bunny.obj", bunnyMat, 10.0f, glm::vec3(0.0f, -0.33f, 0.0f));
 
     uint32_t spotMat = w.addMaterial(Material::Lambertian(glm::vec3(0.9f, 0.85f, 0.7f)));
-    w.addMesh(loadOBJ("assets/spot.obj", spotMat, 1.0f, glm::vec3(-3.0f, 0.737f, 0.0f)));
+    place("Spot", "assets/spot.obj", spotMat, 1.0f, glm::vec3(-3.0f, 0.737f, 0.0f));
 
     uint32_t suzanneMat = w.addMaterial(Material::Principled(glm::vec3(0.9f, 0.7f, 0.3f), 1.0f, 0.316f));
-    w.addMesh(loadOBJ("assets/suzanne.obj", suzanneMat, 0.7f, glm::vec3(4.75f, 0.6f, -2.87f)));
+    place("Suzanne", "assets/suzanne.obj", suzanneMat, 0.7f, glm::vec3(4.75f, 0.6f, -2.87f));
 
     uint32_t dragonMat = w.addMaterial(Material::Glass(1.5f));
-    w.addMesh(loadOBJ("assets/xyzrgb_dragon.obj", dragonMat, 0.015f, glm::vec3(0.0f, 0.94f, -2.5f)));
+    place("Dragon", "assets/xyzrgb_dragon.obj", dragonMat, 0.015f, glm::vec3(0.0f, 0.94f, -2.5f));
 
     w.addSphere(glm::vec3(2.5f, 0.5f, 2.0f), 0.5f, Material::Glass(1.5f));
 
-    w.sortEmissiveFirst();
-    Log::info("Total triangles: {}", w.triangles.size());
-
     w.create();
+    Log::info("Total triangles: {}", w.triangles.size());
     return scene;
 }
 
@@ -273,10 +276,8 @@ Scene Scene::MirrorFloor() {
     // Lambertian sphere on the right — radius 1, centre at y = floorY + 1, so its bottom sits exactly on the floor.
     w.addSphere(glm::vec3(3.5f, floorY + 1.0f, subjectsZ), 1.0f, Material::Lambertian(glm::vec3(0.25f, 0.55f, 0.8f)), sphereLat, sphereLon);
 
-    w.sortEmissiveFirst();
-    Log::info("Total triangles: {}", w.triangles.size());
-
     w.create();
+    Log::info("Total triangles: {}", w.triangles.size());
     return scene;
 }
 
@@ -328,9 +329,8 @@ Scene Scene::SphereWorldEnvLit() {
     w.addSphere(glm::vec3(4.0f, 1.0f, 0.0f), 1.0f, Material::Principled(glm::vec3(0.7f, 0.6f, 0.5f), 1.0f, 0.0f), tinyLat, tinyLon);
     w.addSphere(glm::vec3(-4.0f, 1.0f, 0.0f), 1.0f, Material::Lambertian(glm::vec3(0.4f, 0.2f, 0.1f)), tinyLat, tinyLon);
 
-    w.sortEmissiveFirst();
-
     w.create();
+    Log::info("Total triangles: {}", w.triangles.size());
     return scene;
 }
 
@@ -371,10 +371,89 @@ Scene Scene::ShowcaseEnvLit() {
 
     w.addSphere(glm::vec3(2.5f, 0.5f, 2.0f), 0.5f, Material::Glass(1.5f));
 
-    w.sortEmissiveFirst();
+    w.create();
     Log::info("Total triangles: {}", w.triangles.size());
+    return scene;
+}
+
+Scene Scene::MaterialGallery() {
+    Scene scene;
+    scene.name = "Material Gallery";
+    Log::info("Building scene: {}", scene.name);
+
+    scene.cameraSettings.aspect_ratio = 16.0f / 9.0f;
+    scene.cameraSettings.image_width = 1200;
+    scene.cameraSettings.max_bounces = 24;
+    scene.cameraSettings.vfov = 34.0f;
+    scene.cameraSettings.lookfrom = glm::vec3(0.0f, 4.6f, 11.5f);
+    scene.cameraSettings.lookat = glm::vec3(0.0f, 0.5f, 0.0f);
+
+    // Environment plus two emissive lights on purpose. The envmap gives the wide, soft
+    // reflections that make a roughness sweep readable at a glance; the emitters give crisp
+    // highlights and real shadows, and they are what put light groups in the scene at all —
+    // without them there is no NEE and no ReSTIR to exercise.
+    scene.envMapPath = kDefaultEnvMap;
+    scene.envIntensity = 0.45f;
+
+    World& w = scene.world;
+
+    constexpr int   latSegs = 16;
+    constexpr int   lonSegs = 32;
+    constexpr int   columns = 7;
+    constexpr float radius = 0.5f;
+    constexpr float spacingX = 1.35f;
+    constexpr float spacingZ = 1.6f;
+
+    // Ground is a mildly glossy dielectric rather than a matte one, so the dielectric
+    // specular lobe shows up somewhere other than the spheres and every row sits in a
+    // reflection that reveals its silhouette.
+    constexpr float groundSpan = 40.0f;
+    w.addTriQuad(glm::vec3(-groundSpan, 0.0f, groundSpan),
+                 glm::vec3(2.0f * groundSpan, 0.0f, 0.0f),
+                 glm::vec3(0.0f, 0.0f, -2.0f * groundSpan),
+                 Material::Principled(glm::vec3(0.32f, 0.32f, 0.34f), 0.0f, 0.4f));
+
+    // One row of `columns` spheres, with the sweep parameter t running 0 -> 1 left to right.
+    auto sweepRow = [&](float z, auto&& materialAt) {
+        for (int i = 0; i < columns; ++i) {
+            const float t = static_cast<float>(i) / static_cast<float>(columns - 1);
+            const float x = (static_cast<float>(i) - 0.5f * static_cast<float>(columns - 1)) * spacingX;
+            w.addSphere(glm::vec3(x, radius, z), radius, materialAt(t), latSegs, lonSegs);
+        }
+    };
+
+    // Back row: conductor roughness. Mirror on the left through blurred on the right — the
+    // sweep the old fuzz parameter approximated and GGX now models properly.
+    sweepRow(-2.0f * spacingZ, [](float t) { return Material::Principled(glm::vec3(0.95f, 0.78f, 0.35f), 1.0f, t); });
+
+    // Dielectric roughness. Same sweep with metallic = 0: the base colour stays put while the
+    // highlight spreads, because a dielectric's F0 comes from ior (0.04) and not from albedo.
+    sweepRow(-1.0f * spacingZ, [](float t) { return Material::Principled(glm::vec3(0.16f, 0.34f, 0.78f), 0.0f, t); });
+
+    // Metallic sweep at fixed roughness. Deliberately a neutral base colour, so the
+    // dielectric-to-conductor transition reads as the diffuse lobe giving way to a tinted
+    // specular one rather than as a colour change.
+    sweepRow(0.0f, [](float t) { return Material::Principled(glm::vec3(0.85f, 0.85f, 0.88f), t, 0.25f); });
+
+    // Transmission roughness: clear glass through frosted.
+    sweepRow(1.0f * spacingZ, [](float t) { return Material::RoughGlass(1.5f, 0.45f * t); });
+
+    // Index of refraction on smooth glass, water (1.33) through diamond (2.4).
+    sweepRow(2.0f * spacingZ, [](float t) { return Material::Glass(1.05f + t * 1.35f); });
+
+    // Foreground pair, larger and more tessellated: tinted transmission, which the smooth
+    // reflect/refract path could not express at all.
+    w.addSphere(glm::vec3(-3.7f, 0.95f, 4.3f), 0.95f, Material::RoughGlass(1.5f, 0.05f, glm::vec3(0.95f, 0.55f, 0.20f)), 24, 48);
+    w.addSphere(glm::vec3(3.7f, 0.95f, 4.3f), 0.95f, Material::RoughGlass(1.5f, 0.22f, glm::vec3(0.25f, 0.85f, 0.45f)), 24, 48);
+
+    // Key light, warm and high to the left; fill, cool and lower to the right. Two lights so
+    // the conductors carry two distinguishable highlights and the roughness sweep is legible
+    // from the way those highlights smear rather than only from overall brightness.
+    w.addSphere(glm::vec3(-6.5f, 7.5f, 4.0f), 1.2f, Material::Emissive(glm::vec3(1.0f), glm::vec3(11.0f, 10.0f, 8.5f)), 16, 32);
+    w.addSphere(glm::vec3(7.0f, 4.5f, 6.0f), 0.8f, Material::Emissive(glm::vec3(1.0f), glm::vec3(3.0f, 4.2f, 6.5f)), 16, 32);
 
     w.create();
+    Log::info("Total triangles: {}", w.triangles.size());
     return scene;
 }
 
@@ -386,5 +465,6 @@ std::vector<SceneEntry> sceneRegistry() {
         {"Showcase", &Scene::Showcase},
         {"Showcase (env)", &Scene::ShowcaseEnvLit},
         {"Mirror Floor", &Scene::MirrorFloor},
+        {"Material Gallery", &Scene::MaterialGallery},
     };
 }
