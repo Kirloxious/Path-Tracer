@@ -136,6 +136,8 @@ void RestirPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     initial.setIVec2("image_size", width, height);
     initial.setInt("frame_index", ctx.frameIndex);
     initial.setInt("time", static_cast<int>(ctx.timeSeed));
+    initial.setInt("run_seed", static_cast<int>(ctx.runSeed));
+    initial.setInt("sample_index", ctx.frameIndex);
     glDispatchCompute(numWorkGroupsX, numWorkGroupsY, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
@@ -158,6 +160,8 @@ void RestirPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     spatial.setIVec2("image_size", width, height);
     spatial.setInt("frame_index", ctx.frameIndex);
     spatial.setInt("time", static_cast<int>(ctx.timeSeed));
+    spatial.setInt("run_seed", static_cast<int>(ctx.runSeed));
+    spatial.setInt("sample_index", ctx.frameIndex);
 
     // Pass 1
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BIND_RESERVOIRS_SPATIAL_INPUT, currentId);

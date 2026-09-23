@@ -11,9 +11,11 @@
 /**
  * @brief Four ping-pong dispatches of an A-Trous bilateral filter, writing `targets.hdr`.
  *
- * Step sizes double each pass (1, 2, 4, 8). Edge stops are colour distance and normal
- * similarity; `sigma_color` decays with the accumulation frame count and floors out, so
- * penumbras keep sharpening as the image converges rather than staying permanently blurred.
+ * Step sizes double each pass (1, 2, 4, 8). Edge stops are luminance distance, normal
+ * similarity and distance to the centre tap's tangent plane. `sigma_color` is sized from a
+ * per-pixel variance estimate that each pass filters alongside the colour and hands to the
+ * next in its alpha, so the wide taps size their edge-stop for the noise still present rather
+ * than for the noise the first pass already removed.
  */
 class DenoiserPass : public RenderPass
 {

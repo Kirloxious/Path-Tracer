@@ -94,7 +94,6 @@ void PathTracerPass::uploadUniforms(const Scene& scene, const Camera& camera) {
     const int   emissiveLast = scene.world.emissiveLastIndex;
     const int   numLightGroups = static_cast<int>(scene.world.lightGroups.size());
     const int   maxBounces = camera.settings.max_bounces;
-    const bool  envValid = !scene.envMapPath.empty();
     const float envIntensity = scene.envIntensity;
     const float indirectClamp = camera.settings.indirect_clamp;
 
@@ -103,12 +102,10 @@ void PathTracerPass::uploadUniforms(const Scene& scene, const Camera& camera) {
     // hand-write the raw glUniform*(location, ...) calls these used to use.
     trace.use();
     trace.setInt("bvh_root_index", bvhRoot);
-    trace.setInt("env_map_valid", envValid ? 1 : 0);
     trace.setFloat("env_map_intensity", envIntensity);
     trace.setFloat("indirect_clamp", indirectClamp);
 
     generate.use();
-    generate.setInt("env_map_valid", envValid ? 1 : 0);
     generate.setFloat("env_map_intensity", envIntensity);
 
     traceShadow.use();
@@ -119,13 +116,19 @@ void PathTracerPass::uploadUniforms(const Scene& scene, const Camera& camera) {
     shadeOpaque.setInt("num_light_groups", numLightGroups);
     shadeOpaque.setInt("max_bounces", maxBounces);
     shadeOpaque.setFloat("indirect_clamp", indirectClamp);
+    shadeOpaque.setFloat("env_map_intensity", envIntensity);
 
     shadeEmissive.use();
     shadeEmissive.setInt("num_light_groups", numLightGroups);
     shadeEmissive.setFloat("indirect_clamp", indirectClamp);
 
+    // Transmissive surfaces run the same NEE estimator as opaque ones (against their
+    // reflection lobe), so they need the same scene uniforms it reads.
     shadeTransmissive.use();
     shadeTransmissive.setInt("max_bounces", maxBounces);
+    shadeTransmissive.setInt("num_light_groups", numLightGroups);
+    shadeTransmissive.setFloat("indirect_clamp", indirectClamp);
+    shadeTransmissive.setFloat("env_map_intensity", envIntensity);
 }
 
 void PathTracerPass::resize(int w, int h) {
@@ -178,6 +181,19 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
         targets.envMap->bind(9);
     }
 
+    // Set here rather than in uploadUniforms(), which has no handle on the EnvMap. Validity has
+    // to come from the loaded map, not the scene's path: a file that failed to load leaves no
+    // texture and a zero-sized grid, which envmap_sample would index out of bounds.
+    const bool       envValid = targets.envMap && targets.envMap->valid();
+    const glm::ivec2 envSampleSize = envValid ? targets.envMap->samplingSize() : glm::ivec2(0);
+    generate.use();
+    generate.setInt("env_map_valid", envValid ? 1 : 0);
+    for (ComputeShader* k : {&trace, &shadeOpaque, &shadeTransmissive}) {
+        k->use();
+        k->setInt("env_map_valid", envValid ? 1 : 0);
+        k->setIVec2("env_sample_size", envSampleSize.x, envSampleSize.y);
+    }
+
     // Bind the indirect args buffer once. It's still bound as an SSBO at
     // BIND_DISPATCH_ARGS for prepareIndirect's writes.
     glBindBuffer(GL_DISPATCH_INDIRECT_BUFFER, dispatchArgsSSBO.id);
@@ -192,8 +208,7 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     // ---- generate: gbuffer → hit_X queues ----
     generate.use();
     generate.setIVec2("image_size", width, height);
-    generate.setInt("frame_index", ctx.frameIndex);
-    generate.setInt("time", static_cast<int>(ctx.timeSeed));
+    generate.setInt("run_seed", static_cast<int>(ctx.runSeed));
     glDispatchCompute(numWorkGroupsX_8x8, numWorkGroupsY_8x8, 1);
     glMemoryBarrier(BARRIER);
 
@@ -211,10 +226,12 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
         // back-to-back and barrier once at the end.
         shadeOpaque.use();
         shadeOpaque.setInt("bounce_index", b);
+        shadeOpaque.setInt("sample_index", ctx.frameIndex);
         glDispatchComputeIndirect(SLOT_OPAQUE * DISPATCH_ARG_STRIDE);
 
         shadeTransmissive.use();
         shadeTransmissive.setInt("bounce_index", b);
+        shadeTransmissive.setInt("sample_index", ctx.frameIndex);
         glDispatchComputeIndirect(SLOT_TRANSMISSIVE * DISPATCH_ARG_STRIDE);
 
         shadeEmissive.use();
@@ -245,6 +262,7 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     // ---- resolve: states[].radiance → accum_image, gbuffer normal → normals_image ----
     targets.accum.bindForAccumulation();
     targets.normals.bind(2, GL_WRITE_ONLY);
+    targets.moments.bind(3, GL_READ_WRITE);
 
     resolve.use();
     resolve.setIVec2("image_size", width, height);

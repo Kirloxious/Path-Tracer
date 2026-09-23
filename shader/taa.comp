@@ -9,7 +9,7 @@ layout(rgb10_a2, binding = 2) writeonly uniform image2D taa_output_image;
 layout(binding = 7) uniform sampler2D taa_history_tex;         // previous frame's TAA output (LINEAR filtered)
 
 layout(location = 0) uniform ivec2 image_size;
-layout(location = 1) uniform int   frame_index;   // resets to 1 on camera motion / shader reload
+layout(location = 1) uniform int   frame_index;   // frames of valid history; resets on resize / scene switch / shader reload, not camera motion
 layout(location = 2) uniform float blend_alpha;   // upper bound on history weight (e.g. 0.9)
 
 // YCoCg keeps luma on one axis and chroma on the other two. Clipping the history in RGB

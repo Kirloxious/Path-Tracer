@@ -93,9 +93,9 @@ void main() {
                 rgb = vec3(0.0);
             } else {
                 Material m = mats[gbuffer_matid(p)];
-                // For emissives, the "color" slot is unused — fall back to emission
-                // clamped into a legible range.
-                rgb = (m.type == MAT_EMISSIVE) ? clamp(m.emission, 0.0, 1.0) : m.base_color;
+                // An emitter's radiance is unbounded, so it is clamped into a legible range
+                // rather than shown raw.
+                rgb = (m.type == MAT_EMISSIVE) ? clamp(material_emission(m), 0.0, 1.0) : m.base_color;
             }
             break;
         }

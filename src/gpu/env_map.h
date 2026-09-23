@@ -5,9 +5,36 @@
  * @brief Equirectangular HDR environment map used as a distant area light.
  */
 
+#include <cstdint>
 #include <filesystem>
+#include <vector>
+
+#include <glm/ext/vector_int2.hpp>
 
 #include "gpu/texture.h"
+
+/**
+ * @brief One cell of the environment map's importance-sampling grid.
+ *
+ * A Vose alias table over a downsampled copy of the map, so drawing a cell proportional to its
+ * radiance costs one load and one compare instead of a CDF binary search.
+ *
+ * `pdfNumerator` is the solid-angle pdf with the equirect Jacobian's `sin(theta)` factored
+ * out. The shader divides by `sin(theta)` of the direction it actually drew rather than of the
+ * cell centre — the cell spans a range of theta, and using the centre would make the density
+ * disagree with the sampling procedure by a few percent near the poles.
+ *
+ * Mirrors `EnvSampleCell` in `shader/common/envmap.glsl`.
+ */
+struct alignas(16) EnvSampleCell
+{
+    float    accept = 1.0f;       ///< Alias acceptance probability for this cell.
+    uint32_t alias = 0;           ///< Cell taken when the acceptance test fails.
+    float    pdfNumerator = 0.0f; ///< Solid-angle pdf times sin(theta).
+    float    _pad = 0.0f;
+};
+
+static_assert(sizeof(EnvSampleCell) == 16, "EnvSampleCell size must match std430 layout");
 
 /**
  * @brief An equirectangular HDR environment map, owned as an rgba32f GL texture.
@@ -50,6 +77,13 @@ public:
     /// @return The radiance multiplier passed at construction.
     float getIntensity() const { return intensity; }
 
+    /// @return The importance-sampling alias table, row-major over `samplingSize()`. Empty
+    ///         when the map failed to load.
+    const std::vector<EnvSampleCell>& samplingCells() const { return cells; }
+
+    /// @return Dimensions of the sampling grid, which is a downsampled copy of the source.
+    glm::ivec2 samplingSize() const { return sampleSize; }
+
     // Non-copyable, movable (mirrors Texture wrapper).
     EnvMap(const EnvMap&) = delete;
     EnvMap& operator=(const EnvMap&) = delete;
@@ -57,6 +91,11 @@ public:
     EnvMap& operator=(EnvMap&&) noexcept = default;
 
 private:
-    Texture texture;
-    float   intensity = 1.0f;
+    /// Box-averages the source into the sampling grid and builds the alias table over it.
+    void buildSamplingTable(const float* rgb, int width, int height);
+
+    Texture                    texture;
+    std::vector<EnvSampleCell> cells;
+    glm::ivec2                 sampleSize{0, 0};
+    float                      intensity = 1.0f;
 };

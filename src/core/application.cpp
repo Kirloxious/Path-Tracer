@@ -26,7 +26,7 @@ static const std::filesystem::path gbufferFragPath = "shader/gbuffer.frag";
 Application::Application(Scene initialScene)
     : scene(std::move(initialScene)), camera(this->scene.cameraSettings), window(camera.image_width, camera.image_height, this->scene.name.c_str()),
       renderer(camera.image_width, camera.image_height), sceneEntries(sceneRegistry()),
-      timeSeed(static_cast<uint32_t>(std::chrono::steady_clock::now().time_since_epoch().count())) {
+      timeSeed(static_cast<uint32_t>(std::chrono::steady_clock::now().time_since_epoch().count())), runSeed(timeSeed) {
     Log::info("OpenGL version: {}", reinterpret_cast<const char*>(glGetString(GL_VERSION)));
     Log::info("Image dimensions: {} x {}", camera.image_width, camera.image_height);
 
@@ -70,25 +70,29 @@ int Application::run() {
             window.height = window.pendingHeight;
             camera.resize(window.width, window.height);
             renderer.resize(window.width, window.height);
-            frameIndex = 0;
+            resetAccumulation();
+            historyFrames = 0;
         }
 
         const InputState input = window.pollInput();
         camera.update(input, fpsTimer.deltaTime);
 
         if (camera.moving) {
-            frameIndex = 0;
+            resetAccumulation();
             camera.moving = false;
         }
 
-        RenderContext ctx{scene, camera, ++frameIndex, timeSeed++, static_cast<float>(fpsTimer.deltaTime)};
+        RenderContext ctx{scene, camera, ++frameIndex, timeSeed++, static_cast<float>(fpsTimer.deltaTime), samplerSeed(), ++historyFrames};
 
-        // Sub-pixel jitter for AA.
-        camera.applyJitter(ctx.frameIndex);
+        // Keyed on the never-reset counter: frameIndex sits at 1 for as long as the camera
+        // moves, which would pin the jitter and leave TAA nothing new to resolve.
+        camera.applyJitter(static_cast<int>(framesRendered++));
         renderer.updateCameraUbo(camera);
         if (renderer.reloadShadersIfChanged(ctx)) {
-            frameIndex = 0;
+            resetAccumulation();
             ctx.frameIndex = 0;
+            historyFrames = 0;
+            ctx.historyFrames = 0;
         }
 
         gpuTimer.start();
@@ -129,10 +133,20 @@ void Application::applyPendingSceneSwitch() {
 
     renderer.loadScene(scene, camera);
     window.setTitle(scene.name);
-    frameIndex = 0;
+    resetAccumulation();
+    historyFrames = 0;
 
     sceneSwitch.current = idx;
     sceneSwitch.requested = -1;
+}
+
+void Application::resetAccumulation() {
+    frameIndex = 0;
+    ++accumulationEpoch;
+}
+
+uint32_t Application::samplerSeed() const {
+    return runSeed + accumulationEpoch * 0x9e3779b9u;
 }
 
 Application::~Application() {

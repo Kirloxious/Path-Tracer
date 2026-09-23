@@ -32,18 +32,25 @@ uint gbuffer_matid(in ivec2 px) {
     return uint(texelFetch(gbuf_normal_tex, px, 0).w);
 }
 
-// World-space position of the primary hit.
+// View-space position of the primary hit.
 //
 // glClipControl(GL_ZERO_TO_ONE) means the stored depth *is* the clip-space z, so it goes
 // into the NDC vector verbatim with no [-1,1] remap. `inv_proj_matrix` is rebuilt from the
 // jittered projection every frame, matching the matrix the rasterizer used, so this lands
 // on the same sub-pixel sample the raster shaded.
+//
+// Exposed separately because the view transform is rigid: a point-to-plane distance is the
+// same in either space, so the denoiser's plane edge-stop can stop at this one and skip the
+// second matmul on all 25 of its taps.
+vec3 gbuffer_view_pos(in ivec2 px, in ivec2 image_size) {
+    vec2 uv  = (vec2(px) + 0.5) / vec2(image_size);
+    vec3 ndc = vec3(uv * 2.0 - 1.0, texelFetch(gbuf_depth_tex, px, 0).r);
+    vec4 v   = inv_proj_matrix * vec4(ndc, 1.0);
+    return v.xyz / v.w; // undo the perspective divide
+}
+
 vec3 gbuffer_world_pos(in ivec2 px, in ivec2 image_size) {
-    vec2 uv       = (vec2(px) + 0.5) / vec2(image_size);
-    vec3 ndc      = vec3(uv * 2.0 - 1.0, texelFetch(gbuf_depth_tex, px, 0).r);
-    vec4 v        = inv_proj_matrix * vec4(ndc, 1.0);
-    vec3 view_pos = v.xyz / v.w; // undo the perspective divide
-    return (inv_view_matrix * vec4(view_pos, 1.0)).xyz;
+    return (inv_view_matrix * vec4(gbuffer_view_pos(px, image_size), 1.0)).xyz;
 }
 
 #endif

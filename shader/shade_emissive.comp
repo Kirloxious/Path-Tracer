@@ -30,15 +30,16 @@ int find_owning_group(int tri_idx) {
     return (tri_idx >= grp.begin && tri_idx < grp.begin + grp.count) ? lo : -1;
 }
 
-// Solid-angle pdf at receiver `p` for a sample on `tri`, treating its whole light group
-// as one uniform area light of total surface area `total_area`. Returns 0 if the light
-// face is back-facing or geometry is degenerate. Mirrors the pdf used by shade_lambertian.
-float light_group_pdf(in Triangle tri, in vec3 receiver, in vec3 sample_point, in vec3 light_dir, in float total_area) {
-    if (total_area <= 0.0 || tri.area <= 0.0) return 0.0;
+// Solid-angle pdf at receiver `p` for a sample on `tri`, treating its whole light group as one
+// uniform area light. Returns 0 if the light face is back-facing or geometry is degenerate.
+// Includes the group's own selection probability, so this is the full density NEE would have
+// used — mirrors nee.glsl's light_pdf exactly, which is what the balance heuristic requires.
+float light_group_pdf(in Triangle tri, in vec3 receiver, in vec3 sample_point, in vec3 light_dir, in LightGroup grp) {
+    if (grp.total_area <= 0.0 || tri.area <= 0.0) return 0.0;
     float cross_dot = dot(cross(tri.e1, tri.e2), light_dir);
     if (cross_dot >= 0.0) return 0.0;   // back-facing
     vec3  d = sample_point - receiver;
-    return -2.0 * tri.area * dot(d, d) / (cross_dot * total_area);
+    return grp.select_pdf * -2.0 * tri.area * dot(d, d) / (cross_dot * grp.total_area);
 }
 
 void main() {
@@ -73,8 +74,7 @@ void main() {
             LightGroup grp = light_groups[gi];
             // Reconstruct the light_dir at the previous bounce — it's just the continuation ray's direction.
             vec3  light_dir_prev = s.ray_dir;
-            float light_pdf_combined = light_group_pdf(triangles[s.hit_triangle_idx], s.ray_origin, s.hit_point, light_dir_prev, grp.total_area)
-                                       / float(num_light_groups);
+            float light_pdf_combined = light_group_pdf(triangles[s.hit_triangle_idx], s.ray_origin, s.hit_point, light_dir_prev, grp);
             if (light_pdf_combined > 0.0 && (s.pdf_bsdf + light_pdf_combined) > 0.0) {
                 weight = s.pdf_bsdf / (s.pdf_bsdf + light_pdf_combined);
             }
@@ -84,7 +84,7 @@ void main() {
     // Primary hits are the camera looking straight at a light: that is the emitter's
     // authored radiance, not an estimator output, so it is exempt from the firefly
     // clamp. Everything past bounce 0 arrived through a sampled path and is not.
-    vec3 contribution = s.throughput * mat.base_color * mat.emission * weight;
+    vec3 contribution = s.throughput * material_emission(mat) * weight;
     s.radiance += is_primary ? contribution : clamp_indirect(contribution);
     states[pid] = s;
     // Path terminates at an emissive — no enqueue.

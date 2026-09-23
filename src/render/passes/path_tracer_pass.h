@@ -40,16 +40,22 @@ static_assert(sizeof(PathState) == 96, "PathState size must match std430 layout"
  * @brief Companion buffer for NEE plumbing (see `common/path_state.glsl`).
  *
  * Kept separate from PathState so kernels that don't touch NEE avoid the VRAM cost of
- * streaming these fields.
+ * streaming these fields. Two independent slots — area lights and the environment sample
+ * disjoint parts of the integrand, so a vertex can schedule one of each; see
+ * `shader/common/shadow_state.glsl`.
  */
 struct alignas(16) ShadowState
 {
-    glm::vec3 nee_dir;  ///< Direction from the shading point toward the sampled light.
-    float     nee_dist; ///< Distance to the light sample; the shadow ray's t-max.
-    glm::vec3 nee_le;   ///< Radiance to add if the shadow ray is unoccluded.
+    glm::vec3 nee_dir;   ///< Direction from the shading point toward the sampled light.
+    float     nee_dist;  ///< Distance to the light sample; the shadow ray's t-max.
+    glm::vec3 nee_le;    ///< Radiance to add if the light shadow ray is unoccluded.
+    float     nee_valid; ///< Non-zero when the light slot holds a scheduled sample.
+    glm::vec3 env_dir;   ///< Direction toward the sampled point on the environment.
+    float     env_valid; ///< Non-zero when the environment slot holds a scheduled sample.
+    glm::vec3 env_le;    ///< Radiance to add if the environment shadow ray is unoccluded.
     float     _pad;
 };
-static_assert(sizeof(ShadowState) == 32, "ShadowState size must match std430 layout");
+static_assert(sizeof(ShadowState) == 64, "ShadowState size must match std430 layout");
 
 /**
  * @brief Wavefront path tracer driven by per-material work queues.

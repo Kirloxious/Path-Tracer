@@ -9,15 +9,18 @@ layout(local_size_x = 64) in;
 #include "common/uniform_locations.glsl"
 #include "common/geom.glsl"
 #include "common/bsdf.glsl"
+#include "common/nee.glsl"
 #include "common/path_continue.glsl"
+
+layout(location = LOC_NUM_LIGHT_GROUPS) uniform int num_light_groups;
 
 void main() {
     uint qid = gl_GlobalInvocationID.x;
     if (qid >= hit_transmissive_count) return;
     uint pid = hit_transmissive_idx[qid];
 
-    PathState s = states[pid];
-    uint rng = s.rng_state;
+    PathState s   = states[pid];
+    Sampler   smp = path_sampler(s);
 
     Material mat        = mats[s.hit_matid];
     vec3     N          = s.hit_normal;
@@ -25,21 +28,57 @@ void main() {
     bool     front_face = (s.flags & FLAG_FRONT_FACE) != 0u;
     float    eta        = front_face ? (1.0 / mat.ior) : mat.ior;
 
-    vec3 dir;
-    vec3 weight;
-    bool transmitted;
-    bool alive = bsdf_sample_transmissive(mat, N, V, eta, rng, dir, weight, transmitted);
-
-    if (alive) {
-        // `weight` carries the G2/G1 masking ratio and, on the transmitted branch, the glass
-        // tint. Material::Glass leaves base_color white, so ordinary glass stays colourless.
-        s.throughput *= weight;
-
-        // No NEE flags: the reflect-vs-refract branch is a coin flip on this kernel's RNG, so
-        // restir_initial's deterministic walk can never follow a transmissive surface. The
-        // specular prefix ends here and the next emissive hit takes full weight.
-        alive = path_continue(s, rng, dir, transmitted, false, 0u);
+    // Beer-Lambert over the segment just travelled. Reaching the back face of a transmissive
+    // surface means the ray crossed the medium to get here, and base_color is read as the
+    // transmittance over one world unit — so clear glass stays colourless at any thickness
+    // while a tint deepens with how far the light actually travelled through it, instead of
+    // being applied once per crossing regardless of geometry.
+    if (!front_face) {
+        float dist = length(s.hit_point - s.ray_origin);
+        s.throughput *= pow(max(mat.base_color, vec3(1e-3)), vec3(dist));
     }
 
-    path_commit(pid, s, rng, alive);
+    // NEE on the reflection lobe, and only from outside: on a back face that lobe points back
+    // into the medium, and connecting to a light beyond the interface would have to account
+    // for the refraction on the way out, which an explicit direction sample does not.
+    uint nee_flags = 0u;
+    if (front_face) {
+        NeeSurface surf;
+        surf.P          = s.hit_point;
+        surf.N          = N;
+        surf.V          = V;
+        surf.matid      = s.hit_matid;
+        surf.eta        = eta;
+        surf.dielectric = true;
+
+        ShadowState ss;
+        nee_flags = nee_schedule(surf, s.throughput, true, num_light_groups, smp, s.bounce * SAMPLER_DIMS_PER_BOUNCE, ss);
+        if (ss.nee_valid != 0.0 || ss.env_valid != 0.0) {
+            shadow_states[pid] = ss;
+            shadow_queue_push(pid);
+        }
+    }
+
+    sampler_set_dim(smp, s.bounce * SAMPLER_DIMS_PER_BOUNCE + 6u);
+
+    vec3  dir;
+    vec3  weight;
+    bool  transmitted;
+    float pdf;
+    bool  alive = bsdf_sample_transmissive(mat, N, V, eta, smp, dir, weight, transmitted, pdf);
+
+    if (alive) {
+        // `weight` carries the G2/G1 masking ratio; absorption was applied above and the
+        // Fresnel split cancels out of the estimator.
+        s.throughput *= weight;
+        s.pdf_bsdf = pdf;
+
+        // The specular prefix ends here either way: the reflect-vs-refract branch is a coin
+        // flip on this kernel's samples, which restir_initial's deterministic walk cannot
+        // follow. A refracted sample carries pdf 0, so dropping the flags there leaves the
+        // next emissive hit at full weight even though NEE fired for the reflection lobe.
+        alive = path_continue(s, smp, dir, transmitted, false, transmitted ? 0u : nee_flags);
+    }
+
+    path_commit(pid, s, alive);
 }

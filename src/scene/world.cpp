@@ -279,13 +279,13 @@ void World::buildLightGroups() {
         LightGroup g;
         g.begin = begin;
         g.count = count;
-        g.total_area = total;
+        g.totalArea = total;
         lightGroups.push_back(g);
     };
 
     // Triangle::alias_packed stores the alias target as a 16-bit offset from LightGroup::begin,
-    // so a run longer than this has to become several groups. Splitting is sound: NEE picks a
-    // group uniformly and divides by that pdf, so more groups shifts variance, never the mean.
+    // so a run longer than this has to become several groups. Splitting is sound: the group is
+    // chosen against a stored pdf, so more groups shifts variance, never the mean.
     constexpr int MAX_GROUP_TRIANGLES = 0xFFFF;
 
     int      runBegin = 0;
@@ -299,7 +299,68 @@ void World::buildLightGroups() {
     }
     closeGroup(runBegin, end - 1);
 
+    // A second alias table, this time over the groups themselves, weighted by emitted power
+    // (radiance x area) rather than uniformly. Uniform selection gives a dim fill light the
+    // same sample budget as the key light, which is pure variance in any scene whose emitters
+    // differ in brightness — and every scene here does once an HDR sky is not the only source.
+    buildLightGroupSelection();
+
     Log::info("Light groups: {} (total {} emissive triangles)", lightGroups.size(), end);
+}
+
+void World::buildLightGroupSelection() {
+    const int n = static_cast<int>(lightGroups.size());
+    if (n == 0) {
+        return;
+    }
+
+    std::vector<float> weight(static_cast<std::size_t>(n));
+    double             total = 0.0;
+    for (int i = 0; i < n; ++i) {
+        const glm::vec3 e = materials[triangles[lightGroups[i].begin].material_index].emittedRadiance();
+        const float     luminance = 0.2126f * e.x + 0.7152f * e.y + 0.0722f * e.z;
+        weight[i] = std::max(luminance, 0.0f) * lightGroups[i].totalArea;
+        total += weight[i];
+    }
+    // Degenerate emitters (zero area, or emission that rounds to no luminance) still have to
+    // form a valid distribution, or the pdf every caller divides by is zero.
+    if (!(total > 0.0)) {
+        total = static_cast<double>(n);
+        std::fill(weight.begin(), weight.end(), 1.0f);
+    }
+
+    std::vector<float>    p(static_cast<std::size_t>(n));
+    std::vector<uint32_t> alias(static_cast<std::size_t>(n), 0);
+    std::vector<float>    prob(static_cast<std::size_t>(n), 1.0f);
+    std::vector<int>      small, large;
+
+    for (int i = 0; i < n; ++i) {
+        p[i] = static_cast<float>(static_cast<double>(n) * weight[i] / total);
+        (p[i] < 1.0f ? small : large).push_back(i);
+    }
+    while (!small.empty() && !large.empty()) {
+        const int l = small.back();
+        small.pop_back();
+        const int g = large.back();
+        large.pop_back();
+
+        prob[l] = p[l];
+        alias[l] = static_cast<uint32_t>(g);
+        p[g] = (p[g] + p[l]) - 1.0f;
+        (p[g] < 1.0f ? small : large).push_back(g);
+    }
+    for (const int i : large) {
+        prob[i] = 1.0f;
+    }
+    for (const int i : small) {
+        prob[i] = 1.0f;
+    }
+
+    for (int i = 0; i < n; ++i) {
+        const uint32_t q = static_cast<uint32_t>(std::lround(std::clamp(prob[i], 0.0f, 1.0f) * 65535.0f));
+        lightGroups[i].aliasPacked = (q << 16) | (alias[i] & 0xFFFFu);
+        lightGroups[i].selectPdf = static_cast<float>(weight[i] / total);
+    }
 }
 
 bool World::validate() const {
@@ -329,6 +390,9 @@ bool World::validate() const {
     }
     if (badIndices > 0) {
         Log::error("{} triangle(s) reference out-of-range vertex index (max = {})", badIndices, numVerts - 1);
+    }
+    if (badTris > 0 || badIndices > 0) {
+        return false;
     }
 
     const bool hasEmissive = std::any_of(triangles.begin(), triangles.end(), [&](const Triangle& t) {

@@ -20,11 +20,21 @@ void main() {
     HitRecord hit;
     int       tri_index;
     if (!world_hit_stackless(r, 0.001, 1e30, hit, tri_index)) {
-        // Miss — env contribution × throughput. Path dies (does not enqueue).
-        // v1 uses miss-sampling only; no MIS weight needed here (no NEE toward env).
-        // Only continuation rays reach trace.comp — generate.comp handles the primary
-        // sky directly — so this contribution is always indirect.
-        states[pid].radiance += clamp_indirect(states[pid].throughput * sample_envmap(r.direction));
+        // Miss — the ray escaped to the environment. Only continuation rays reach trace.comp
+        // (generate.comp handles the primary sky), so this contribution is always indirect.
+        //
+        // Balance-heuristic MIS against the environment NEE sample the previous vertex drew.
+        // Absent the flag no competing estimator ran — a delta lobe, or a scene with no
+        // envmap — and the full contribution is taken.
+        float weight = 1.0;
+        if ((states[pid].flags & FLAG_PREV_ENV_NEE) != 0u) {
+            float env_pdf  = envmap_pdf(r.direction);
+            float bsdf_pdf = states[pid].pdf_bsdf;
+            if (env_pdf > 0.0 && (bsdf_pdf + env_pdf) > 0.0) {
+                weight = bsdf_pdf / (bsdf_pdf + env_pdf);
+            }
+        }
+        states[pid].radiance += clamp_indirect(states[pid].throughput * sample_envmap(r.direction) * weight);
         return;
     }
 

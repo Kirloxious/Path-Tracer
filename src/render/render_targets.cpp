@@ -25,6 +25,7 @@ void RenderTargets::allocate(int w, int h) {
     // At 1080p this is ~231 MB of targets down to ~66 MB, and proportionally less traffic
     // in every post pass that reads or writes them.
     accum = Texture(w, h, GL_RGBA32F);
+    moments = Texture(w, h, GL_RG32F);
     normals = Texture(w, h, GL_RGBA16F);
     denoised_ping = Texture(w, h, GL_RGBA16F);
     hdr = Texture(w, h, GL_RGBA16F);

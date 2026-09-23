@@ -58,6 +58,10 @@ private:
     /// Rebuilds the GPU buffers and re-fires uploadUniforms() when the GUI has requested a
     /// different scene. No-op when `sceneSwitch.requested` is -1.
     void applyPendingSceneSwitch();
+    /// Restarts progressive accumulation and moves the sampler onto a fresh scramble.
+    void resetAccumulation();
+    /// Per-pixel sampler seed for the current accumulation; see RenderContext::runSeed.
+    [[nodiscard]] uint32_t samplerSeed() const;
 
     static Scene defaultScene() { return Scene::CornellBox(); };
 
@@ -75,5 +79,14 @@ private:
 
     /// Seeded from system time at construction so different runs don't share frame-1 noise.
     uint32_t timeSeed;
+    /// Fixed at construction; combined with accumulationEpoch into RenderContext::runSeed.
+    uint32_t runSeed;
     int      frameIndex = 0;
+    /// Bumped on every accumulation reset. A moving camera resets every frame, and without a
+    /// new scramble each of those frames would redraw sample 1 of the same sequence.
+    uint32_t accumulationEpoch = 0;
+    /// Never reset. Drives the sub-pixel jitter.
+    uint32_t framesRendered = 0;
+    /// See RenderContext::historyFrames.
+    int historyFrames = 0;
 };

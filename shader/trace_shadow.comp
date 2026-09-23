@@ -13,8 +13,6 @@ void main() {
     if (qid >= shadow_queue_count) return;
     uint pid = shadow_queue_idx[qid];
 
-    // Analytic NEE only fires at bounce > 0 (bounce 0 uses ReSTIR with folded
-    // visibility), so hit_triangle_idx is always valid here.
     uint  flags       = states[pid].flags;
     vec3  hit_point   = states[pid].hit_point;
     uint  tri_idx     = states[pid].hit_triangle_idx;
@@ -22,11 +20,23 @@ void main() {
 
     ShadowState ss = shadow_states[pid];
 
-    vec3 offset_n = triangle_geom_normal(tri_idx, front_face);
+    // Primary hits do queue shadow rays (environment NEE, glass seen directly) and carry no
+    // triangle, only the view-facing shading normal.
+    vec3 offset_n = (tri_idx != NO_TRIANGLE) ? triangle_geom_normal(tri_idx, front_face) : states[pid].hit_normal;
     vec3 origin   = hit_point + 0.001 * offset_n;
-    vec3 target   = hit_point + ss.nee_dir * ss.nee_dist;
 
-    if (is_visible(origin, target)) {
-        states[pid].radiance = states[pid].radiance + ss.nee_le;
+    vec3 add = vec3(0.0);
+    if (ss.nee_valid != 0.0 && is_visible(origin, hit_point + ss.nee_dir * ss.nee_dist)) {
+        add += ss.nee_le;
+    }
+    // The environment sits at infinity, so anything the ray meets occludes it. The distance
+    // only has to clear the scene bounds; is_visible shortens t_max by an epsilon, which at
+    // this magnitude would round away, hence a value well short of what a float can hold.
+    if (ss.env_valid != 0.0 && is_visible(origin, origin + ss.env_dir * 1e6)) {
+        add += ss.env_le;
+    }
+
+    if (dot(add, add) > 0.0) {
+        states[pid].radiance = states[pid].radiance + add;
     }
 }

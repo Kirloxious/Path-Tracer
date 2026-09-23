@@ -45,8 +45,8 @@ const uint RESTIR_INVALID_TRI = 0xFFFFFFFFu;
 
 // Which surfaces can hold a reservoir.
 //
-// Any non-delta reflective lobe: resampling only helps where an explicitly sampled light
-// direction has a non-zero BRDF, which a perfect mirror does not. Rough conductors qualify —
+// Anything but a perfect mirror: resampling only helps where an explicitly sampled light
+// direction has a non-zero BRDF. A smooth dielectric qualifies through its diffuse base. Rough conductors qualify —
 // they used to fall through to one analytic NEE sample per frame while a diffuse surface
 // beside them got several hundred resampled candidates.
 //
@@ -54,7 +54,7 @@ const uint RESTIR_INVALID_TRI = 0xFFFFFFFFu;
 // test. Splitting them would let a reservoir describe a different vertex than the one being
 // shaded, which is silent and very hard to see.
 bool restir_can_anchor(Material m) {
-    return (m.type == MAT_DIFFUSE || m.type == MAT_SPECULAR) && !bsdf_is_delta(m);
+    return (m.type == MAT_DIFFUSE || m.type == MAT_SPECULAR) && !bsdf_is_mirror(m);
 }
 
 float restir_luminance(vec3 c) {
@@ -90,7 +90,7 @@ float restir_target_pdf(vec3 P, vec3 N, vec3 V, uint matid, uint tri_idx, vec2 b
     Material lmat = mats[tri.material_index];
     float ignored_pdf;
     vec3  f           = bsdf_eval(mats[matid], N, V, light_dir, ignored_pdf);
-    vec3  contrib_rgb = f * lmat.emission * cos_theta;
+    vec3  contrib_rgb = f * material_emission(lmat) * cos_theta;
     return restir_luminance(contrib_rgb);
 }
 
@@ -141,11 +141,21 @@ bool reservoir_combine(inout Reservoir r, in Reservoir other, float p_hat_at_sel
     return selected;
 }
 
-// After all candidates / combines are streamed, compute the unbiased weight W.
+// After all candidates / combines are streamed, compute the contribution weight W.
+//
+// `Z` is the sampling effort that could actually have produced the sample that *won*: the sum
+// of M over the reservoirs whose own surface gives that sample a non-zero target pdf
+// (Bitterli et al. 2020, Algorithm 6). Dividing by the full M instead — which is what this
+// did — also counts reuse partners that could never have generated the winner, and since
+// Z <= M that inflates the divisor and loses energy. It shows up as darkening wherever reuse
+// partners disagree about a sample's support: corners, silhouettes, shadow boundaries, and
+// any edge where the surface orientation turns over.
+//
+// Plain RIS at a single surface has Z == r.M, which is what restir_initial passes.
 // Caller is responsible for separately zeroing W on visibility failure.
-void reservoir_finalize(inout Reservoir r) {
-    if (r.target_pdf > 0.0 && r.M > 0.0) {
-        r.W = r.w_sum / (r.M * r.target_pdf);
+void reservoir_finalize(inout Reservoir r, float Z) {
+    if (r.target_pdf > 0.0 && Z > 0.0) {
+        r.W = r.w_sum / (Z * r.target_pdf);
     } else {
         r.W = 0.0;
     }

@@ -6,6 +6,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/rng.glsl"
 #include "common/restir_common.glsl"
 #include "common/restir_surface.glsl"
+#include "common/uniform_locations.glsl"
 
 layout(std430, binding = 18) restrict buffer RestirReservoirsCurrent {
     Reservoir reservoirs[];
@@ -34,9 +35,15 @@ layout(location = 5) uniform int   pass_index;
 // pass runs last, so testing it in an intermediate pass buys nothing and costs a full
 // screen's worth of BVH shadow traversals.
 layout(location = 6) uniform int   test_visibility;
+layout(location = LOC_RUN_SEED) uniform int     run_seed;
+layout(location = LOC_SAMPLE_INDEX) uniform int sample_index;
 
 const float NORMAL_DOT_THRESHOLD = 0.9;
 const float WORLD_POS_DELTA      = 0.5;
+
+// Upper bound on k_neighbors, fixing the size of the arrays the Z pass below needs. Sized
+// past the k=5 the host dispatches so the uniform can be raised without editing the shader.
+const int MAX_NEIGHBORS = 8;
 
 void main() {
     ivec2 px = ivec2(gl_GlobalInvocationID.xy);
@@ -62,15 +69,28 @@ void main() {
     vec3 N      = self_surf.normal;
     vec3 V      = self_surf.view_dir;
 
-    // RNG seeded distinctly from initial/temporal so neighbor draws don't
-    // alias with prior RNG sequences. pass_index folds in so the two spatial
-    // dispatches sample different neighbors.
-    uint rng = (pid * 4093u + uint(frame_index) * 65537u + uint(time) * 92837u + uint(pass_index) * 19937u + 0xDEADBEEFu) | 1u;
+    // Neighbour offsets come from the low-discrepancy sampler so that, over frames, the k
+    // taps sweep the disc evenly rather than reclustering every frame. The reservoir
+    // acceptance test keeps a PCG stream — see restir_initial for why the two are separate.
+    // pass_index folds into both so the two spatial dispatches pick different neighbours.
+    Sampler smp = sampler_init(sampler_seed(pid, uint(run_seed) + uint(pass_index) * 0x9e37u + 0x4093u), sample_index, 0u);
+    uint    rng = (pid * 4093u + uint(frame_index) * 65537u + uint(time) * 92837u + uint(pass_index) * 19937u + 0xDEADBEEFu) | 1u;
 
-    for (int i = 0; i < k_neighbors; ++i) {
-        // Polar Poisson-disc-ish offset: sqrt(r) for uniform-area distribution.
-        float r2    = sqrt(random_unilateral(rng)) * radius_pixels;
-        float theta = random_unilateral(rng) * 2.0 * PI;
+    // Which neighbours were actually combined, for the Z pass after selection. Only these
+    // contributed to cur.M, so only these can contribute to the divisor.
+    uint  reused_pid[MAX_NEIGHBORS];
+    float reused_M[MAX_NEIGHBORS];
+    int   reused_count = 0;
+    float own_M        = cur.M;
+
+    int k = min(k_neighbors, MAX_NEIGHBORS);
+    for (int i = 0; i < k; ++i) {
+        // Polar offset, sqrt(r) for a uniform-area distribution over the disc. Tap i keeps
+        // its own dimension group so it walks a stratified path across frames.
+        sampler_set_dim(smp, uint(i));
+        vec2  u     = sampler_2d(smp);
+        float r2    = sqrt(u.x) * radius_pixels;
+        float theta = u.y * 2.0 * PI;
         ivec2 off   = ivec2(round(vec2(r2 * cos(theta), r2 * sin(theta))));
         if (off.x == 0 && off.y == 0) continue;
 
@@ -97,9 +117,25 @@ void main() {
         if (p_hat_at_self <= 0.0) continue;
 
         reservoir_combine(cur, other, p_hat_at_self, rng);
+        reused_pid[reused_count] = npid;
+        reused_M[reused_count]   = other.M;
+        reused_count++;
     }
 
-    reservoir_finalize(cur);
+    // Z: the sampling effort that could have produced the winner. A neighbour whose own
+    // surface gives the winning sample a zero target pdf — it faces away, or the light faces
+    // away from it — never had a chance to generate it, and counting its M in the divisor is
+    // what darkened corners and silhouettes. cur.target_pdf is already the winner's p_hat
+    // here, so the self term is free.
+    float Z = (cur.target_pdf > 0.0) ? own_M : 0.0;
+    for (int i = 0; i < reused_count; ++i) {
+        RestirSurface nb = surfaces[reused_pid[i]];
+        if (restir_target_pdf(nb.position, nb.normal, nb.view_dir, nb.matid, cur.light_tri_idx, cur.bary) > 0.0) {
+            Z += reused_M[i];
+        }
+    }
+
+    reservoir_finalize(cur, Z);
 
     // Shadow-test the (possibly updated) chosen sample at our surface. A
     // neighbor's sample was tested at the neighbor's surface, so visibility
@@ -110,7 +146,7 @@ void main() {
         Triangle tri = triangles[cur.light_tri_idx];
         vec3     v0  = vertices[tri.indices.x].position;
         vec3     sp  = v0 + cur.bary.x * tri.e1 + cur.bary.y * tri.e2;
-        if (!is_visible(P + 0.001 * N, sp)) {
+        if (!is_visible(restir_surface_offset_origin(self_surf), sp)) {
             cur.W = 0.0;
         }
     }

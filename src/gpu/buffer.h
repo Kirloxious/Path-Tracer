@@ -13,7 +13,7 @@
 
 /**
  * @brief Owns one GL buffer (SSBO / UBO / dispatch-indirect) and binds it to an index.
- *
+
  * Every constructor allocates with `glNamedBufferData` and immediately calls
  * `glBindBufferBase(target, bindingPoint, id)`, so a Buffer is live at its binding for the
  * rest of its lifetime — the binding map in CLAUDE.md is the contract with the shaders.

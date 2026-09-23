@@ -36,6 +36,12 @@ void Renderer::loadScene(const Scene& scene, const Camera& camera) {
     }
     targets.envMap = &envMap;
 
+    // The importance-sampling table. Always uploaded, even for a scene with no envmap: the
+    // shaders gate every read on env_map_valid, but leaving the binding empty would make a
+    // stray read undefined rather than merely wrong, and one cell costs nothing.
+    const std::vector<EnvSampleCell> fallback(1);
+    envSamplingSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 27, envMap.samplingCells().empty() ? fallback : envMap.samplingCells(), GL_STATIC_DRAW);
+
     Log::info("Renderer: Buffers created");
     for (auto& pass : passes) {
         pass->uploadUniforms(scene, camera);

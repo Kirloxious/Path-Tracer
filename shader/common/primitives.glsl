@@ -33,10 +33,14 @@ struct Triangle
 
 struct LightGroup
 {
-    int begin;
-    int count;
+    int   begin;
+    int   count;
     float total_area;
-    float _pad;
+    uint  alias_packed;  // alias entry over *groups* — bits 31..16 unorm16 accept probability, 15..0 alias target
+    float select_pdf;    // probability this group is chosen; power-weighted, so not 1/count
+    float _pad0;
+    float _pad1;
+    float _pad2;
 };
 
 struct Vertex
@@ -44,6 +48,14 @@ struct Vertex
     vec3 position;
     vec3 normal;
 };
+
+// Derived MaterialClass values (see src/scene/material.h). Numbering is unchanged from the
+// old authored MaterialType, so denoiser.comp's edge-stop thresholds and resolve.comp's
+// material-id write keep working without modification.
+const uint MAT_DIFFUSE = 0u;
+const uint MAT_SPECULAR = 1u;
+const uint MAT_TRANSMISSIVE = 2u;
+const uint MAT_EMISSIVE = 3u;
 
 // Mirrors src/scene/material.h. `roughness` is perceptual — GGX alpha is roughness^2.
 // `type` is a derived MaterialClass cached on the CPU by Material::classify(), never authored,
@@ -59,6 +71,13 @@ struct Material
     uint type;          // MAT_* — cached MaterialClass
     float _pad0;
 };
+
+// Emitted radiance. `base_color` tints `emission`, so every estimator that touches a light —
+// NEE, ReSTIR's target pdf, the BSDF-hits-emissive path, and the CPU's group power weighting —
+// has to go through this or a tinted emitter casts light of a different colour than it shows.
+vec3 material_emission(in Material mat) {
+    return mat.base_color * mat.emission;
+}
 
 // 32 bytes: two vec4s, with the link data bit-cast into the .w lanes the box does not use.
 // Two nodes per 64-byte cache line instead of 1.33 — traversal is bound on node fetches.

@@ -24,7 +24,8 @@ struct RenderTargets
     /// Compute dispatch tile size; `numGroupsX/Y` are derived from it.
     static constexpr int WORK_GROUP_SIZE = 8;
 
-    Texture accum;         ///< Path tracer output — the running-average radiance image.
+    Texture accum;         ///< Path tracer output — the running-average radiance image; `.a` is the accumulated sample count.
+    Texture moments;       ///< Running luminance moments (E[l], E[l^2]); the denoiser's per-pixel variance estimate.
     Texture normals;       ///< Primary normals + material type, consumed by the denoiser.
     Texture denoised_ping; ///< A-Trous ping-pong scratch target.
     Texture hdr;           ///< HDR pre-tonemap image — output of the denoiser, modified by bloom, read by auto-exposure + tonemap.

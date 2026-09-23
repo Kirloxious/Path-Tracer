@@ -51,7 +51,7 @@ struct alignas(16) Material
     glm::vec3 base_color = glm::vec3(1.0f); ///< Albedo (dielectric) or F0 tint (conductor).
     float     metallic = 0.0f;              ///< 0 = dielectric, 1 = conductor.
 
-    glm::vec3 emission = glm::vec3(0.0f); ///< Radiance emitted per unit area; non-zero makes this a light.
+    glm::vec3 emission = glm::vec3(0.0f); ///< Emitted radiance before the `base_color` tint; see emittedRadiance().
     float     roughness = 1.0f;           ///< Perceptual roughness; GGX alpha = roughness^2. 0 = perfect mirror.
 
     float    ior = 1.5f;          ///< Index of refraction (1.5 = glass). Drives dielectric F0.
@@ -64,10 +64,17 @@ struct alignas(16) Material
     /// coverage (it only anchors on Diffuse) against the accuracy of its Lambertian target pdf.
     static constexpr float specularRoughnessMax = 0.08f;
 
+    /// @return Radiance this material emits. `base_color` tints `emission`, so an emitter casts
+    ///         the colour it shows. Mirrors material_emission() in `primitives.glsl`.
+    [[nodiscard]] glm::vec3 emittedRadiance() const { return base_color * emission; }
+
     /// @return true when this material emits light and so participates in NEE / ReSTIR.
-    ///         Reads `emission` directly rather than the cached `type`, so it is correct even
+    ///         Derived from the parameters rather than the cached `type`, so it is correct even
     ///         before refreshType() has run.
-    [[nodiscard]] bool isEmissive() const { return emission.x > 0.0f || emission.y > 0.0f || emission.z > 0.0f; }
+    [[nodiscard]] bool isEmissive() const {
+        const glm::vec3 le = emittedRadiance();
+        return le.x > 0.0f || le.y > 0.0f || le.z > 0.0f;
+    }
 
     /**
      * @brief Derives the shading class from the parameters.
@@ -165,8 +172,9 @@ struct alignas(16) Material
 
     /**
      * @brief Area-light material. Triangles using it are gathered into a LightGroup for NEE.
-     * @param color    Tint applied to `emission`, and the albedo a scatter off the emitter would use.
-     * @param emission Emitted radiance; values well above 1 are normal for a light.
+     * @param color    Tints `emission` — this is the colour the light casts — and doubles as the
+     *                 albedo a scatter off the emitter would use.
+     * @param emission Emitted radiance before the tint; values well above 1 are normal for a light.
      */
     [[nodiscard]] static Material Emissive(glm::vec3 color, glm::vec3 emission) {
         Material m;

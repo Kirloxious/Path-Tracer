@@ -6,7 +6,9 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/scene_buffers.glsl"
 #include "common/gbuffer.glsl"
 
+// Read-write: accumulation and the moments are both running averages read back in place.
 layout(rgba32f, binding = 0) uniform image2D accum_image;
+layout(rg32f, binding = 3) uniform image2D moments_image;
 layout(rgba16f, binding = 2) writeonly uniform image2D normals_image;
 
 layout(location = 0) uniform ivec2 image_size;
@@ -20,20 +22,34 @@ void main() {
     vec3 sample_color = max(states[pid].radiance, vec3(0.0));
     if (any(isnan(sample_color)) || any(isinf(sample_color))) sample_color = vec3(0.0);
 
+    vec3 raw_n = gbuffer_raw_normal(px);
+    bool miss = gbuffer_is_sky(raw_n);
+    vec3 N = miss ? vec3(0.0) : normalize(raw_n);
+    uint matid = miss ? 0u : gbuffer_matid(px);
+
+    // Luminance moments, averaged on exactly the same schedule as the colour so that
+    // E[l^2] - E[l]^2 describes the spread of the samples behind this pixel's mean. The
+    // denoiser turns that into its per-pixel colour edge-stop.
+    float l = dot(sample_color, vec3(0.2126, 0.7152, 0.0722));
+    vec2  sample_moments = vec2(l, l * l);
+
     vec3 accumulated;
+    vec2 moments;
     if (frame_index <= 1) {
         accumulated = sample_color;
+        moments = sample_moments;
     } else {
-        vec3 prev = imageLoad(accum_image, px).rgb;
         float w = 1.0 / float(frame_index);
-        accumulated = mix(prev, sample_color, w);
+        accumulated = mix(imageLoad(accum_image, px).rgb, sample_color, w);
+        moments = mix(imageLoad(moments_image, px).rg, sample_moments, w);
     }
-    imageStore(accum_image, px, vec4(accumulated, 1.0));
 
-    vec3  raw_n = gbuffer_raw_normal(px);
-    bool  miss = gbuffer_is_sky(raw_n);
-    vec3  N = miss ? vec3(0.0) : normalize(raw_n);
-    float mat_type = miss ? 0.0 : float(mats[gbuffer_matid(px)].type);
+    // Alpha carries the sample count the denoiser divides the variance by. It is the frame
+    // index for every pixel alike; it lives here rather than in a uniform so the denoiser
+    // reads the count from the same place as the moments it belongs to.
+    imageStore(accum_image, px, vec4(accumulated, float(max(frame_index, 1))));
+    imageStore(moments_image, px, vec4(moments, 0.0, 0.0));
 
+    float mat_type = miss ? 0.0 : float(mats[matid].type);
     imageStore(normals_image, px, vec4(N * 0.5 + 0.5, mat_type));
 }

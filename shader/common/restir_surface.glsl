@@ -25,7 +25,34 @@ struct RestirSurface {
     vec3 normal;    // shading normal there, already normalized and front-facing
     uint matid;     // material at the resampling vertex, for reuse validation
     vec3 view_dir;  // unit vector from the resampling vertex toward the viewer, for the BRDF
-    float _pad;
+    uint offset_n;  // octahedral-packed ray-origin offset normal; see restir_surface_offset_origin
 };
+
+vec2 restir_oct_wrap(vec2 v) {
+    return (1.0 - abs(v.yx)) * vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
+}
+
+uint restir_pack_normal(vec3 n) {
+    n /= abs(n.x) + abs(n.y) + abs(n.z);
+    vec2 e = (n.z >= 0.0) ? n.xy : restir_oct_wrap(n.xy);
+    return packSnorm2x16(e);
+}
+
+vec3 restir_unpack_normal(uint p) {
+    vec2 e = unpackSnorm2x16(p);
+    vec3 n = vec3(e, 1.0 - abs(e.x) - abs(e.y));
+    if (n.z < 0.0) {
+        n.xy = restir_oct_wrap(n.xy);
+    }
+    return normalize(n);
+}
+
+// Shadow-ray origin for the resampling vertex. Offset along the geometric normal, like
+// path_continue: the shading normal can tilt past the tangent plane on smooth-shaded meshes
+// and start the ray inside the surface. Primary vertices have no triangle and store the
+// shading normal, matching the path tracer's fallback.
+vec3 restir_surface_offset_origin(in RestirSurface s) {
+    return s.position + 0.001 * restir_unpack_normal(s.offset_n);
+}
 
 #endif

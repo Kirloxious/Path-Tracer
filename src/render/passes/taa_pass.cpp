@@ -30,7 +30,7 @@ void TaaPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     glBindTextureUnit(7, targets.taa_history.handle);
 
     shader.setIVec2("image_size", width, height);
-    shader.setInt("frame_index", ctx.frameIndex);
+    shader.setInt("frame_index", ctx.historyFrames);
     // High history weight so per-frame jitter mostly cancels out. Catmull-Rom
     // resampling keeps this from turning into visible blur (which pure bilinear at
     // this weight would).

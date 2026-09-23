@@ -44,8 +44,8 @@ struct alignas(16) RestirSurfaceData
     uint32_t  valid;    ///< 0 when this pixel has no diffuse resampling vertex.
     glm::vec3 normal;   ///< Shading normal there.
     uint32_t  matid;    ///< Material at the resampling vertex, for reuse validation.
-    glm::vec3 albedo;   ///< Lambertian albedo there.
-    float     _pad;
+    glm::vec3 view_dir; ///< Unit vector toward the viewer, for the BRDF.
+    uint32_t  offset_n; ///< Octahedral-packed ray-origin offset normal (snorm 2x16).
 };
 static_assert(sizeof(RestirSurfaceData) == 48, "RestirSurface size must match std430 layout");
 

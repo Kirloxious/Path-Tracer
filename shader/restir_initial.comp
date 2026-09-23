@@ -9,6 +9,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/restir_surface.glsl"
 #include "common/gbuffer.glsl"
 #include "common/geom.glsl"
+#include "common/uniform_locations.glsl"
 
 layout(std430, binding = 18) restrict buffer RestirReservoirsCurrent {
     Reservoir reservoirs[];
@@ -23,6 +24,8 @@ layout(location = 0) uniform ivec2 image_size;
 layout(location = 1) uniform int frame_index;
 layout(location = 2) uniform int m_initial;
 layout(location = 3) uniform int time;
+layout(location = LOC_RUN_SEED) uniform int run_seed;
+layout(location = LOC_SAMPLE_INDEX) uniform int sample_index;
 layout(location = 4) uniform int num_light_groups;
 
 // How many perfect-mirror bounces the walk below will follow before giving up. A mirror
@@ -40,15 +43,14 @@ void surface_invalidate(uint pid) {
     s.normal = vec3(0.0);
     s.matid = 0u;
     s.view_dir = vec3(0.0);
-    s._pad = 0.0;
+    s.offset_n = 0u;
     surfaces[pid] = s;
 }
 
-vec2 sample_triangle_bary(inout uint state) {
-    float r1 = random_unilateral(state);
-    float r2 = random_unilateral(state);
-    float u = sqrt(r1);
-    return vec2(u * (1.0 - r2), u * r2);
+vec2 sample_triangle_bary(inout Sampler smp) {
+    vec2  u = sampler_2d(smp);
+    float r = sqrt(u.x);
+    return vec2(r * (1.0 - u.y), r * u.y);
 }
 
 // Single-candidate sampler. Returns true if the candidate is geometrically
@@ -60,18 +62,18 @@ bool sample_candidate(vec3 P,
     vec3 N,
     vec3 V,
     uint matid,
-    inout uint rng,
+    inout Sampler smp,
     out uint out_tri_idx,
     out vec2 out_bary,
     out float out_source_pdf_omega,
     out float out_target_pdf) {
-    int        gi  = sample_light_group(num_light_groups, rng);
+    int        gi  = sample_light_group(num_light_groups, smp);
     LightGroup grp = light_groups[gi];
     if (grp.total_area <= 0.0 || grp.count <= 0) return false;
 
-    int      lo  = sample_light_triangle(grp, rng);
+    int      lo  = sample_light_triangle(grp, smp);
     Triangle tri = triangles[lo];
-    vec2 bary = sample_triangle_bary(rng);
+    vec2 bary = sample_triangle_bary(smp);
     vec3 v0 = vertices[tri.indices.x].position;
     vec3 sp = v0 + bary.x * tri.e1 + bary.y * tri.e2;
 
@@ -90,7 +92,7 @@ bool sample_candidate(vec3 P,
 
     // Solid-angle pdf, treating the whole group as one uniform area light —
     // identical to the formula in shade_lambertian.comp's NEE.
-    float source_pdf_omega = -2.0 * tri.area * dist2 / (cross_dot * grp.total_area * float(num_light_groups));
+    float source_pdf_omega = grp.select_pdf * -2.0 * tri.area * dist2 / (cross_dot * grp.total_area);
     if (source_pdf_omega <= 0.0) return false;
 
     Material lmat = mats[tri.material_index];
@@ -102,7 +104,7 @@ bool sample_candidate(vec3 P,
     // resulting integrand per unit solid angle is f * Le * cos_theta.
     float ignored_pdf;
     vec3 f = bsdf_eval(mats[matid], N, V, light_dir, ignored_pdf);
-    vec3 contrib_rgb = f * lmat.emission * cos_theta;
+    vec3 contrib_rgb = f * material_emission(lmat) * cos_theta;
     float p_hat = restir_luminance(contrib_rgb);
     if (p_hat <= 0.0) return false;
 
@@ -163,7 +165,7 @@ void main() {
         // Must agree exactly with bsdf_sample()'s delta branch: that is the one scatter
         // reproducible by a plain reflect(), which is what lets a reservoir built by this
         // separate traversal describe the same vertex the path tracer lands on.
-        if (mat.type != MAT_SPECULAR || !bsdf_is_delta(mat)) {
+        if (mat.type != MAT_SPECULAR || !bsdf_is_mirror(mat)) {
             break;
         }
 
@@ -203,20 +205,28 @@ void main() {
     surf.normal = N;
     surf.matid = matid;
     surf.view_dir = V;
-    surf._pad = 0.0;
+    surf.offset_n = restir_pack_normal(offset_n);
     surfaces[pid] = surf;
 
-    // RNG seeded distinctly from the path tracer's so reservoir noise is
-    // independent of scattering noise.
-    uint rng = (pid * 5419u + uint(frame_index) * 31337u + uint(time) * 78979u + 0xA5A5u) | 1u;
+    // Two streams, for two different jobs. Candidate *generation* wants stratification, so it
+    // draws from the low-discrepancy sampler with a frame-invariant seed; the reservoir's
+    // acceptance test is a Bernoulli trial where stratification buys nothing and a shared
+    // low-discrepancy stream would only correlate selections, so it keeps a PCG stream seeded
+    // distinctly from the path tracer's.
+    Sampler smp = sampler_init(sampler_seed(pid, uint(run_seed) + 0x5419u), sample_index, 0u);
+    uint    rng = (pid * 5419u + uint(frame_index) * 31337u + uint(time) * 78979u + 0xA5A5u) | 1u;
 
     int M = max(1, m_initial);
     for (int i = 0; i < M; ++i) {
+        // Fixed base per candidate: candidate i then walks its own dimensions every frame, so
+        // over frames the M candidates sweep the lights evenly instead of clumping.
+        sampler_set_dim(smp, uint(i) * 3u);
+
         uint tri_idx;
         vec2 bary;
         float source_pdf_omega;
         float p_hat;
-        if (!sample_candidate(P, N, V, matid, rng, tri_idx, bary, source_pdf_omega, p_hat)) {
+        if (!sample_candidate(P, N, V, matid, smp, tri_idx, bary, source_pdf_omega, p_hat)) {
             // Degenerate candidate still increments M (it was drawn from the source distribution
             // and rejected by target=0). This keeps the RIS estimator unbiased.
             r.M += 1.0;
@@ -226,7 +236,7 @@ void main() {
         reservoir_update(r, tri_idx, bary, p_hat, w_i, rng);
     }
 
-    reservoir_finalize(r);
+    reservoir_finalize(r, r.M);
 
     // Visibility test on the chosen sample. Occluded → keep reservoir state
     // (so temporal/spatial reuse can recover later) but zero W so this frame's
@@ -235,8 +245,7 @@ void main() {
         Triangle tri = triangles[r.light_tri_idx];
         vec3 v0 = vertices[tri.indices.x].position;
         vec3 sp = v0 + r.bary.x * tri.e1 + r.bary.y * tri.e2;
-        // Match shade_lambertian's ray-origin offset to keep self-intersection rules consistent.
-        if (!is_visible(P + 0.001 * N, sp)) {
+        if (!is_visible(restir_surface_offset_origin(surf), sp)) {
             r.W = 0.0;
         }
     }

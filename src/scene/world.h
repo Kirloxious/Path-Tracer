@@ -55,15 +55,24 @@ public:
     /**
      * @brief One area light: a run of consecutive emissive triangles sharing a material.
      *
-     * `(begin, count, total_area)` — one entry per source emissive primitive. Stored as a
-     * 16-byte struct so the std430 upload matches the GLSL declaration exactly.
+     * One entry per source emissive primitive. Field layout must match the GLSL `LightGroup`
+     * in `shader/common/primitives.glsl` exactly.
+     *
+     * Selection between groups is by emitted power, not uniformly, so a dim fill light and a
+     * bright key light stop receiving the same number of samples. That makes the selection
+     * probability per-group rather than a constant, which is why `selectPdf` has to be stored
+     * and why every caller multiplies by it instead of dividing by the group count.
      */
     struct alignas(16) LightGroup
     {
-        int32_t begin = 0;         ///< Index of the group's first triangle in `triangles`.
-        int32_t count = 0;         ///< Number of triangles in the group.
-        float   total_area = 0.0f; ///< Summed area, used to convert the area pdf.
-        float   _pad = 0.0f;
+        int32_t  begin = 0;        ///< Index of the group's first triangle in `triangles`.
+        int32_t  count = 0;        ///< Number of triangles in the group.
+        float    totalArea = 0.0f; ///< Summed area, used to convert the area pdf.
+        uint32_t aliasPacked = 0;  ///< Alias entry over groups: bits 31..16 unorm16 accept probability, 15..0 alias target.
+        float    selectPdf = 0.0f; ///< Probability this group is chosen — power / total power.
+        float    _pad0 = 0.0f;
+        float    _pad1 = 0.0f;
+        float    _pad2 = 0.0f;
     };
 
     std::vector<Vertex>     vertices;
@@ -289,4 +298,8 @@ private:
      * appearance should duplicate the material.
      */
     void buildLightGroups();
+
+    /// Builds the power-weighted alias table used to pick between groups. Called by
+    /// buildLightGroups() once every group's area is known.
+    void buildLightGroupSelection();
 };

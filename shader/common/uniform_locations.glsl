@@ -31,7 +31,13 @@
 #define LOC_NUM_LIGHT_GROUPS    11  // shade_lambertian.comp, shade_emissive.comp
 #define LOC_BOUNCE_INDEX        12  // shade_* kernels (shared shape, so pinned here)
 #define LOC_MAX_BOUNCES         13  // shade_* kernels
+// The sampler's two inputs. Header-owned rather than private because four unrelated kernels
+// declare them and they must mean the same thing in each: a per-frame seed or a restarting
+// index would each silently flatten the low-discrepancy sequence back to white noise.
+#define LOC_SAMPLE_INDEX        14  // common/path_continue.glsl, restir_initial, restir_spatial
+#define LOC_RUN_SEED            15  // generate.comp, restir_initial, restir_spatial
 #define LOC_ENV_MAP_VALID       20  // common/envmap.glsl
 #define LOC_ENV_MAP_INTENSITY   21  // common/envmap.glsl
+#define LOC_ENV_SAMPLE_SIZE     22  // common/envmap.glsl
 
 #endif

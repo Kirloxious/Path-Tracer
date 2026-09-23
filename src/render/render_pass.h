@@ -18,13 +18,23 @@ struct RenderContext
 {
     const Scene&  scene;
     const Camera& camera;
-    /// Frames accumulated since the last reset. 0 means "first frame of a new accumulation",
-    /// which passes use to skip temporal reuse and to prime EMA state.
+    /// Frames accumulated since the last reset; 1 on the first frame of a new accumulation, 0 on
+    /// a frame whose shaders were just reloaded.
     int frameIndex;
-    /// Per-run random seed, mixed into the GPU RNG so different runs don't share frame-1 noise.
+    /// Advances every frame. Seeds the PCG streams (reservoir acceptance), which want a fresh
+    /// sequence per frame. NOT for the low-discrepancy sampler — see runSeed.
     uint32_t timeSeed;
     /// Seconds since the last frame — used by EMA-style passes (auto-exposure).
     float dt;
+    /// Constant for one accumulation; changes only when `frameIndex` resets. The low-discrepancy
+    /// sampler's per-pixel seed folds this in and nothing else: its stratification is *across
+    /// frames*, so a seed that changed mid-accumulation would reduce the sequence to white
+    /// noise. `frameIndex` is its sample index.
+    uint32_t runSeed;
+    /// Frames since temporal history (TAA, ReSTIR reservoirs) was last invalidated by a resize,
+    /// scene switch or shader reload. Unlike `frameIndex` it survives camera motion, which
+    /// reprojection exists to follow.
+    int historyFrames;
 };
 
 /**

@@ -43,11 +43,6 @@ void main() {
     if (px.x >= image_size.x || px.y >= image_size.y) return;
     uint pid = uint(px.y * image_size.x + px.x);
 
-    // First frame has no temporal history. The prev reservoir buffer is zero-
-    // cleared at construction so it would early-out below anyway, but skipping
-    // here saves the gbuffer fetches and reprojection math.
-    if (frame_index <= 1) return;
-
     // The reservoir describes the resampling surface, which past a mirror is not the
     // surface this pixel rasterized — so validation compares resampling surfaces, while
     // reprojection still uses the G-buffer, because which pixel saw this reflection last
@@ -98,12 +93,21 @@ void main() {
     float p_hat_prev_at_current = restir_target_pdf(P, N, V, cur_surf.matid, prev.light_tri_idx, prev.bary);
     if (p_hat_prev_at_current <= 0.0) return;
 
-    Reservoir cur = reservoirs[pid];
+    Reservoir cur   = reservoirs[pid];
+    float     own_M = cur.M;
 
     uint rng = (pid * 7919u + uint(frame_index) * 50331u + uint(time) * 12289u + 0xCAFEBABEu) | 1u;
 
     reservoir_combine(cur, prev, p_hat_prev_at_current, rng);
-    reservoir_finalize(cur);
+
+    // Z for the unbiased normalization. cur.target_pdf is by construction the winning
+    // sample's p_hat at *this* surface, so the own-reservoir term needs no re-evaluation;
+    // the history's does, at the surface that history reservoir describes.
+    float Z = (cur.target_pdf > 0.0) ? own_M : 0.0;
+    if (restir_target_pdf(prev_surf.position, prev_surf.normal, prev_surf.view_dir, prev_surf.matid, cur.light_tri_idx, cur.bary) > 0.0) {
+        Z += prev.M;
+    }
+    reservoir_finalize(cur, Z);
 
     // Visibility test on the (possibly updated) chosen sample. Even if cur
     // was already visibility-tested in the initial pass, the chosen sample
@@ -113,7 +117,7 @@ void main() {
         Triangle tri = triangles[cur.light_tri_idx];
         vec3     v0  = vertices[tri.indices.x].position;
         vec3     sp  = v0 + cur.bary.x * tri.e1 + cur.bary.y * tri.e2;
-        if (!is_visible(P + 0.001 * N, sp)) {
+        if (!is_visible(restir_surface_offset_origin(cur_surf), sp)) {
             cur.W = 0.0;
         }
     }

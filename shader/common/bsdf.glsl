@@ -46,6 +46,16 @@ vec3 bsdf_diffuse_albedo(Material m) {
     return m.base_color * (1.0 - m.metallic) * (1.0 - m.transmission);
 }
 
+/// @return true for a perfect mirror: a delta specular lobe and *no* diffuse lobe beside it.
+///
+/// Distinct from bsdf_is_delta. A smooth dielectric (metallic 0, roughness 0) has a delta coat
+/// over a diffuse base; only a pure mirror is invisible to NEE, and only a pure mirror is a
+/// deterministic scatter that restir_initial's reflect() walk can follow.
+bool bsdf_is_mirror(Material m) {
+    vec3 d = bsdf_diffuse_albedo(m);
+    return bsdf_is_delta(m) && max(d.r, max(d.g, d.b)) <= 0.0;
+}
+
 float bsdf_D_ggx(float NoH, float alpha) {
     float a2 = alpha * alpha;
     float d  = NoH * NoH * (a2 - 1.0) + 1.0;
@@ -91,13 +101,20 @@ void bsdf_onb(vec3 n, out vec3 t, out vec3 b) {
     b = vec3(c, s + n.y * n.y * a, -n.y);
 }
 
-/// Probability of choosing the specular lobe. Weighting by luminance keeps sample counts
-/// proportional to each lobe's contribution; the +0.04 floor stops a smooth white dielectric
-/// from almost never sampling its (visually dominant) highlight. A conductor has no diffuse
-/// albedo, so this returns exactly 1 and no samples are wasted.
-float bsdf_spec_prob(Material m) {
-    float wd = bsdf_luminance(bsdf_diffuse_albedo(m));
-    float ws = bsdf_luminance(bsdf_f0(m)) + 0.04;
+/// Probability of choosing the specular lobe, weighting each lobe by the reflectance it
+/// actually has at this view angle.
+///
+/// The Fresnel term is what makes that view-dependent, and it matters at grazing incidence:
+/// there a dielectric reflects nearly everything and the diffuse lobe carries the matching
+/// (1 - F), so a view-independent split keeps spending half its samples on a lobe already
+/// scaled to nothing. F >= f0 >= 0.04 for a dielectric, which subsumes the explicit floor
+/// this used to need. A conductor has no diffuse albedo, so it still returns exactly 1.
+///
+/// bsdf_eval and bsdf_sample must pass the same NoV, or the density that is evaluated stops
+/// describing the procedure that sampled it.
+float bsdf_spec_prob(Material m, float NoV) {
+    float ws = bsdf_luminance(bsdf_F_schlick(bsdf_f0(m), NoV));
+    float wd = bsdf_luminance(bsdf_diffuse_albedo(m)) * (1.0 - ws);
     return ws / max(wd + ws, 1e-6);
 }
 
@@ -125,10 +142,59 @@ vec3 bsdf_energy_compensation(vec3 f0, float NoV, float roughness) {
     return vec3(1.0) + f0 * (1.0 / max(Ess, 1e-3) - 1.0);
 }
 
-/// Evaluates f_r(V, L) and the combined sampling pdf for a non-delta surface.
-/// Returns 0 for a delta material — such a lobe cannot be hit by an explicitly sampled
-/// direction, which is exactly why NEE must skip those surfaces.
+/// Evaluates f_r(V, L) and the combined sampling pdf for an explicitly chosen direction.
+/// A delta specular lobe cannot be hit that way, so it contributes nothing here: a pure
+/// mirror returns 0, and a smooth dielectric returns only its diffuse base.
 vec3 bsdf_eval(Material m, vec3 N, vec3 V, vec3 L, out float pdf) {
+    pdf = 0.0;
+    if (bsdf_is_mirror(m)) {
+        return vec3(0.0);
+    }
+
+    float NoL = dot(N, L);
+    float NoV = dot(N, V);
+    if (NoL <= 0.0 || NoV <= 0.0) {
+        return vec3(0.0);
+    }
+
+    if (bsdf_is_delta(m)) {
+        // The coat reflects F(NoV) along the mirror direction, so the base receives the rest.
+        float ps = bsdf_spec_prob(m, NoV);
+        pdf      = (1.0 - ps) * (NoL / PI);
+        return (vec3(1.0) - bsdf_F_schlick(bsdf_f0(m), NoV)) * bsdf_diffuse_albedo(m) * (1.0 / PI);
+    }
+
+    vec3  H   = normalize(V + L);
+    float NoH = max(dot(N, H), 0.0);
+    float VoH = max(dot(V, H), 0.0);
+
+    float alpha = bsdf_alpha(m);
+    vec3  F     = bsdf_F_schlick(bsdf_f0(m), VoH);
+    float D     = bsdf_D_ggx(NoH, alpha);
+
+    vec3 specular = F * D * bsdf_V_smith(NoV, NoL, alpha) * bsdf_energy_compensation(bsdf_f0(m), NoV, m.roughness);
+    // (1 - F) keeps the pair energy-conserving: what the specular lobe reflects cannot also
+    // enter the diffuse one.
+    vec3 diffuse = (vec3(1.0) - F) * bsdf_diffuse_albedo(m) * (1.0 / PI);
+
+    float ps = bsdf_spec_prob(m, NoV);
+    pdf = ps * (D * bsdf_G1_smith(NoV, alpha) / (4.0 * NoV)) + (1.0 - ps) * (NoL / PI);
+
+    return diffuse + specular;
+}
+
+/// Reflection lobe of a rough dielectric, evaluated for an explicitly chosen direction.
+///
+/// Transmission is deliberately not covered: connecting a light to the viewer *through* a
+/// refracting interface is a constrained-path problem, so a refracted direction correctly gets
+/// zero density here and stays the business of BSDF sampling alone.
+///
+/// The reflect/refract split is a Fresnel-weighted coin flip, so F is both this lobe's weight
+/// and the probability the sampler would have branched into it — which is why it appears in
+/// the pdf as well as the value.
+///
+/// @param eta Relative IOR being crossed: 1/ior entering, ior leaving.
+vec3 bsdf_eval_dielectric_reflection(Material m, vec3 N, vec3 V, vec3 L, float eta, out float pdf) {
     pdf = 0.0;
     if (bsdf_is_delta(m)) {
         return vec3(0.0);
@@ -145,18 +211,23 @@ vec3 bsdf_eval(Material m, vec3 N, vec3 V, vec3 L, out float pdf) {
     float VoH = max(dot(V, H), 0.0);
 
     float alpha = bsdf_alpha(m);
-    vec3  F     = bsdf_F_schlick(bsdf_f0(m), VoH);
+    float F     = bsdf_fresnel_dielectric(VoH, eta);
     float D     = bsdf_D_ggx(NoH, alpha);
 
-    vec3 specular = F * D * bsdf_V_smith(NoV, NoL, alpha) * bsdf_energy_compensation(bsdf_f0(m), NoV, m.roughness);
-    // (1 - F) keeps the pair energy-conserving: what the specular lobe reflects cannot also
-    // enter the diffuse one.
-    vec3 diffuse = (vec3(1.0) - F) * bsdf_diffuse_albedo(m) * (1.0 / PI);
+    pdf = F * D * bsdf_G1_smith(NoV, alpha) / (4.0 * NoV);
+    return vec3(F * D * bsdf_V_smith(NoV, NoL, alpha));
+}
 
-    float ps = bsdf_spec_prob(m);
-    pdf = ps * (D * bsdf_G1_smith(NoV, alpha) / (4.0 * NoV)) + (1.0 - ps) * (NoL / PI);
-
-    return diffuse + specular;
+/// Cosine-weighted direction about N, by Malley's method: a concentric point on the disc
+/// lifted to the hemisphere. The pdf is unchanged at NoL / PI, but unlike `N + a random unit
+/// vector` — also cosine-distributed — this is a smooth warp of the unit square, so a
+/// stratified input still covers the hemisphere evenly once warped.
+vec3 bsdf_sample_cosine(vec3 N, vec2 u) {
+    float r   = sqrt(u.x);
+    float phi = 2.0 * PI * u.y;
+    vec3  T, B;
+    bsdf_onb(N, T, B);
+    return normalize(r * cos(phi) * T + r * sin(phi) * B + sqrt(max(0.0, 1.0 - u.x)) * N);
 }
 
 /// Sampled-visible-normal distribution sampling (Heitz 2018). `Ve` is the view direction in
@@ -182,9 +253,9 @@ vec3 bsdf_sample_vndf(vec3 Ve, float alpha, vec2 u) {
 ///   out_L      sampled direction
 ///   out_weight f * cos / pdf — multiply straight into throughput
 ///   out_pdf    solid-angle pdf, or 0 for a delta lobe (nothing to MIS against)
-///   out_delta  true when the sample came from a perfect mirror
+///   out_delta  true when the sample came from a delta lobe
 /// @return false when the sample is unusable and the path should die.
-bool bsdf_sample(Material m, vec3 N, vec3 V, inout uint rng, out vec3 out_L, out vec3 out_weight, out float out_pdf, out bool out_delta) {
+bool bsdf_sample(Material m, vec3 N, vec3 V, inout Sampler smp, out vec3 out_L, out vec3 out_weight, out float out_pdf, out bool out_delta) {
     out_L      = vec3(0.0);
     out_weight = vec3(0.0);
     out_pdf    = 0.0;
@@ -196,31 +267,43 @@ bool bsdf_sample(Material m, vec3 N, vec3 V, inout uint rng, out vec3 out_L, out
     }
 
     if (bsdf_is_delta(m)) {
-        out_L = reflect(-V, N);
-        if (dot(out_L, N) <= 0.0) {
+        // A pure mirror skips the coin flip, keeping its scatter exactly the reflect() that
+        // restir_initial's walk reproduces.
+        float ps = bsdf_is_mirror(m) ? 1.0 : bsdf_spec_prob(m, NoV);
+        if (ps >= 1.0 || sampler_1d(smp) < ps) {
+            out_L = reflect(-V, N);
+            if (dot(out_L, N) <= 0.0) {
+                return false;
+            }
+            // Delta lobe: the D and G terms cancel against the pdf, leaving only Fresnel.
+            out_weight = bsdf_F_schlick(bsdf_f0(m), NoV) / ps;
+            out_pdf    = 0.0;
+            out_delta  = true;
+            return true;
+        }
+        out_L     = bsdf_sample_cosine(N, sampler_2d(smp));
+        float NoL = dot(N, out_L);
+        if (NoL <= 0.0) {
             return false;
         }
-        // Delta lobe: the D and G terms cancel against the pdf, leaving only Fresnel.
-        out_weight = bsdf_F_schlick(bsdf_f0(m), NoV);
-        out_pdf    = 0.0;
-        out_delta  = true;
+        vec3 f = bsdf_eval(m, N, V, out_L, out_pdf);
+        if (out_pdf <= 0.0) {
+            return false;
+        }
+        out_weight = f * NoL / out_pdf;
         return true;
     }
 
     float alpha = bsdf_alpha(m);
-    if (random_unilateral(rng) < bsdf_spec_prob(m)) {
+    if (sampler_1d(smp) < bsdf_spec_prob(m, NoV)) {
         vec3 T, B;
         bsdf_onb(N, T, B);
         vec3 Vl = vec3(dot(V, T), dot(V, B), NoV);
-        vec3 Hl = bsdf_sample_vndf(Vl, alpha, vec2(random_unilateral(rng), random_unilateral(rng)));
+        vec3 Hl = bsdf_sample_vndf(Vl, alpha, sampler_2d(smp));
         vec3 H  = normalize(Hl.x * T + Hl.y * B + Hl.z * N);
         out_L   = reflect(-V, H);
     } else {
-        vec3 d = N + random_unit_vector(rng);
-        if (dot(d, d) < 1e-8) {
-            d = N;
-        }
-        out_L = normalize(d);
+        out_L = bsdf_sample_cosine(N, sampler_2d(smp));
     }
 
     float NoL = dot(N, out_L);
@@ -253,12 +336,17 @@ bool bsdf_sample(Material m, vec3 N, vec3 V, inout uint rng, out vec3 out_L, out
 /// @param eta             Relative IOR being crossed into: 1/ior entering, ior leaving.
 /// @param out_transmitted true when the ray passed through rather than bouncing off, which the
 ///                        caller needs in order to offset the new origin to the far side.
+/// @param out_pdf         solid-angle density of a *reflected* sample, for MIS against NEE on
+///                        the same lobe. Zero when the ray refracted or the interface is
+///                        smooth: no explicit direction sample competes for either, so an
+///                        emissive hit down those branches takes full weight.
 /// @return false when the sample is unusable and the path should die.
-bool bsdf_sample_transmissive(Material m, vec3 N, vec3 V, float eta, inout uint rng, out vec3 out_L, out vec3 out_weight,
-                              out bool out_transmitted) {
+bool bsdf_sample_transmissive(Material m, vec3 N, vec3 V, float eta, inout Sampler smp, out vec3 out_L, out vec3 out_weight,
+                              out bool out_transmitted, out float out_pdf) {
     out_L           = vec3(0.0);
     out_weight      = vec3(1.0);
     out_transmitted = false;
+    out_pdf         = 0.0;
 
     float NoV = dot(N, V);
     if (NoV <= 0.0) {
@@ -273,7 +361,7 @@ bool bsdf_sample_transmissive(Material m, vec3 N, vec3 V, float eta, inout uint 
         vec3 T, B;
         bsdf_onb(N, T, B);
         vec3 Vl = vec3(dot(V, T), dot(V, B), NoV);
-        vec3 Hl = bsdf_sample_vndf(Vl, alpha, vec2(random_unilateral(rng), random_unilateral(rng)));
+        vec3 Hl = bsdf_sample_vndf(Vl, alpha, sampler_2d(smp));
         H       = normalize(Hl.x * T + Hl.y * B + Hl.z * N);
     }
 
@@ -286,8 +374,13 @@ bool bsdf_sample_transmissive(Material m, vec3 N, vec3 V, float eta, inout uint 
     bool  tir = (eta * eta * (1.0 - VoH * VoH)) > 1.0;
     float F   = tir ? 1.0 : bsdf_fresnel_dielectric(VoH, eta);
 
-    if (random_unilateral(rng) < F) {
+    if (sampler_1d(smp) < F) {
         out_L = reflect(-V, H);
+        if (!delta) {
+            // Must match bsdf_eval_dielectric_reflection's pdf exactly — one is the density
+            // NEE weights against, the other the density that produced this sample.
+            out_pdf = F * bsdf_D_ggx(max(dot(N, H), 0.0), alpha) * bsdf_G1_smith(NoV, alpha) / (4.0 * NoV);
+        }
     } else {
         out_L = refract(-V, H, eta);
         // Floating-point edge case: the analytic TIR guard above can disagree with refract()'s
@@ -298,10 +391,9 @@ bool bsdf_sample_transmissive(Material m, vec3 N, vec3 V, float eta, inout uint 
             out_L = reflect(-V, H);
         } else {
             out_transmitted = true;
-            // Tint what passes through. Beer-Lambert over the path length would be the
-            // physical model; a per-crossing tint is the cheap approximation, and it is what
-            // makes coloured glass expressible at all (Material::Glass leaves this at white).
-            out_weight = m.base_color;
+            // Absorption is not applied here. It depends on how far the ray travels inside the
+            // medium, which this function cannot know; shade_transmissive applies Beer-Lambert
+            // over that segment when the ray reaches the far side.
         }
     }
 
