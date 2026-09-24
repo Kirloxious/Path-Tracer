@@ -4,12 +4,7 @@
 // All queue counters share one SSBO. NVIDIA caps GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS
 // at 16; with one counter per queue plus one indices block each, plus path_state (×1) and
 // scene (×5), a counter-per-queue layout linked at 18 blocks and failed ("error C5058: no
-// buffers available for bindable storage buffer"). Sharing the counter SSBO fixed that.
-//
-// Unifying the material model then removed a queue outright: shade_lambertian and
-// shade_metal collapsed into shade_opaque once the metallic-roughness BSDF made their bodies
-// identical. Five queues instead of six means one fewer SSBO block declared in every kernel
-// that includes this header — the headroom the bindless-texture work will need.
+// buffers available for bindable storage buffer"). Sharing the counter SSBO avoids that.
 
 #include "host_shared.glsl"
 

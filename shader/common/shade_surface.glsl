@@ -16,9 +16,7 @@
 
 // The whole shading step for one reflective surface vertex: direct lighting (ReSTIR at the
 // anchor, analytic NEE elsewhere), the BSDF continuation, MIS bookkeeping and Russian
-// roulette. Both shade_lambertian.comp and shade_metal.comp are thin wrappers over this —
-// with a unified metallic-roughness BSDF the two kernels differ only in which queue they
-// drain, and duplicating the body would guarantee the copies drift apart.
+// roulette. shade_opaque.comp is a thin wrapper over this, for Diffuse and Specular alike.
 //
 // Transmission is deliberately NOT handled here; shade_transmissive.comp keeps its own
 // smooth reflect/refract path.

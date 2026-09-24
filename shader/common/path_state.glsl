@@ -15,7 +15,7 @@ const uint NO_TRIANGLE = 0xFFFFFFFFu;
 
 // 96 bytes. Every `vec3 + scalar` pair fits in one 16-byte std430 slot.
 // NEE fields (nee_dir/nee_dist/nee_le) intentionally live in ShadowState below —
-// only shade_lambertian writes them, only trace_shadow reads them, so keeping
+// only shade_surface writes them, only trace_shadow reads them, so keeping
 // them out of the hot state cuts the per-thread traffic in every other kernel.
 struct PathState {
     vec3  throughput;
@@ -38,7 +38,7 @@ layout(std430, binding = BIND_PATH_STATE) restrict buffer PathStateBuffer {
     PathState states[];
 };
 
-// ShadowState lives in shadow_state.glsl — only shade_lambertian and trace_shadow
+// ShadowState lives in shadow_state.glsl — only the shade kernels and trace_shadow
 // need it, so keeping it out of this header keeps other kernels under the
 // NVIDIA GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS=16 cap.
 

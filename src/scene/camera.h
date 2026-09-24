@@ -81,14 +81,14 @@ public:
     int image_height;
 
     glm::vec3 forward, right, up;
-    float     yaw = 0.0f;   ///< Radians about the world up axis.
-    float     pitch = 0.0f; ///< Radians about the local right axis, clamped away from the poles.
+    float     yaw = 0.0f;   ///< Degrees about the world up axis.
+    float     pitch = 0.0f; ///< Degrees about the local right axis, clamped to ±89.
 
     /// Set by update() when this frame's input changed the view. Application resets
     /// `frameIndex` on it, restarting progressive accumulation.
     bool  moving = false;
     float moveSpeed = 20.0f; ///< World units per second.
-    float lookSpeed = 1.1f;  ///< Radians per second.
+    float lookSpeed = 1.1f;  ///< Degrees per 1/60 s, i.e. per frame at 60 FPS.
 
     /**
      * @brief Builds the initial basis, view and projection matrices from @p settings.

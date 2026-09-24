@@ -13,11 +13,8 @@ layout(std430, binding = BIND_RESERVOIRS_CURRENT) restrict readonly buffer Resti
 
 // Every reflective surface — MaterialClass::Diffuse and MaterialClass::Specular alike.
 //
-// These were two kernels (shade_lambertian / shade_metal) back when the material model had
-// discrete types with genuinely different scatter code. The unified metallic-roughness BSDF
-// made them the same body, so they are now one queue and one dispatch. That deletes an SSBO
-// block from every kernel that includes queue.glsl, which is what buys back the binding
-// headroom the texture work needs (see common/queue.glsl).
+// The metallic-roughness BSDF gives both classes the same body, so they share one queue and
+// one dispatch — one fewer SSBO block in every kernel that includes queue.glsl.
 //
 // Transmission still has its own kernel: shade_transmissive.comp keeps the smooth
 // reflect/refract path, which the BSDF here does not model.

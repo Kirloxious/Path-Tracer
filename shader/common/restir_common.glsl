@@ -40,7 +40,7 @@ const uint RESTIR_INVALID_TRI = 0xFFFFFFFFu;
 //   reservoirs[]      → shadow_reservoirs.glsl-style headers (below)
 //   prev_reservoirs[] → only restir_temporal.comp
 //   spatial_input[]   → only restir_spatial.comp
-// Splitting them keeps shade_lambertian under NVIDIA's 16-SSBO cap while
+// Splitting them keeps shade_opaque under NVIDIA's 16-SSBO cap while
 // letting the ReSTIR kernels still share the Reservoir struct and helpers here.
 
 // Which surfaces can hold a reservoir.

@@ -33,7 +33,7 @@ public:
     Renderer(int w, int h);
 
     /**
-     * @brief (Re)uploads all scene buffers and re-fires uploadUniforms() on every pass.
+     * @brief (Re)uploads all scene buffers and SceneConstants, then calls onSceneLoaded() on every pass.
      *
      * Used both at startup and when the GUI requests a scene switch. An unlit scene is legal
      * and gets a single zeroed light group. The envmap is rebuilt from

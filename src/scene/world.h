@@ -273,7 +273,7 @@ private:
     bool created = false;
 
     /**
-     * @brief Coalesces emissive triangles into LightGroups and bakes their sampling CDF.
+     * @brief Coalesces emissive triangles into LightGroups and bakes their alias tables.
      *
      * Groups consecutive emissive triangles that share a material into a single light, then
      * writes an area-weighted alias table into each emissive triangle's `alias_packed`.
