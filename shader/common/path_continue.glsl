@@ -8,19 +8,11 @@
 #include "uniform_locations.glsl"
 #include "constants.glsl"
 
-// Everything a scattered path does *after* its new direction has been chosen: ray-origin
-// offset, bounce accounting, MIS flag bookkeeping, Russian roulette, state store and requeue.
-//
-// Owned here rather than copied into each shade kernel. shade_opaque and shade_transmissive
-// scatter by completely different rules but continue the path by identical ones, and the
-// duplicated copies had already started to diverge in their comments — the kind of drift that
-// ends with two subtly different Russian-roulette cutoffs.
-//
-// Declared here, not in the kernels, so every shade kernel that continues a path agrees on it.
+// Everything a scattered path does after its new direction is chosen — origin offset, MIS flag
+// bookkeeping, Russian roulette, requeue — shared so every shade kernel continues paths alike.
 layout(location = LOC_BOUNCE_INDEX) uniform int bounce_index;
 
-// The sampler for one path vertex. Rebasing the dimension on `bounce` is what keeps the
-// vertices of a path drawing from disjoint groups instead of re-walking the same ones.
+// Rebased on `bounce` so a path's vertices draw from disjoint dimension groups.
 Sampler path_sampler(in PathState s) {
     return sampler_init(s.rng_state, frame_index, s.bounce * SAMPLER_DIMS_PER_BOUNCE);
 }
@@ -31,8 +23,7 @@ Sampler path_sampler(in PathState s) {
  * @param s                    Path state, mutated in place. `throughput` must already carry
  *                             this scatter's weight; the caller owns the BSDF.
  * @param smp                  Sample stream, drawn from by Russian roulette.
- * @param new_dir              The scattered direction. The origin is offset to whichever side
- *                             it leaves on, so refraction needs no flag of its own.
+ * @param new_dir              The scattered direction, reflected or refracted.
  * @param keep_specular_prefix true only for a perfect-mirror scatter — the one scatter
  *                             restir_initial's deterministic reflect() walk can reproduce.
  *                             Any other lobe ends the chain.
@@ -43,8 +34,8 @@ Sampler path_sampler(in PathState s) {
  * @return false when Russian roulette killed the path.
  */
 bool path_continue(inout PathState s, inout Sampler smp, vec3 new_dir, bool keep_specular_prefix, uint nee_flags) {
-    // Pinned before the bounce is incremented, so roulette draws from the same group whether
-    // or not the BSDF above happened to be a delta lobe that took no samples at all.
+    // Taken before the bounce increments, so roulette's dimension does not depend on how many
+    // samples the BSDF drew.
     uint rr_dim  = s.bounce * SAMPLER_DIMS_PER_BOUNCE + 11u;
     s.ray_origin = surface_ray_origin(s.hit_point, s.hit_triangle_idx, s.hit_normal, new_dir);
     s.ray_dir    = new_dir;
@@ -56,11 +47,8 @@ bool path_continue(inout PathState s, inout Sampler smp, vec3 new_dir, bool keep
     }
     s.flags |= nee_flags;
 
-    // Russian roulette after a few bounces. Survival probability is capped at 0.95:
-    // uncapped, a throughput grown past 1 through earlier roulette divisions gives p > 1,
-    // the draw can then never exceed p, and roulette stops terminating anything —
-    // every path runs to max_bounces. The `p <= 0` early kill keeps a fully absorbed path
-    // dying immediately.
+    // Survival capped at 0.95: a throughput grown past 1 by earlier roulette divisions would
+    // otherwise give p >= 1 and never terminate.
     if (s.bounce > 2) {
         float p = min(max(s.throughput.r, max(s.throughput.g, s.throughput.b)), 0.95);
         sampler_set_dim(smp, rr_dim);
@@ -72,8 +60,8 @@ bool path_continue(inout PathState s, inout Sampler smp, vec3 new_dir, bool keep
     return true;
 }
 
-/// Writes the path state back and requeues it for tracing if it is still alive and the bounce
-/// budget allows. Must run even for a dead path — it carries this vertex's accumulated radiance.
+/// Writes the path state back and requeues a live path within the bounce budget. Must run for a
+/// dead path too — the state carries this vertex's radiance.
 void path_commit(uint pid, inout PathState s, bool alive) {
     states[pid] = s;
 

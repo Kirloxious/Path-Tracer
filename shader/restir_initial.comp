@@ -21,14 +21,11 @@ layout(std430, binding = BIND_SURFACES_CURRENT) restrict writeonly buffer Restir
 
 layout(location = 0) uniform int m_initial;
 
-// How many perfect-mirror bounces the walk below will follow before giving up. A mirror
-// facing a mirror can recurse indefinitely; 4 covers anything worth resampling and bounds
-// the cost of the walk on pathological geometry.
+// Mirror bounces the walk follows before giving up; bounds facing mirrors.
 const int MAX_MIRROR_DEPTH = 4;
 
-// Zero the whole record, not just the flag. Consumers check `valid` first, but leaving
-// last frame's position and normal behind makes any future bug read as plausible garbage
-// instead of an obvious zero.
+// Zeroes the whole record, not just `valid`, so a consumer bug reads an obvious zero rather
+// than last frame's plausible garbage.
 void surface_invalidate(uint pid) {
     RestirSurface s;
     s.position = vec3(0.0);
@@ -40,17 +37,8 @@ void surface_invalidate(uint pid) {
     surfaces[pid] = s;
 }
 
-vec2 sample_triangle_bary(inout Sampler smp) {
-    vec2  u = sampler_2d(smp);
-    float r = sqrt(u.x);
-    return vec2(r * (1.0 - u.y), r * u.y);
-}
-
-// Single-candidate sampler. Returns true if the candidate is geometrically
-// valid (light surface faces the receiver, receiver faces the light, group
-// is non-degenerate). On success, fills out the surface point, area-domain
-// source pdf, target pdf, and triangle index. Visibility is NOT tested here
-// — that happens once on the chosen sample after RIS.
+// One RIS candidate, with its solid-angle source pdf and target pdf. Unshadowed — visibility is
+// tested once, on the winner. @return false when the candidate has zero target pdf.
 bool sample_candidate(vec3 P,
     vec3 N,
     vec3 V,
@@ -64,41 +52,18 @@ bool sample_candidate(vec3 P,
     LightGroup grp = light_groups[gi];
     if (grp.total_area <= 0.0 || grp.count <= 0) return false;
 
-    int      lo  = sample_light_triangle(grp, smp);
-    Triangle tri = triangles[lo];
-    vec2 bary = sample_triangle_bary(smp);
-    vec3 v0 = vertices[tri.indices.x].position;
-    vec3 sp = v0 + bary.x * tri.e1 + bary.y * tri.e2;
+    int      lo   = sample_light_triangle(grp, smp);
+    Triangle tri  = triangles[lo];
+    vec2     bary = sample_triangle_bary(smp);
 
-    vec3 d = sp - P;
-    float dist2 = dot(d, d);
-    float inv_dist = inversesqrt(dist2);
-    vec3 light_dir = d * inv_dist;
+    vec3  d         = light_point(tri, bary) - P;
+    float dist2     = dot(d, d);
+    vec3  light_dir = d * inversesqrt(dist2);
 
-    // cross(e1,e2) is the unnormalized outward normal × 2*area; sign tells us
-    // whether the light surface faces the receiver. Negative dot = front face.
-    float cross_dot = dot(cross(tri.e1, tri.e2), light_dir);
-    if (cross_dot >= 0.0) return false;
-
-    float cos_theta = max(0.0, dot(N, light_dir));
-    if (cos_theta <= 0.0) return false;
-
-    // Solid-angle pdf, treating the whole group as one uniform area light —
-    // identical to the formula in nee.glsl.
-    float source_pdf_omega = grp.select_pdf * -2.0 * tri.area * dist2 / (cross_dot * grp.total_area);
+    float source_pdf_omega = light_solid_angle_pdf(tri, grp, light_dir, dist2);
     if (source_pdf_omega <= 0.0) return false;
 
-    Material lmat = mats[tri.material_index];
-    // Scalar target: luminance of f * Le * G with G already collapsed into the
-    // pdf above. shade_surface's NEE contribution (sans MIS) is
-    //   throughput * f * Le * cos_theta / source_pdf_omega.
-    // We strip throughput (constant per pixel here) and the 1/source_pdf_omega
-    // factor (since target_pdf is the integrand, not the estimator). The
-    // resulting integrand per unit solid angle is f * Le * cos_theta.
-    float ignored_pdf;
-    vec3 f = bsdf_eval(mats[matid], N, V, light_dir, ignored_pdf);
-    vec3 contrib_rgb = f * material_emission(lmat) * cos_theta;
-    float p_hat = restir_luminance(contrib_rgb);
+    float p_hat = restir_p_hat(N, V, matid, tri, light_dir);
     if (p_hat <= 0.0) return false;
 
     out_tri_idx = uint(lo);
@@ -116,17 +81,14 @@ void main() {
     Reservoir r;
     reservoir_clear(r);
 
-    // No light sampling possible — write empty reservoir and return.
     if (num_light_groups <= 0) {
         reservoirs[pid] = r;
         surface_invalidate(pid);
         return;
     }
 
-    // Read primary surface from the gbuffer.
     vec3 n = gbuffer_raw_normal(px);
 
-    // Sky / no hit: zero-length normal sentinel.
     if (gbuffer_is_sky(n)) {
         reservoirs[pid] = r;
         surface_invalidate(pid);
@@ -138,14 +100,9 @@ void main() {
     vec3     P     = gbuffer_world_pos(px, image_size);
     vec3     N     = normalize(n);
 
-    // Follow the specular chain to the first diffuse surface, and resample there.
-    //
-    // Only perfect mirrors are followed. A delta BSDF scatters by plain reflect(), so this
-    // walk and the path tracer provably land on the same vertex, which is what lets
-    // shade_opaque consume a reservoir that was built by a completely separate traversal. With a non-delta roughness, or through a transmissive surface
-    // (whose reflect/refract branch is a coin flip on its own RNG), the two would diverge
-    // and the reservoir would describe the wrong surface — those fall through to the null
-    // reservoir and keep using inline NEE, exactly as before.
+    // Follow perfect mirrors to the first surface that can anchor, and resample there. Only a
+    // mirror's plain reflect() lets this walk and the path tracer provably land on the same
+    // vertex; a rough or transmissive scatter would diverge.
     vec3 ray_dir = normalize(P - camera_position);
     // Tracked separately from the shading normal N, which drives reflect() and ends up in the
     // resampling surface. The walk must spawn every ray exactly as path_continue() does
@@ -154,9 +111,7 @@ void main() {
     int  tri_prev = NO_SKIP_TRI;
 
     for (int depth = 0; depth < MAX_MIRROR_DEPTH; ++depth) {
-        // Must agree exactly with bsdf_sample()'s delta branch: that is the one scatter
-        // reproducible by a plain reflect(), which is what lets a reservoir built by this
-        // separate traversal describe the same vertex the path tracer lands on.
+        // Must agree exactly with bsdf_sample()'s pure-mirror branch.
         if (mat.type != MAT_SPECULAR || !bsdf_is_mirror(mat)) {
             break;
         }
@@ -167,10 +122,10 @@ void main() {
 
         HitRecord hit;
         int tri_index;
-        if (!world_hit_stackless(refl, 0.0, 1e30, tri_prev, hit, tri_index)) {
+        if (!world_hit(refl, 0.0, 1e30, tri_prev, hit, tri_index)) {
             reservoirs[pid] = r;
             surface_invalidate(pid);
-            return; // mirror looking at the sky — nothing to resample
+            return;
         }
 
         ray_dir = refl.direction;
@@ -182,8 +137,6 @@ void main() {
         mat = mats[matid];
     }
 
-    // A chain that bottoms out on an emissive, a perfect mirror or a transmissive surface
-    // gets no reservoir — see restir_can_anchor().
     if (!restir_can_anchor(mat)) {
         reservoirs[pid] = r;
         surface_invalidate(pid);
@@ -201,18 +154,14 @@ void main() {
     surf.offset_n = restir_pack_normal(offset_n);
     surfaces[pid] = surf;
 
-    // Two streams, for two different jobs. Candidate *generation* wants stratification, so it
-    // draws from the low-discrepancy sampler with a frame-invariant seed; the reservoir's
-    // acceptance test is a Bernoulli trial where stratification buys nothing and a shared
-    // low-discrepancy stream would only correlate selections, so it keeps a PCG stream seeded
-    // distinctly from the path tracer's.
+    // Candidates draw from the stratified sampler; the acceptance tests use white noise, since a
+    // shared low-discrepancy stream would only correlate the selections.
     Sampler smp = sampler_init(sampler_seed(pid, run_seed + 0x5419u), frame_index, 0u);
-    uint    rng = (pid * 5419u + uint(frame_index) * 31337u + time_seed * 78979u + 0xA5A5u) | 1u;
+    uint    rng = pcg_seed(pid, time_seed, RESTIR_RNG_INITIAL);
 
     int M = max(1, m_initial);
     for (int i = 0; i < M; ++i) {
-        // Fixed base per candidate: candidate i then walks its own dimensions every frame, so
-        // over frames the M candidates sweep the lights evenly instead of clumping.
+        // Fixed dimensions per candidate, so each one's samples stratify across frames.
         sampler_set_dim(smp, uint(i) * 3u);
 
         uint tri_idx;
@@ -220,8 +169,7 @@ void main() {
         float source_pdf_omega;
         float p_hat;
         if (!sample_candidate(P, N, V, matid, smp, tri_idx, bary, source_pdf_omega, p_hat)) {
-            // Degenerate candidate still increments M (it was drawn from the source distribution
-            // and rejected by target=0). This keeps the RIS estimator unbiased.
+            // Still counts toward M: it was drawn from the source pdf, and RIS stays unbiased.
             r.M += 1.0;
             continue;
         }
@@ -229,8 +177,7 @@ void main() {
         reservoir_update(r, tri_idx, bary, p_hat, w_i, rng);
     }
 
-    // Not shadow-tested here: restir_temporal, which always runs next, tests whichever sample
-    // survives its combine, and a combine recomputes W from w_sum and would discard this test.
+    // Not shadow-tested: restir_temporal always runs next and tests whichever sample survives it.
     reservoir_finalize(r, r.M);
     reservoirs[pid] = r;
 }

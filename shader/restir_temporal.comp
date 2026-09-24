@@ -24,26 +24,19 @@ layout(std430, binding = BIND_SURFACES_PREV) restrict readonly buffer RestirSurf
     RestirSurface prev_surfaces[];
 };
 
-// The previous frame's G-buffer is no longer read here: validation moved to the
-// resampling-surface history (binding 25), which describes what the reservoir actually
-// covers. gbuf_prev is still produced and rotated by RasterGBufferPass for future use.
-
 layout(location = 0) uniform int m_cap;
 
 // Combines last frame's reservoir into `cur`, or leaves it untouched when there is no valid
 // history for this pixel.
 void combine_history(ivec2 px, uint pid, in RestirSurface cur_surf, inout Reservoir cur) {
-    // The reservoir describes the resampling surface, which past a mirror is not the
-    // surface this pixel rasterized — so validation compares resampling surfaces, while
-    // reprojection still uses the G-buffer, because which pixel saw this reflection last
-    // frame is a question about the primary hit.
+    // Reprojection follows the primary hit — which pixel saw this last frame — while validation
+    // compares resampling surfaces, which past a mirror are elsewhere.
     vec3 primary_pos = gbuffer_world_pos(px, image_size);
 
     vec3 P = cur_surf.position;
     vec3 N = cur_surf.normal;
     vec3 V = cur_surf.view_dir;
 
-    // Reproject the *primary* hit into the previous frame's un-jittered NDC.
     vec4 prev_clip = prev_view_proj_matrix * vec4(primary_pos, 1.0);
     if (prev_clip.w <= 0.0) return;
     vec3 prev_ndc = prev_clip.xyz / prev_clip.w;
@@ -53,34 +46,26 @@ void combine_history(ivec2 px, uint pid, in RestirSurface cur_surf, inout Reserv
     ivec2 prev_px = clamp(ivec2(prev_uv * vec2(image_size)), ivec2(0), image_size - 1);
     uint  prev_pid = uint(prev_px.y * image_size.x + prev_px.x);
 
-    // Validated against the previous frame's resampling surface: a disocclusion or a
-    // foreground/background swap moves the resampling vertex too, and a mirror that stopped
-    // being a mirror invalidates it outright.
     RestirSurface prev_surf = prev_surfaces[prev_pid];
     if (!restir_surfaces_similar(cur_surf, prev_surf)) return;
 
     Reservoir prev = prev_reservoirs[prev_pid];
     if (prev.M <= 0.0 || prev.light_tri_idx == RESTIR_INVALID_TRI) return;
 
-    // Cap prev.M to bound the influence of stale history.
     prev.M = min(prev.M, float(m_cap));
 
-    // Re-evaluate the prev sample's target pdf at the current surface — geometry
-    // and BRDF terms shift because the receiver moved. If the sample is back-
-    // facing the new surface (or the new surface is back-facing the light),
-    // skip combining entirely rather than diluting cur.M with a useless sample.
+    // A history sample that cannot light this surface is skipped rather than diluting cur.M.
     float p_hat_prev_at_current = restir_target_pdf(P, N, V, cur_surf.matid, prev.light_tri_idx, prev.bary);
     if (p_hat_prev_at_current <= 0.0) return;
 
     float own_M = cur.M;
 
-    uint rng = (pid * 7919u + uint(frame_index) * 50331u + time_seed * 12289u + 0xCAFEBABEu) | 1u;
+    uint rng = pcg_seed(pid, time_seed, RESTIR_RNG_TEMPORAL);
 
     reservoir_combine(cur, prev, p_hat_prev_at_current, rng);
 
-    // Z for the unbiased normalization. cur.target_pdf is by construction the winning
-    // sample's p_hat at *this* surface, so the own-reservoir term needs no re-evaluation;
-    // the history's does, at the surface that history reservoir describes.
+    // cur.target_pdf is already the winner's p_hat here; only the history's term needs
+    // re-evaluating, at the surface it describes.
     float Z = (cur.target_pdf > 0.0) ? own_M : 0.0;
     if (restir_target_pdf(prev_surf.position, prev_surf.normal, prev_surf.view_dir, prev_surf.matid, cur.light_tri_idx, cur.bary) > 0.0) {
         Z += prev.M;
@@ -99,13 +84,10 @@ void main() {
     Reservoir cur = reservoirs[pid];
     combine_history(px, pid, cur_surf, cur);
 
-    // The one shadow ray before spatial reuse, run whether or not history was combined:
-    // restir_initial leaves its winner untested for this pass to cover, and a winner taken
-    // from history was tested at a different surface last frame.
+    // The one shadow ray before spatial reuse, whether or not history was combined:
+    // restir_initial leaves its winner untested for this pass.
     if (cur.W > 0.0 && cur.light_tri_idx != RESTIR_INVALID_TRI) {
-        Triangle tri = triangles[cur.light_tri_idx];
-        vec3     v0  = vertices[tri.indices.x].position;
-        vec3     sp  = v0 + cur.bary.x * tri.e1 + cur.bary.y * tri.e2;
+        vec3 sp = light_point(triangles[cur.light_tri_idx], cur.bary);
         if (!is_visible(restir_surface_offset_origin(cur_surf, sp), sp, NO_SKIP_TRI, int(cur.light_tri_idx))) {
             cur.W = 0.0;
         }

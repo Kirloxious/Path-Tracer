@@ -3,13 +3,11 @@
 
 #include "host_shared.glsl"
 
-// Mirrors FrameConstants in src/render/gpu_constants.h. Renderer::render() rewrites it before
-// the first pass, so every kernel of a frame sees the same values.
+// Mirrors FrameConstants in src/render/gpu_constants.h.
 layout(std140, binding = UBO_FRAME) uniform FrameConstants {
     ivec2 image_size;
-    // Frames accumulated since the last reset, counting from 1. sampler_init() derives the
-    // low-discrepancy sample index from it, so it must advance only when a new sample is
-    // accumulated.
+    // Counts from 1. Also the low-discrepancy sample index (via sampler_init), so it must
+    // advance only when a new sample is accumulated.
     int   frame_index;
     // Frames since temporal history (TAA, ReSTIR) was last invalidated. Survives camera motion.
     int   history_frames;
@@ -17,11 +15,10 @@ layout(std140, binding = UBO_FRAME) uniform FrameConstants {
     uint  run_seed;  // constant for one accumulation; seeds the low-discrepancy sampler
 };
 
-// Mirrors SceneConstants in src/render/gpu_constants.h. Written once by Renderer::loadScene().
+// Mirrors SceneConstants in src/render/gpu_constants.h.
 layout(std140, binding = UBO_SCENE) uniform SceneConstants {
     int   bvh_root_index;
-    // Emissive triangles are sorted to the front, so `tri_index > emissive_last_index` is an
-    // exact "not a light" test. -1 when the scene has no emitters.
+    // Emissive triangles are sorted to the front; -1 when the scene has no emitters.
     int   emissive_last_index;
     int   num_light_groups;
     int   max_bounces;

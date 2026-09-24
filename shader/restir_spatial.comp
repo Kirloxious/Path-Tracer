@@ -11,9 +11,7 @@ layout(std430, binding = BIND_RESERVOIRS_CURRENT) restrict buffer RestirReservoi
     Reservoir reservoirs[];
 };
 
-// Spatial reuse reads from `spatial_input` and writes `reservoirs`. The two
-// spatial passes ping-pong by swapping which underlying Buffer is bound to
-// 18 vs 20 between dispatches.
+// The two spatial passes ping-pong by swapping the buffers bound at 18 and 20.
 layout(std430, binding = BIND_RESERVOIRS_SPATIAL_INPUT) restrict readonly buffer RestirSpatialInput {
     Reservoir spatial_input[];
 };
@@ -22,18 +20,13 @@ layout(std430, binding = BIND_SURFACES_CURRENT) restrict readonly buffer RestirS
     RestirSurface surfaces[];
 };
 
-// No G-buffer reads: this pass works entirely in terms of resampling surfaces now.
-
 layout(location = 0) uniform int   k_neighbors;
 layout(location = 1) uniform float radius_pixels;
 layout(location = 2) uniform int   pass_index;
-// 0 on every spatial pass but the last. The chosen sample is re-validated by whichever
-// pass runs last, so testing it in an intermediate pass buys nothing and costs a full
-// screen's worth of BVH shadow traversals.
+// 0 on every pass but the last, which tests whatever sample survives.
 layout(location = 3) uniform int   test_visibility;
 
-// Upper bound on k_neighbors, fixing the size of the arrays the Z pass below needs. Sized
-// past the k=5 the host dispatches so the uniform can be raised without editing the shader.
+// Sizes the Z pass's arrays; above the host's k = 5 so the uniform can grow.
 const int MAX_NEIGHBORS = 8;
 
 void main() {
@@ -41,17 +34,12 @@ void main() {
     if (px.x >= image_size.x || px.y >= image_size.y) return;
     uint pid = uint(px.y * image_size.x + px.x);
 
-    // Read self reservoir from the input buffer (binding 20).
     Reservoir cur = spatial_input[pid];
 
-    // Neighbours are compared as resampling surfaces, not as G-buffer surfaces. Two
-    // adjacent mirror-floor pixels rasterize the same flat quad — identical normal,
-    // identical material — but reflect parts of the scene metres apart, and combining
-    // their reservoirs on that basis would smear the reflection. The surfaces buffer is
-    // what actually distinguishes them.
+    // Compared as resampling surfaces, not G-buffer ones: adjacent mirror-floor pixels share a
+    // quad but reflect surfaces metres apart.
     RestirSurface self_surf = surfaces[pid];
     if (self_surf.valid == 0u) {
-        // Sky, emissive, or a specular chain with no diffuse end — nothing to reuse.
         reservoirs[pid] = cur;
         return;
     }
@@ -60,15 +48,12 @@ void main() {
     vec3 N      = self_surf.normal;
     vec3 V      = self_surf.view_dir;
 
-    // Neighbour offsets come from the low-discrepancy sampler so that, over frames, the k
-    // taps sweep the disc evenly rather than reclustering every frame. The reservoir
-    // acceptance test keeps a PCG stream — see restir_initial for why the two are separate.
-    // pass_index folds into both so the two spatial dispatches pick different neighbours.
+    // Stratified tap offsets, white-noise acceptance tests (see restir_initial). pass_index
+    // keeps the two passes on different neighbours.
     Sampler smp = sampler_init(sampler_seed(pid, run_seed + uint(pass_index) * 0x9e37u + 0x4093u), frame_index, 0u);
-    uint    rng = (pid * 4093u + uint(frame_index) * 65537u + time_seed * 92837u + uint(pass_index) * 19937u + 0xDEADBEEFu) | 1u;
+    uint    rng = pcg_seed(pid, time_seed, RESTIR_RNG_SPATIAL + uint(pass_index));
 
-    // Which neighbours were actually combined, for the Z pass after selection. Only these
-    // contributed to cur.M, so only these can contribute to the divisor.
+    // Only the neighbours actually combined can contribute to Z.
     uint  reused_pid[MAX_NEIGHBORS];
     float reused_M[MAX_NEIGHBORS];
     int   reused_count = 0;
@@ -76,8 +61,7 @@ void main() {
 
     int k = min(k_neighbors, MAX_NEIGHBORS);
     for (int i = 0; i < k; ++i) {
-        // Polar offset, sqrt(r) for a uniform-area distribution over the disc. Tap i keeps
-        // its own dimension group so it walks a stratified path across frames.
+        // Uniform over the disc; tap i keeps its own dimension group across frames.
         sampler_set_dim(smp, uint(i));
         vec2  u     = sampler_2d(smp);
         float r2    = sqrt(u.x) * radius_pixels;
@@ -95,9 +79,6 @@ void main() {
         Reservoir other = spatial_input[npid];
         if (other.M <= 0.0 || other.light_tri_idx == RESTIR_INVALID_TRI) continue;
 
-        // Re-evaluate the neighbor's sample at *our* surface. Geometry and
-        // BRDF terms shift because the receiver is different. Skip if the
-        // sample doesn't even illuminate us (back-facing either way).
         float p_hat_at_self = restir_target_pdf(P, N, V, self_surf.matid, other.light_tri_idx, other.bary);
         if (p_hat_at_self <= 0.0) continue;
 
@@ -107,11 +88,7 @@ void main() {
         reused_count++;
     }
 
-    // Z: the sampling effort that could have produced the winner. A neighbour whose own
-    // surface gives the winning sample a zero target pdf — it faces away, or the light faces
-    // away from it — never had a chance to generate it, and counting its M in the divisor is
-    // what darkened corners and silhouettes. cur.target_pdf is already the winner's p_hat
-    // here, so the self term is free.
+    // See reservoir_finalize(). cur.target_pdf is already the winner's p_hat here.
     float Z = (cur.target_pdf > 0.0) ? own_M : 0.0;
     for (int i = 0; i < reused_count; ++i) {
         RestirSurface nb = surfaces[reused_pid[i]];
@@ -122,15 +99,10 @@ void main() {
 
     reservoir_finalize(cur, Z);
 
-    // Shadow-test the (possibly updated) chosen sample at our surface. A
-    // neighbor's sample was tested at the neighbor's surface, so visibility
-    // here is not guaranteed — if we skip this on the final pass, light leaks
-    // across silhouettes. Intermediate passes skip it: their output is only ever
-    // consumed by the next spatial pass, which tests whatever sample survives.
+    // A neighbour's sample was tested at the neighbour's surface; untested here, light leaks
+    // across silhouettes.
     if (test_visibility != 0 && cur.W > 0.0 && cur.light_tri_idx != RESTIR_INVALID_TRI) {
-        Triangle tri = triangles[cur.light_tri_idx];
-        vec3     v0  = vertices[tri.indices.x].position;
-        vec3     sp  = v0 + cur.bary.x * tri.e1 + cur.bary.y * tri.e2;
+        vec3 sp = light_point(triangles[cur.light_tri_idx], cur.bary);
         if (!is_visible(restir_surface_offset_origin(self_surf, sp), sp, NO_SKIP_TRI, int(cur.light_tri_idx))) {
             cur.W = 0.0;
         }

@@ -12,11 +12,8 @@ layout(binding = TEX_TAA_HISTORY) uniform sampler2D taa_history_tex;         // 
 
 layout(location = 0) uniform float blend_alpha;   // upper bound on history weight (e.g. 0.9)
 
-// YCoCg keeps luma on one axis and chroma on the other two. Clipping the history in RGB
-// bounds each channel independently, so a history sample that differs mostly in hue gets
-// each of its channels dragged separately and comes back a different colour — the classic
-// TAA edge fringing. In YCoCg the same rejection acts almost entirely on luma, which is
-// where temporal disagreement actually lives.
+// History is clipped in YCoCg: in RGB a sample differing mostly in hue gets each channel
+// dragged separately and comes back a different colour (edge fringing).
 vec3 rgb_to_ycocg(vec3 c) {
     return vec3(0.25 * c.r + 0.5 * c.g + 0.25 * c.b,
                 0.5 * c.r - 0.5 * c.b,
@@ -28,22 +25,17 @@ vec3 ycocg_to_rgb(vec3 c) {
     return vec3(t + c.y, c.x + c.z, t - c.y);
 }
 
-// Move `history` toward `center` only as far as needed to bring it inside the AABB.
-// A per-channel clamp moves each axis independently, which shifts the sample off the line
-// between the two colours; clipping preserves its hue and only shortens the offset.
+// Moves `history` toward `center` just far enough to enter the box. Unlike a per-axis clamp
+// it stays on the line between the two colours.
 vec3 clip_to_aabb(vec3 history, vec3 center, vec3 extent) {
     vec3 offset = history - center;
-    // Largest per-axis overshoot, as a multiple of the box half-size.
     vec3  units = abs(offset) / max(extent, vec3(1e-5));
     float worst = max(max(units.x, units.y), units.z);
     return (worst > 1.0) ? (center + offset / worst) : history;
 }
 
-// 5-tap Catmull-Rom bicubic — replaces bilinear history sampling to preserve high
-// frequencies. Bilinear resampling each frame acts as a repeated 4-tap low-pass
-// filter and is the dominant cause of the "TAA blur" look. Catmull-Rom's negative
-// side lobes push back against that softening. Weights collapsed to bilinear tap
-// centers via the offset12 trick so we spend 5 bilinear fetches instead of 16.
+// Catmull-Rom history sampling in 5 bilinear fetches: bilinear resampling every frame is a
+// repeated low-pass and the main cause of TAA blur.
 vec3 sample_history_catmull_rom(sampler2D tex, vec2 uv, vec2 tex_size) {
     vec2 sample_pos = uv * tex_size;
     vec2 tex_pos_1 = floor(sample_pos - 0.5) + 0.5;
@@ -75,9 +67,8 @@ void taa_store(ivec2 px, vec3 c) {
     imageStore(taa_output_image, px, vec4(c, 1.0));
 }
 
-// Where this pixel's content sits, for reprojection: the primary hit as a point, or for sky
-// the view direction with w = 0, which reprojects the environment through the previous
-// rotation alone — it is infinitely far, so camera translation must not move it.
+// The primary hit as a point, or for sky the view direction with w = 0 — infinitely far, so it
+// reprojects through the camera's rotation alone.
 vec4 taa_reprojection_target(ivec2 px) {
     if (!gbuffer_is_sky(gbuffer_raw_normal(px))) {
         return vec4(gbuffer_world_pos(px, image_size), 1.0);
@@ -94,14 +85,12 @@ void main() {
 
     vec3 cur = imageLoad(current_image, px).rgb;
 
-    // Frame 1 (post-reset) has no valid history — pass current through untouched.
     if (history_frames <= 1) {
         taa_store(px, cur);
         return;
     }
 
-    // Through the un-jittered previous view*proj (see camera.cpp: prev_view_proj is
-    // deliberately built from baseProjection).
+    // prev_view_proj is un-jittered (camera.cpp builds it from baseProjection).
     vec4 clip_prev = prev_view_proj_matrix * taa_reprojection_target(px);
     if (clip_prev.w <= 0.0) {
         taa_store(px, cur);
@@ -116,20 +105,13 @@ void main() {
     }
 
     vec3 hist = sample_history_catmull_rom(taa_history_tex, uv_prev, vec2(image_size));
-    // Catmull-Rom's negative lobes can dip below zero on high-contrast edges — the
-    // neighborhood clamp below re-bounds the value into the valid color range, but
-    // clamp to 0 first so a stray negative can't poison the min() side of the AABB.
+    // Catmull-Rom's negative lobes can undershoot on hard edges.
     hist = max(hist, vec3(0.0));
 
-    // Neighbourhood rejection — this is what stops ghosting when a surface's shading has
-    // changed between frames (moving lights, still-converging noise).
-    //
-    // A min/max AABB over the 3x3 is what this used to build, and it is too permissive: one
-    // outlier neighbour widens the box enough to let a stale sample through. Using the mean
-    // and standard deviation instead sizes the box by how much the neighbourhood actually
-    // varies, so a converged region clips tightly while a genuinely busy one stays loose.
-    vec3 m1 = vec3(0.0); // sum
-    vec3 m2 = vec3(0.0); // sum of squares
+    // Variance clipping: a box from the 3x3 mean and deviation, which one outlier cannot widen
+    // the way it widens a min/max box.
+    vec3 m1 = vec3(0.0);
+    vec3 m2 = vec3(0.0);
     for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
             ivec2 q = clamp(px + ivec2(dx, dy), ivec2(0), image_size - 1);
@@ -143,18 +125,14 @@ void main() {
     vec3        mean = m1 * inv_n;
     vec3        sigma = sqrt(max(m2 * inv_n - mean * mean, vec3(0.0)));
 
-    // Box half-width in standard deviations. Lower rejects more history: crisper, but more
-    // temporal noise. ~1 is the usual starting point.
+    // Box half-width in deviations: lower is crisper but noisier.
     const float GAMMA = 1.0;
     vec3        extent = GAMMA * sigma;
 
     hist = ycocg_to_rgb(clip_to_aabb(rgb_to_ycocg(hist), mean, extent));
-    // Clipping against a variance box can still land slightly out of gamut on a hard edge.
     hist = max(hist, vec3(0.0));
 
-    // Ramp the history weight over the first few frames so early frames rely more on
-    // fresh samples, then settle at `blend_alpha`. Matches the accum pass's spirit of
-    // trusting history more as we collect more samples.
+    // Ramps up to `blend_alpha` over the first frames after a reset.
     float a = min(blend_alpha, 1.0 - 1.0 / float(history_frames));
     vec3  outc = mix(cur, hist, a);
 

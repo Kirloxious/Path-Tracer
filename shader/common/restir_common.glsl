@@ -4,26 +4,14 @@
 #include "rng.glsl"
 #include "scene_buffers.glsl"
 #include "bsdf.glsl"
+#include "lights.glsl"
 
-// Per-pixel reservoir for ReSTIR DI. Holds one resampled light sample plus
-// the bookkeeping needed to combine reservoirs across frames (temporal) and
-// neighbours (spatial). Size is 32 bytes; field order is fixed by std430.
-//
-// Conventions
-//   light_tri_idx  index into TrianglesBuffer of the chosen emissive triangle.
-//                  Sentinel UINT_MAX means "no valid sample" (e.g. pixel didn't
-//                  hit anything, scene has no lights, or all candidates failed).
-//   bary           barycentrics (u, v) on that triangle; the surface point is
-//                  v0 + u*e1 + v*e2.
-//   w_sum          running RIS weight sum across all candidates seen so far.
-//   M              effective sample count. float so future temporal capping
-//                  can fractionally clamp it.
-//   W              unbiased RIS weight = w_sum / (M * target_pdf), or 0 when
-//                  the chosen sample is occluded. Final shading evaluates
-//                  contribution = f * Le * G * W (visibility folded into W=0).
-//   target_pdf     p_hat at the chosen sample, *unshadowed* (luminance of
-//                  f * Le * G). Kept post-finalize because spatial/temporal
-//                  reuse re-evaluates p_hat at the receiving surface.
+// Per-pixel ReSTIR DI reservoir, 32 bytes std430.
+//   light_tri_idx  chosen emissive triangle, or RESTIR_INVALID_TRI
+//   bary           its light_point() barycentrics
+//   M              sample count behind the reservoir
+//   W              contribution weight w_sum / (Z * target_pdf); 0 when the sample is occluded
+//   target_pdf     the chosen sample's p_hat, unshadowed
 struct Reservoir {
     uint  light_tri_idx;
     float M;
@@ -36,62 +24,40 @@ struct Reservoir {
 
 const uint RESTIR_INVALID_TRI = 0xFFFFFFFFu;
 
-// SSBO declarations for the three reservoir buffers live in per-shader includes:
-//   reservoirs[]      → shadow_reservoirs.glsl-style headers (below)
-//   prev_reservoirs[] → only restir_temporal.comp
-//   spatial_input[]   → only restir_spatial.comp
-// Splitting them keeps shade_opaque under NVIDIA's 16-SSBO cap while
-// letting the ReSTIR kernels still share the Reservoir struct and helpers here.
+// pcg_seed() streams for each kernel's reservoir acceptance tests; spatial adds its pass index.
+const uint RESTIR_RNG_INITIAL  = 0u;
+const uint RESTIR_RNG_TEMPORAL = 1u;
+const uint RESTIR_RNG_SPATIAL  = 2u;
 
-// Which surfaces can hold a reservoir.
-//
-// Anything but a perfect mirror: resampling only helps where an explicitly sampled light
-// direction has a non-zero BRDF. A smooth dielectric qualifies through its diffuse base. Rough conductors qualify —
-// they used to fall through to one analytic NEE sample per frame while a diffuse surface
-// beside them got several hundred resampled candidates.
-//
-// restir_initial anchors on this and shade_surface consumes on it, so they must be the same
-// test. Splitting them would let a reservoir describe a different vertex than the one being
-// shaded, which is silent and very hard to see.
+// Which surfaces can hold a reservoir: any opaque one whose BRDF an explicitly sampled light
+// direction can reach, i.e. anything but a perfect mirror. restir_initial anchors on this and
+// shade_surface consumes on it — two tests would let a reservoir silently describe a different
+// vertex than the one being shaded.
 bool restir_can_anchor(Material m) {
     return (m.type == MAT_DIFFUSE || m.type == MAT_SPECULAR) && !bsdf_is_mirror(m);
 }
 
-float restir_luminance(vec3 c) {
-    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+// Target pdf at receiver (N, V, matid) toward `light_dir` on `light_tri`: luminance of the
+// integrand per unit solid angle, f * Le * cos. The geometry term lives in the source pdf the
+// candidate was drawn with, and path throughput is constant per pixel so it drops out. 0 if
+// the light is back-facing or the receiver faces away.
+//
+// The full BRDF rather than a Lambertian proxy, so a glossy receiver resamples toward the
+// lights its highlight sees.
+float restir_p_hat(vec3 N, vec3 V, uint matid, in Triangle light_tri, vec3 light_dir) {
+    float cos_theta = dot(N, light_dir);
+    if (!light_faces(light_tri, light_dir) || cos_theta <= 0.0) return 0.0;
+
+    float ignored_pdf;
+    vec3  f = bsdf_eval(mats[matid], N, V, light_dir, ignored_pdf);
+    return luminance(f * material_emission(mats[light_tri.material_index]) * cos_theta);
 }
 
-// p_hat at receiver (P, N, V, matid) for the light sample (tri_idx, bary).
-// Returns 0 if the light is back-facing or the receiver faces away.
-//
-// Evaluates the full metallic-roughness BRDF rather than a Lambertian proxy, so a glossy
-// receiver resamples toward the lights its highlight actually sees. The target pdf is only
-// required to be *proportional* to the integrand for RIS to stay unbiased — an approximation
-// would also be valid, just worse at picking samples — but a view-dependent BRDF is exactly
-// where the Lambertian proxy misallocates the most.
+// restir_p_hat for a stored sample (tri_idx, bary) seen from P.
 float restir_target_pdf(vec3 P, vec3 N, vec3 V, uint matid, uint tri_idx, vec2 bary) {
     if (tri_idx == RESTIR_INVALID_TRI) return 0.0;
-
     Triangle tri = triangles[tri_idx];
-    vec3 v0 = vertices[tri.indices.x].position;
-    vec3 sp = v0 + bary.x * tri.e1 + bary.y * tri.e2;
-
-    vec3  d         = sp - P;
-    float dist2     = dot(d, d);
-    float inv_dist  = inversesqrt(dist2);
-    vec3  light_dir = d * inv_dist;
-
-    float cross_dot = dot(cross(tri.e1, tri.e2), light_dir);
-    if (cross_dot >= 0.0) return 0.0;
-
-    float cos_theta = max(0.0, dot(N, light_dir));
-    if (cos_theta <= 0.0) return 0.0;
-
-    Material lmat = mats[tri.material_index];
-    float ignored_pdf;
-    vec3  f           = bsdf_eval(mats[matid], N, V, light_dir, ignored_pdf);
-    vec3  contrib_rgb = f * material_emission(lmat) * cos_theta;
-    return restir_luminance(contrib_rgb);
+    return restir_p_hat(N, V, matid, tri, normalize(light_point(tri, bary) - P));
 }
 
 void reservoir_clear(out Reservoir r) {
@@ -104,8 +70,7 @@ void reservoir_clear(out Reservoir r) {
     r._pad          = 0.0;
 }
 
-// Streaming RIS update: present candidate (tri_idx, bary) with RIS weight w_i
-// and target_pdf p_hat_i. Returns true if this candidate was selected.
+// Streaming RIS update. @return true if this candidate was selected.
 bool reservoir_update(inout Reservoir r, uint tri_idx, vec2 bary, float p_hat_i, float w_i, inout uint rng) {
     r.M     += 1.0;
     r.w_sum += w_i;
@@ -118,15 +83,9 @@ bool reservoir_update(inout Reservoir r, uint tri_idx, vec2 bary, float p_hat_i,
     return false;
 }
 
-// Biased Bitterli-style combine: present `other`'s chosen sample to `r`,
-// weighted by other.W * other.M evaluated against the receiver's surface
-// (via p_hat_at_self). Adds other.M to r.M unconditionally so the divisor
-// in the final W reflects total sampling effort.
-//
-// Caller is responsible for re-evaluating p_hat_at_self at the same surface
-// `r` represents; passing 0 lets the caller skip combination entirely (the
-// candidate would never be selected anyway and 0×anything is fine here, but
-// skipping early avoids polluting r.M with empty samples).
+// Presents `other`'s sample to `r` with weight p_hat_at_self * other.W * other.M, where
+// p_hat_at_self is its target pdf re-evaluated at the surface `r` describes. The caller owns Z;
+// see reservoir_finalize().
 bool reservoir_combine(inout Reservoir r, in Reservoir other, float p_hat_at_self, inout uint rng) {
     float w_i = p_hat_at_self * other.W * other.M;
     bool  selected = false;
@@ -141,18 +100,12 @@ bool reservoir_combine(inout Reservoir r, in Reservoir other, float p_hat_at_sel
     return selected;
 }
 
-// After all candidates / combines are streamed, compute the contribution weight W.
+// Computes W once every candidate and combine has been streamed.
 //
-// `Z` is the sampling effort that could actually have produced the sample that *won*: the sum
-// of M over the reservoirs whose own surface gives that sample a non-zero target pdf
-// (Bitterli et al. 2020, Algorithm 6). Dividing by the full M instead — which is what this
-// did — also counts reuse partners that could never have generated the winner, and since
-// Z <= M that inflates the divisor and loses energy. It shows up as darkening wherever reuse
-// partners disagree about a sample's support: corners, silhouettes, shadow boundaries, and
-// any edge where the surface orientation turns over.
-//
-// Plain RIS at a single surface has Z == r.M, which is what restir_initial passes.
-// Caller is responsible for separately zeroing W on visibility failure.
+// `Z` is the sum of M over the reservoirs whose own surface gives the winner a non-zero target
+// pdf (Bitterli et al. 2020, Algorithm 6). The full M would also count partners that could never
+// have produced it, and darken corners and silhouettes. Plain RIS at one surface passes r.M.
+// Zeroing W on occlusion is the caller's job.
 void reservoir_finalize(inout Reservoir r, float Z) {
     if (r.target_pdf > 0.0 && Z > 0.0) {
         r.W = r.w_sum / (Z * r.target_pdf);

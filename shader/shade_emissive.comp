@@ -6,12 +6,11 @@ layout(local_size_x = 64) in;
 #include "common/queue.glsl"
 #include "common/scene_buffers.glsl"
 #include "common/clamp.glsl"
+#include "common/lights.glsl"
 
 
-// Which light group owns `tri_idx`. buildLightGroups() emits groups as runs of
-// consecutive emissive triangles, so `begin` is strictly increasing and the group is
-// found by binary search — a fixed log2(G) steps with no early-out, rather than a
-// linear scan whose trip count diverges across a warp.
+// Which light group owns `tri_idx`. Groups are consecutive runs, so `begin` is strictly
+// increasing and a fixed-step binary search finds it without divergent trip counts.
 int find_owning_group(int tri_idx) {
     if (num_light_groups <= 0) return -1;
 
@@ -28,18 +27,6 @@ int find_owning_group(int tri_idx) {
     return (tri_idx >= grp.begin && tri_idx < grp.begin + grp.count) ? lo : -1;
 }
 
-// Solid-angle pdf at receiver `p` for a sample on `tri`, treating its whole light group as one
-// uniform area light. Returns 0 if the light face is back-facing or geometry is degenerate.
-// Includes the group's own selection probability, so this is the full density NEE would have
-// used — mirrors nee.glsl's light_pdf exactly, which is what the balance heuristic requires.
-float light_group_pdf(in Triangle tri, in vec3 receiver, in vec3 sample_point, in vec3 light_dir, in LightGroup grp) {
-    if (grp.total_area <= 0.0 || tri.area <= 0.0) return 0.0;
-    float cross_dot = dot(cross(tri.e1, tri.e2), light_dir);
-    if (cross_dot >= 0.0) return 0.0;   // back-facing
-    vec3  d = sample_point - receiver;
-    return grp.select_pdf * -2.0 * tri.area * dot(d, d) / (cross_dot * grp.total_area);
-}
-
 void main() {
     uint qid = queue_thread_index();
     if (qid >= hit_emissive_count) return;
@@ -51,50 +38,38 @@ void main() {
     bool      restir_handled    = (s.flags & FLAG_RESTIR_HANDLED) != 0u;
     bool      is_primary = (s.bounce == 0u);
 
-    // ReSTIR at primary already integrated the same direct-lighting estimator path
-    // (primary→light) that this BSDF-hits-emissive sample represents. Including
-    // both double counts. Treat ReSTIR as a delta technique for MIS — weight = 0
-    // on the BSDF side. (Subsequent emissive hits past a non-specular bounce are
-    // handled by analytic MIS below.)
+    // The previous vertex's reservoir already estimated its whole area-light integral.
     if (restir_handled) {
         states[pid] = s;
         return;
     }
 
-    // Emitters are one-sided, by the same winding test NEE and ReSTIR use to reject a
-    // back-facing light sample; emitting here too would light the scene from a side neither
-    // of them can sample. A gbuffer primary has no triangle and is always the visible side.
+    // One-sided, like every other light estimator. A gbuffer primary has no triangle and is
+    // always the visible side.
     if (s.hit_triangle_idx != NO_TRIANGLE) {
-        Triangle tri = triangles[s.hit_triangle_idx];
-        if (dot(cross(tri.e1, tri.e2), s.ray_dir) >= 0.0) {
+        if (!light_faces(triangles[s.hit_triangle_idx], s.ray_dir)) {
             states[pid] = s;
             return;
         }
     }
 
-    // MIS weight for the BSDF estimator. Primary hits and specular continuations have no
-    // competing NEE estimator (delta pdfs / camera ray), so weight = 1. For non-specular
-    // continuations, the previous bounce's NEE could have sampled this light too; weight
-    // by the balance heuristic so the NEE + BSDF pair sums to 1.
+    // Balance heuristic against the previous vertex's NEE; weight 1 where none could have
+    // produced this direction (a primary hit, a delta scatter).
     float weight = 1.0;
     if (!is_primary && prev_non_specular && num_light_groups > 0) {
         int gi = find_owning_group(int(s.hit_triangle_idx));
         if (gi >= 0) {
-            LightGroup grp = light_groups[gi];
-            // Reconstruct the light_dir at the previous bounce — it's just the continuation ray's direction.
-            vec3  light_dir_prev = s.ray_dir;
-            float light_pdf_combined = light_group_pdf(triangles[s.hit_triangle_idx], s.ray_origin, s.hit_point, light_dir_prev, grp);
+            // The direction NEE would have drawn from the previous vertex is this ray's own.
+            vec3  d                  = s.hit_point - s.ray_origin;
+            float light_pdf_combined = light_solid_angle_pdf(triangles[s.hit_triangle_idx], light_groups[gi], s.ray_dir, dot(d, d));
             if (light_pdf_combined > 0.0 && (s.pdf_bsdf + light_pdf_combined) > 0.0) {
                 weight = s.pdf_bsdf / (s.pdf_bsdf + light_pdf_combined);
             }
         }
     }
 
-    // Primary hits are the camera looking straight at a light: that is the emitter's
-    // authored radiance, not an estimator output, so it is exempt from the firefly
-    // clamp. Everything past bounce 0 arrived through a sampled path and is not.
+    // A primary hit is the authored radiance, not an estimator output, so it is unclamped.
     vec3 contribution = s.throughput * material_emission(mat) * weight;
     s.radiance += is_primary ? contribution : clamp_indirect(contribution);
     states[pid] = s;
-    // Path terminates at an emissive — no enqueue.
 }

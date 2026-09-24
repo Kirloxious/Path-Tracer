@@ -5,6 +5,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/rng.glsl"
 #include "common/bvh_traversal.glsl"
 #include "common/gbuffer.glsl"
+#include "common/math.glsl"
 
 layout(rgb10_a2, binding = 0) writeonly uniform image2D dst_image;
 layout(rgba32f, binding = 1) readonly  uniform image2D accum_image;
@@ -13,8 +14,7 @@ layout(location = 0) uniform int   aov_mode; // AOV_* in host_shared.glsl
 layout(location = 1) uniform float depth_max;
 layout(location = 2) uniform float bvh_cost_max;
 
-// Turbo-ish colormap: cheap analytic approximation used for scalar heatmaps.
-// Domain [0,1] → smooth blue → cyan → green → yellow → red ramp.
+// Blue → green → red heatmap over [0, 1].
 vec3 heatmap(float t) {
     t = clamp(t, 0.0, 1.0);
     vec3 c = vec3(0.0);
@@ -24,7 +24,6 @@ vec3 heatmap(float t) {
     return c;
 }
 
-// Hash a material index into a stable pastel color.
 vec3 idHash(uint id) {
     uint h = id * 2654435761u;
     return vec3(
@@ -34,8 +33,7 @@ vec3 idHash(uint id) {
     ) * 0.75 + 0.25; // shift into [0.25, 1.0] for visibility
 }
 
-// 3x3 luminance variance in the current-frame accumulated buffer. Larger =
-// noisier / less-converged neighborhood.
+// 3x3 luminance variance of the accumulated image.
 float localVariance(ivec2 p) {
     float sum  = 0.0;
     float sum2 = 0.0;
@@ -43,7 +41,7 @@ float localVariance(ivec2 p) {
         for (int i = -1; i <= 1; ++i) {
             ivec2 q = clamp(p + ivec2(i, j), ivec2(0), image_size - 1);
             vec3  c = imageLoad(accum_image, q).rgb;
-            float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+            float l = luminance(c);
             sum  += l;
             sum2 += l * l;
         }
@@ -91,11 +89,10 @@ void main() {
             break;
         }
         case AOV_BVH_COST: {
-            // Reconstruct the primary view ray from pixel coords so sky pixels
-            // (no gbuffer hit) still get a meaningful cost.
+            // From the camera rather than the gbuffer, so sky pixels get a cost too.
             vec2 ndc = (vec2(p) + 0.5) / vec2(image_size) * 2.0 - 1.0;
             // Reversed-Z with a [0,1] clip range puts the near plane at ndc.z = 1.
-        vec4 clip = inv_proj_matrix * vec4(ndc.x, ndc.y, 1.0, 1.0);
+            vec4 clip = inv_proj_matrix * vec4(ndc.x, ndc.y, 1.0, 1.0);
             vec3 dir  = normalize(mat3(inv_view_matrix) * normalize(clip.xyz));
             Ray  probe;
             probe.origin    = camera_position;
@@ -105,8 +102,7 @@ void main() {
             break;
         }
         case AOV_VARIANCE: {
-            // Denoiser-friendly signal: log-compressed so a small noise floor is
-            // still visible without saturating on fireflies.
+            // Log-compressed, so a small noise floor shows without fireflies saturating.
             float v = localVariance(p);
             rgb = heatmap(clamp(log(1.0 + v * 100.0) * 0.25, 0.0, 1.0));
             break;

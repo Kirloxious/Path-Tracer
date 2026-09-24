@@ -6,6 +6,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/scene_buffers.glsl"
 #include "common/gbuffer.glsl"
 #include "common/constants.glsl"
+#include "common/math.glsl"
 
 // Read-write: accumulation and the moments are both running averages read back in place.
 layout(rgba32f, binding = 0) uniform image2D accum_image;
@@ -26,10 +27,9 @@ void main() {
     vec3 N = miss ? vec3(0.0) : normalize(raw_n);
     uint matid = miss ? 0u : gbuffer_matid(px);
 
-    // Luminance moments, averaged on exactly the same schedule as the colour so that
-    // E[l^2] - E[l]^2 describes the spread of the samples behind this pixel's mean. The
-    // denoiser turns that into its per-pixel colour edge-stop.
-    float l = dot(sample_color, vec3(0.2126, 0.7152, 0.0722));
+    // Averaged on the same schedule as the colour, so E[l^2] - E[l]^2 is the spread of the
+    // samples behind this pixel's mean.
+    float l = luminance(sample_color);
     vec2  sample_moments = vec2(l, l * l);
 
     vec3 accumulated;
@@ -43,9 +43,7 @@ void main() {
         moments = mix(imageLoad(moments_image, px).rg, sample_moments, w);
     }
 
-    // Alpha carries the sample count the denoiser divides the variance by. It is the frame
-    // index for every pixel alike; it lives here rather than in a uniform so the denoiser
-    // reads the count from the same place as the moments it belongs to.
+    // Alpha: the sample count the denoiser divides the variance by.
     imageStore(accum_image, px, vec4(accumulated, float(max(frame_index, 1))));
     imageStore(moments_image, px, vec4(moments, 0.0, 0.0));
 

@@ -16,28 +16,20 @@ void main() {
 
     vec3 n = gbuffer_raw_normal(px);
 
-    // Build the whole PathState in registers and store it once. Writing the fields
-    // individually turned one contiguous 96-byte store into eight scattered ones to the
-    // same cache line, and every pixel on screen pays it.
+    // Built in registers and stored once: field-by-field writes become eight scattered stores.
     PathState s;
     s.throughput = vec3(1);
     s.radiance = vec3(0);
     s.bounce = 0;
     s.rng_state = sampler_seed(pid, uint(run_seed));
-    // FLAG_SPECULAR_PREFIX starts set: with no vertices behind it the prefix is
-    // vacuously all-specular, so a diffuse primary is its own resampling vertex and
-    // behaves exactly as before. A mirror primary keeps the flag through shade_opaque's
-    // delta branch and hands it to whatever diffuse surface the reflection lands on.
-    s.flags = FLAG_FRONT_FACE | FLAG_SPECULAR_PREFIX; // raster pass renders front faces only
+    // FLAG_SPECULAR_PREFIX starts set — with no vertices behind it the prefix is vacuously all
+    // mirrors. FLAG_FRONT_FACE because the raster pass flips every normal toward the camera.
+    s.flags = FLAG_FRONT_FACE | FLAG_SPECULAR_PREFIX;
     s.pdf_bsdf = 0.0;
     s.hit_triangle_idx = NO_TRIANGLE;
 
-    // Sky test: gbuffer normal of length zero means no primitive was rasterized.
-    // Any real hit has a unit normal.
     if (gbuffer_is_sky(n)) {
-        // Primary sky — sample the envmap (or return black if unbound). Reconstruct
-        // the view ray from pixel coords via the inverse camera matrices. Directly
-        // visible, so no indirect clamp applies here.
+        // Directly visible sky, so unclamped.
         vec2 ndc = (vec2(px) + 0.5) / vec2(image_size) * 2.0 - 1.0;
         // Reversed-Z with a [0,1] clip range puts the near plane at ndc.z = 1.
         vec4 clip = inv_proj_matrix * vec4(ndc.x, ndc.y, 1.0, 1.0);
@@ -57,15 +49,12 @@ void main() {
     s.hit_point = P;
     s.hit_normal = normalize(n);
     s.hit_matid = matid;
-    // Camera-to-hit direction. shade_opaque/transmissive reflect/refract `ray_dir` on the
-    // first bounce, so it must be initialized — the gbuffer-fed primary "ray" is the view ray.
+    // The shade kernels scatter `ray_dir`, so the gbuffer primary needs its view ray.
     s.ray_dir = normalize(P - camera_position);
     s.ray_origin = camera_position;
     states[pid] = s;
 
-    // ray_queue_push(pid);
-    // Skip the first trace by pushing straight to the per-material hit queue.
-    // Subsequent bounces go through trace.comp
+    // Straight into the hit queues: the raster pass already did the primary trace.
     uint t = mats[matid].type;
     if (t == MAT_DIFFUSE || t == MAT_SPECULAR) hit_opaque_push(pid);
     else if (t == MAT_TRANSMISSIVE) hit_transmissive_push(pid);

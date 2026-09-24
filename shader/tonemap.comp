@@ -6,9 +6,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 layout(rgba16f, binding = 0) readonly  uniform image2D src_image; // HDR
 layout(rgb10_a2, binding = 1) writeonly uniform image2D dst_image; // LDR, sRGB-encoded
 
-// Persistent exposure buffer written by AutoExposurePass. When auto-exposure is
-// disabled, AutoExposurePass overwrites this with the user's exposure slider so
-// tonemap doesn't need to branch.
+// Written by AutoExposurePass either way — with the manual exposure when auto is off.
 layout(std430, binding = BIND_EXPOSURE) readonly buffer ExposureBuffer {
     float exposure;
     float _padding[3];

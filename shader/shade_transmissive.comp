@@ -26,19 +26,15 @@ void main() {
     bool     front_face = (s.flags & FLAG_FRONT_FACE) != 0u;
     float    eta        = front_face ? (1.0 / mat.ior) : mat.ior;
 
-    // Beer-Lambert over the segment just travelled. Reaching the back face of a transmissive
-    // surface means the ray crossed the medium to get here, and base_color is read as the
-    // transmittance over one world unit — so clear glass stays colourless at any thickness
-    // while a tint deepens with how far the light actually travelled through it, instead of
-    // being applied once per crossing regardless of geometry.
+    // Beer-Lambert over the segment just travelled inside the medium, with base_color read as the
+    // transmittance over one world unit.
     if (!front_face) {
         float dist = length(s.hit_point - s.ray_origin);
         s.throughput *= pow(max(mat.base_color, vec3(1e-3)), vec3(dist));
     }
 
-    // NEE on the reflection lobe, and only from outside: on a back face that lobe points back
-    // into the medium, and connecting to a light beyond the interface would have to account
-    // for the refraction on the way out, which an explicit direction sample does not.
+    // NEE on the reflection lobe, from outside only: inside, reaching a light means refracting
+    // out, which an explicit direction sample cannot account for.
     uint nee_flags = 0u;
     if (front_face) {
         NeeSurface surf;
@@ -66,15 +62,11 @@ void main() {
     bool  alive = bsdf_sample_transmissive(mat, N, V, eta, smp, dir, weight, transmitted, pdf);
 
     if (alive) {
-        // `weight` carries the G2/G1 masking ratio; absorption was applied above and the
-        // Fresnel split cancels out of the estimator.
         s.throughput *= weight;
         s.pdf_bsdf = pdf;
 
-        // The specular prefix ends here either way: the reflect-vs-refract branch is a coin
-        // flip on this kernel's samples, which restir_initial's deterministic walk cannot
-        // follow. A refracted sample carries pdf 0, so dropping the flags there leaves the
-        // next emissive hit at full weight even though NEE fired for the reflection lobe.
+        // The specular prefix ends: the reflect/refract coin flip is one restir_initial's walk
+        // cannot follow. A refracted ray drops the NEE flags — NEE only covered reflection.
         alive = path_continue(s, smp, dir, false, transmitted ? 0u : nee_flags);
     }
 

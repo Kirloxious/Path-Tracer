@@ -5,98 +5,58 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 #include "common/constants.glsl"
 #include "common/bsdf.glsl"
 
-// Inputs are sampled, not image-loaded, for two reasons. Formats: pass 0 reads `accum`
-// (rgba32f) while passes 1-3 read the rgba16f ping-pong targets, and a single image
-// uniform can only declare one format qualifier — samplers carry no format at all.
-// Speed: image loads bypass the texture cache's 2D-swizzled path, and this kernel does
-// 25 colour + 25 normal taps per pixel with strong 2D locality.
+// Samplers, not images: pass 0 reads rgba32f `accum` and passes 1-3 rgba16f targets, which one
+// image format qualifier cannot cover, and the 25-tap kernel benefits from the texture cache.
 layout(binding = 0) uniform sampler2D src_tex;
 layout(binding = 1) uniform sampler2D normals_tex;
-// Alpha carries this pass's filtered variance forward to the next one — see `first_pass`.
+// Alpha carries this pass's filtered variance to the next.
 layout(rgba16f, binding = 2) writeonly uniform image2D dst_image;
-// Temporally accumulated luminance moments from resolve.comp, and the history length in
-// accum's alpha. Together they give a per-pixel variance estimate, which is what sets the
-// colour edge-stop's width — a converged pixel stops filtering while a freshly disoccluded
-// neighbour keeps going, which a single frame-count-driven sigma could never express.
+// Luminance moments and, in accum's alpha, the sample count: a per-pixel variance for the colour
+// edge-stop, so a converged pixel stops filtering while a disoccluded neighbour keeps going.
 layout(binding = 3) uniform sampler2D moments_tex;
 layout(binding = 4) uniform sampler2D history_tex;
 
 layout(location = 0) uniform int step_size;
 layout(location = 1) uniform float sigma_color_scale;
 layout(location = 2) uniform float sigma_normal;
-// Plane-distance tolerance at unit view depth. Scaled by depth at use: a fixed pixel offset
-// spans more world space the further away the surface is, so a constant world-space tolerance
-// would separate a floor from a wall up close and fuse them across the room.
+// Plane-distance tolerance at unit view depth, scaled by depth: a pixel spans more world space
+// further away.
 layout(location = 3) uniform float sigma_plane;
-// Pass 0 derives the variance from `moments_tex` and `history_tex`; passes 1-3 read the
-// variance the previous pass filtered into `src_tex.a`. The two cannot be unified because
-// pass 0's source is `accum`, whose alpha holds the history length instead.
+// Pass 0 derives variance from the moments; later passes read the filtered variance from
+// `src_tex.a`, which in pass 0 (`accum`) holds the sample count instead.
 layout(location = 4) uniform int first_pass;
 
-// Separable Gaussian kernel: 2D weight = h[i] * h[j]
 const float h[5] = float[5](1.0 / 16.0, 1.0 / 4.0, 3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0);
 
-// How much of the colour edge-stop a specular or transmissive surface keeps, as a function of
-// its roughness.
-//
-// What such a surface carries is an image of somewhere else, while the normal and plane stops
-// describe only the surface holding it — so nothing here knows where the *reflected* edges
-// are, and filtering trades reflection detail for noise blind. Roughness is the one available
-// measure of how much detail there is to lose: a mirror carries a sharp image and has to be
-// left nearly alone, while a rough conductor's lobe has already blurred it and filtering costs
-// almost nothing. A single fixed scale gave both the same treatment, which is what smeared
-// perfect mirrors and smooth glass.
-//
-// Filtering in reflection space would remove the guesswork; that needs the diffuse and
-// specular signals separated, which they are not yet.
-// 0.6 at the mirror end is the value this file already carried, scrubbed on the mirror-floor
-// scene; the ramp adds only that a rough conductor needs none of that protection.
+// Colour edge-stop scale for specular and transmissive pixels, by roughness. The edge-stops
+// describe the surface, not the image it reflects, so a mirror's sharp reflection must be left
+// nearly alone while a rough lobe has already blurred it. 0.6 tuned on the mirror-floor scene.
+// Filtering in reflection space would need the diffuse and specular signals separated.
 const float SPECULAR_SIGMA_MIRROR = 0.6;  // at roughness 0
 const float SPECULAR_SIGMA_ROUGH  = 1.0;  // at or above SPECULAR_ROUGHNESS_FULL
 const float SPECULAR_ROUGHNESS_FULL = 0.4;
 
-// Floor under the variance-derived colour sigma, in demodulated luminance — the units the
-// weight compares, so one floor means the same thing under a dark albedo as a bright one. A
-// fully converged pixel has zero variance, and without this the edge-stop would reject every
-// neighbour and the filter would become a no-op mid-image while a still-noisy region beside it
-// kept smoothing — visible as a texture change rather than as noise. Also hot-reloadable.
+// Floor under the colour sigma, in demodulated luminance. Without it a converged pixel's zero
+// variance rejects every neighbour, and the filter switching off beside a still-noisy region
+// reads as a texture change.
 const float SIGMA_COLOR_FLOOR = 0.02;
 
-// Below this many accumulated samples the temporal moments say nothing useful — at one sample
-// they report exactly zero variance, which would switch the filter off on precisely the pixels
-// that just lost their history. Fall back to the spatial spread there.
+// Below this many samples the moments are useless (zero variance at one sample, switching the
+// filter off exactly where history was lost), so the spatial spread is used instead.
 const float SHORT_HISTORY = 4.0;
 
-// Ceiling on the variance the alpha channel carries. A specular pixel reflecting an emitter
-// can spike the luminance moments past what an fp16 can hold, and an infinity there does not
-// merely widen the edge-stop: `w * w * var` is 0 * inf = NaN on the first rejected tap, which
-// the next pass reads as its sigma and turns into a permanently dead pixel. Well past the
-// point where the edge-stop already admits every neighbour, so nothing is lost by capping.
+// Keeps the fp16 variance finite: an inf becomes NaN in `w * w * var` on a rejected tap, and
+// the next pass turns that into a permanently dead pixel. Far past where every tap is admitted.
 const float MAX_VARIANCE = 1e4;
 
-// Floor under the albedo the filter demodulates by. Purely a divide-by-zero guard — the same
-// value divides and multiplies back, so any positive constant round-trips exactly and the
-// demodulated signal never leaves a register. 0.02 sits below a smooth dielectric's 0.04
-// Fresnel, which is the smallest tint that carries real signal; clamping that one would break
-// demodulation across the boundary it exists to serve.
+// Divide-by-zero guard for demodulation; below a dielectric's 0.04 F0, the smallest real tint.
 const float ALBEDO_FLOOR = 0.02;
 
-float denoiser_luminance(vec3 c) {
-    return dot(c, vec3(0.2126, 0.7152, 0.0722));
-}
-
-// The tint the primary vertex imparts on everything the path gathered behind it.
+// The tint the primary vertex imparts. Filtering with it divided out averages the incident
+// light, which is continuous across an albedo edge, and keeps the edge itself sharp.
 //
-// Dividing it out before the filter and putting it back after lets the kernel average across a
-// boundary between two materials of the same class: what is left is the incident light, which
-// is continuous there, while the discontinuity moves into a factor the filter never touches.
-// Without it that boundary has only the colour edge-stop defending it, which cannot tell an
-// albedo step from noise and blurs one while preserving the other.
-//
-// Per class, because `base_color` does not mean the same thing in each: a conductor tints its
-// reflection by F0, a dielectric coat reflects it untinted, and a transmissive surface's colour
-// is Beer-Lambert absorption over a path length this kernel has no access to — so that one
-// demodulates by nothing at all.
+// Per class: a conductor tints by F0, and a transmissive colour is absorption over a path
+// length unknown here, so it demodulates by nothing.
 vec3 demod_albedo(in Material m, in uint type) {
     vec3 a = bsdf_diffuse_albedo(m);
     if (type == MAT_SPECULAR) a = bsdf_f0(m);
@@ -104,15 +64,9 @@ vec3 demod_albedo(in Material m, in uint type) {
     return max(a, vec3(ALBEDO_FLOOR));
 }
 
-// Squared standard error of a pixel's accumulated mean.
-//
-// The moments track the spread of the *per-frame* samples, but what the buffer holds is their
-// mean over `history` of them — so the scale at which two neighbours may legitimately differ
-// is the standard error of that mean, var / n, not the sample variance. Using the latter
-// leaves the edge-stop permanently wide however far the image converges, and it hurts specular
-// and transmissive pixels worst: their reflected content gets one NEE sample a bounce against
-// ReSTIR's several hundred at a diffuse primary, so their sample variance is the highest in the
-// frame and they smear while the diffuse stays sharp.
+// Squared standard error of a pixel's accumulated mean. The moments describe individual
+// samples but the buffer holds their mean, so the edge-stop needs var / n — the sample variance
+// alone never narrows as the image converges.
 float mean_variance(ivec2 q) {
     vec2  m = texelFetch(moments_tex, q, 0).rg;
     float n = max(texelFetch(history_tex, q, 0).a, 1.0);
@@ -132,16 +86,13 @@ void main() {
     bool     sky_p = gbuffer_is_sky(gbuffer_raw_normal(p));
     Material mat_p = mats[sky_p ? 0u : gbuffer_matid(p)];
 
-    // Emissives (3) are zero-noise, and filtering them bleeds light across their
-    // silhouette into neighbouring darker geometry — those still skip outright.
+    // Emissives are noise-free, and filtering bleeds them across their silhouette.
     if (mat_type > 2.5) {
         imageStore(dst_image, p, vec4(c_p, 0.0));
         return;
     }
 
-    // Primary sky is a direct envmap lookup, exact and noise-free. It was already passing
-    // through untouched — a zero normal drives every tap's weight to zero and the wsum guard
-    // returns the centre — but only as a side effect. Saying so costs 25 taps less.
+    // Primary sky is an exact envmap lookup.
     if (sky_p) {
         imageStore(dst_image, p, vec4(c_p, 0.0));
         return;
@@ -149,22 +100,15 @@ void main() {
 
     int  mat_class = int(mat_type);
     vec3 a_p = demod_albedo(mat_p, uint(mat_class));
-    // The colour weight now compares demodulated luminances, so the sigma the variance feeds
-    // it has to be demodulated too or the two describe different scales.
-    float inv_lum_a_p = 1.0 / denoiser_luminance(a_p);
+    // The colour weight compares demodulated luminances, so the sigma must be demodulated too.
+    float inv_lum_a_p = 1.0 / luminance(a_p);
 
     float history = max(texelFetch(history_tex, p, 0).a, 1.0);
 
-    // The alpha channel carries variance in demodulated units from pass 1 on, so pass 0 is the
-    // only one that has to convert: the moments describe the radiance as accumulated, tint and
-    // all.
     float var_p;
     if (first_pass != 0) {
-        // 3x3 Gaussian prefilter, for the edge-stop only — propagation below reads the
-        // unsmoothed per-tap value. A single pixel's moments are themselves an estimate from
-        // few samples, so an unsmoothed sigma flickers pixel to pixel: a firefly inflates its
-        // own sigma and nothing else's, so the neighbours that would average it away reject
-        // it instead and it survives as a blotch rather than dissolving as noise.
+        // 3x3 prefilter for the edge-stop only. Unsmoothed, a firefly inflates only its own sigma,
+        // so the neighbours that would average it away reject it and it survives as a blotch.
         const float g[3] = float[3](0.25, 0.5, 0.25);
         float       var_mod = 0.0;
         for (int j = -1; j <= 1; ++j) {
@@ -180,13 +124,12 @@ void main() {
             float s2 = 0.0;
             for (int j = -2; j <= 2; ++j) {
                 for (int i = -2; i <= 2; ++i) {
-                    float l = denoiser_luminance(texelFetch(src_tex, clamp(p + ivec2(i, j), ivec2(0), image_size - 1), 0).rgb);
+                    float l = luminance(texelFetch(src_tex, clamp(p + ivec2(i, j), ivec2(0), image_size - 1), 0).rgb);
                     s += l;
                     s2 += l * l;
                 }
             }
-            // Measured on the accumulated buffer, so this is already the spread of the means and
-            // takes no further division.
+            // Already a spread of means, so no division by n.
             const float inv_taps = 1.0 / 25.0;
             float       mean = s * inv_taps;
             stddev_mod = max(stddev_mod, sqrt(max(s2 * inv_taps - mean * mean, 0.0)));
@@ -203,27 +146,18 @@ void main() {
 
     float sigma_c = sigma_color_scale * stddev + SIGMA_COLOR_FLOOR;
 
-    // Specular (1) and transmissive (2) used to skip outright, on the grounds that the A-Trous
-    // edge-stops describe the primary surface and say nothing about the reflected or refracted
-    // content carried on it. True — but skipping leaves those pixels as raw path-tracer output,
-    // and they are the *noisiest* in the image: a diffuse primary gets ReSTIR's several-hundred
-    // effective light samples, while whatever a mirror ray lands on gets one NEE sample per
-    // frame. On a mirror floor that reads as heavy grain. So filter them, but only across
-    // near-identical luminance — isolated noise differs sharply from its neighbours by
-    // definition, while structured reflection detail survives the tightened sigma.
+    // Specular and transmissive pixels are the noisiest — what a mirror reflects gets one NEE
+    // sample per frame — so they are filtered too, with a tighter sigma (see SPECULAR_SIGMA_*).
     if (mat_type > 0.5) {
         sigma_c *= mix(SPECULAR_SIGMA_MIRROR, SPECULAR_SIGMA_ROUGH, clamp(mat_p.roughness / SPECULAR_ROUGHNESS_FULL, 0.0, 1.0));
     }
 
     float inv_sigma_color_sq = 1.0 / (sigma_c * sigma_c + 1e-6);
 
-    float l_p = denoiser_luminance(c_p / a_p);
+    float l_p = luminance(c_p / a_p);
 
-    // Plane edge-stop. The normal weight alone cannot separate two parallel surfaces — a
-    // floor and the ceiling above it, the near and far faces of a box, geometry seen past a
-    // silhouette — and at step_size 8 the kernel reaches 16 px, far enough to straddle them.
-    // Both terms are taken in view space, where a rigid transform leaves the point-to-plane
-    // distance unchanged, so only the centre normal has to be rotated.
+    // Plane edge-stop: the normal weight cannot separate parallel surfaces, and at step 8 the
+    // kernel reaches 16 px. In view space, where only the centre normal needs rotating.
     vec3  p_view      = gbuffer_view_pos(p, image_size);
     vec3  n_p_view    = mat3(view_matrix) * n_p;
     float inv_plane_t = 1.0 / (sigma_plane * max(abs(p_view.z), 1.0));
@@ -236,21 +170,14 @@ void main() {
         for (int i = -2; i <= 2; ++i) {
             ivec2 q = p + ivec2(i, j) * step_size;
 
-            // Skip taps that fall outside the image rather than clamping them to the
-            // edge. Clamping made border pixels count their edge neighbour up to five
-            // times over, which at step_size = 8 shows up as a brightness and blur bias
-            // in the outer band of the frame.
+            // Skipped, not clamped: clamping counts an edge pixel up to five times.
             if (any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, image_size))) continue;
 
-            // The centre tap is already loaded; i and j are compile-time constants after
-            // the unroll, so reusing it costs no branch.
             bool centre = (i == 0 && j == 0);
             vec4 n_sample_q = centre ? normals_sample : texelFetch(normals_tex, q, 0);
 
-            // Demodulation reconciles two materials of the same class; nothing reconciles two
-            // classes. A mirror carries an image of somewhere else and a diffuse neighbour
-            // carries its own irradiance, and no albedo factor turns one into the other — so
-            // where they meet, the tap is dropped rather than weighted down.
+            // No albedo factor reconciles two material classes — a mirror carries an image of
+            // somewhere else — so a tap of another class is dropped.
             if (int(n_sample_q.a) != mat_class) continue;
 
             vec4 s_q = centre ? vec4(c_p, var_p) : texelFetch(src_tex, q, 0);
@@ -258,10 +185,8 @@ void main() {
             vec3 demod_q = s_q.rgb / a_q;
             vec3 n_q = n_sample_q.rgb * 2.0 - 1.0;
 
-            // Luminance, not RGB. The variance behind `sigma_c` is a luminance variance, so a
-            // 3-channel squared distance was being compared against a 1-channel width, and the
-            // constant bridging them drifted with how chromatic the pixel was.
-            float dl = l_p - denoiser_luminance(demod_q);
+            // Luminance, to match the luminance variance behind sigma_c.
+            float dl = l_p - luminance(demod_q);
             float w_c = exp(-dl * dl * inv_sigma_color_sq);
             float w_n = pow(max(0.0, dot(n_p, n_q)), sigma_normal);
             float w_p = exp(-abs(dot(n_p_view, gbuffer_view_pos(q, image_size) - p_view)) * inv_plane_t);
@@ -269,21 +194,18 @@ void main() {
 
             sum += demod_q * w;
             wsum += w;
-            // Var[Σ w c / Σ w] for independent taps. Without this the later passes size their
-            // edge-stop for the noise the first pass already removed, so the wide taps admit
-            // differences that have become signal — which is what blurs out detail at
-            // step_size 4 and 8.
+            // Var[Σ w c / Σ w] for independent taps, so later passes size their edge-stop for the
+            // noise that is left rather than blurring detail at the wide steps.
             float var_q = s_q.a;
             if (first_pass != 0) {
-                float inv_lum_a_q = 1.0 / denoiser_luminance(a_q);
+                float inv_lum_a_q = 1.0 / luminance(a_q);
                 var_q = centre ? var_p : min(mean_variance(q) * inv_lum_a_q * inv_lum_a_q, MAX_VARIANCE);
             }
             var_sum += w * w * var_q;
         }
     }
 
-    // Back into radiance. The variance stays demodulated — it is only ever read by the next
-    // pass, which works in the same space.
+    // Back into radiance; the variance stays demodulated for the next pass.
     bool  valid  = wsum > 1e-6;
     vec3  result = valid ? a_p * (sum / wsum) : c_p;
     float var_out = valid ? var_sum / (wsum * wsum) : var_p;
