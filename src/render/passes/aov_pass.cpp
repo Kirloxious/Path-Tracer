@@ -29,5 +29,5 @@ void AovPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     shader.setFloat("bvh_cost_max", settings.aovBvhCostMax);
 
     GL::dispatch(targets.numGroupsX, targets.numGroupsY);
-    GL::memoryBarrier(GL::Barrier::ImageAccess);
+    GL::memoryBarrier(GL::Barrier::ImageAccess | GL::Barrier::Framebuffer);
 }

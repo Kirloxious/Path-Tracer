@@ -83,6 +83,8 @@ void AutoExposurePass::execute(const RenderContext& ctx, RenderTargets& targets)
     reduceShader.setFloat("target_luma", settings.autoExposureTargetLuma);
     reduceShader.setFloat("min_exposure", settings.autoExposureMin);
     reduceShader.setFloat("max_exposure", settings.autoExposureMax);
+    reduceShader.setFloat("low_percentile", settings.autoExposureLowPercentile);
+    reduceShader.setFloat("high_percentile", std::max(settings.autoExposureHighPercentile, settings.autoExposureLowPercentile));
     reduceShader.setInt("reset_exposure", primed ? 0 : 1);
     primed = true;
 

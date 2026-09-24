@@ -25,6 +25,8 @@ layout(location = 4) uniform float target_luma; // desired luminance (e.g. 0.18 
 layout(location = 5) uniform float min_exposure;
 layout(location = 6) uniform float max_exposure;
 layout(location = 7) uniform int reset_exposure; // 1 → skip EMA, snap directly
+layout(location = 8) uniform float low_percentile;  // fraction of non-black pixels dropped from the dark end
+layout(location = 9) uniform float high_percentile; // ... and everything past this from the bright end
 
 void main() {
     // Thread 0 does the whole reduction; the other 255 threads only exist so
@@ -32,26 +34,38 @@ void main() {
     if (gl_LocalInvocationIndex == 0u) {
         // Skip bin 0 — reserved for essentially-black pixels; including them
         // biases the mean toward 0 and blows out dark scenes.
-        float w_sum = 0.0;
+        float total = 0.0;
+        for (uint i = 1u; i < 256u; ++i) {
+            total += float(hist.bins[i]);
+        }
+
+        // Mean log-luminance over the pixels ranked between the two percentiles. A bin
+        // straddling a cut contributes only its share inside it.
+        float lo    = low_percentile * total;
+        float hi    = high_percentile * total;
+        float below = 0.0;
+        float t_sum = 0.0;
         float c_sum = 0.0;
         for (uint i = 1u; i < 256u; ++i) {
             float count = float(hist.bins[i]);
-            w_sum += count * float(i);
-            c_sum += count;
+            float kept  = clamp(below + count, lo, hi) - clamp(below, lo, hi);
+            // Bin i holds t in [(i - 1) / 254, i / 254); its centre, not its lower edge.
+            t_sum += kept * ((float(i) - 0.5) / 254.0);
+            c_sum += kept;
+            below += count;
         }
 
-        float mean_bin = (c_sum < 1.0) ? 128.0 : (w_sum / c_sum);
-
-        // Bin index → log2 luminance → linear luminance.
-        float t = (mean_bin - 1.0) / 254.0;
-        float log_luma = log_luma_min + t * log_luma_range;
-        float avg_luma = exp2(log_luma);
+        float t        = (c_sum > 0.0) ? (t_sum / c_sum) : 0.5;
+        float avg_luma = exp2(log_luma_min + t * log_luma_range);
 
         float target_exposure = clamp(target_luma / max(avg_luma, 1e-4), min_exposure, max_exposure);
 
-        float alpha = 1.0 - exp(-dt / max(tau, 1e-3));
-        float next = (reset_exposure == 1) ? target_exposure : mix(expo.exposure, target_exposure, clamp(alpha, 0.0, 1.0));
-        expo.exposure = next;
+        // Smoothed in log2, where brightening and darkening by the same number of stops take
+        // the same time; in linear the EMA covers the stops of a rise far faster than those of
+        // an equal drop.
+        float alpha    = clamp(1.0 - exp(-dt / max(tau, 1e-3)), 0.0, 1.0);
+        float log_next = mix(log2(max(expo.exposure, 1e-6)), log2(target_exposure), alpha);
+        expo.exposure  = (reset_exposure == 1) ? target_exposure : exp2(log_next);
     }
 
     // All 256 threads cooperate to zero the histogram for next frame.

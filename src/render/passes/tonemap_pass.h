@@ -9,7 +9,7 @@
 #include "render/render_pass.h"
 
 /**
- * @brief Converts `targets.hdr` into the LDR `targets.display` image.
+ * @brief Converts `targets.hdr` into the LDR `targets.tonemapped` image.
  *
  * Applies exposure — read from the persistent ExposureBuffer SSBO that AutoExposurePass
  * writes, so this pass never has to know whether exposure is automatic or manual — followed by

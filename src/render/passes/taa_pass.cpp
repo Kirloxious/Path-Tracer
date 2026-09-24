@@ -16,7 +16,8 @@ bool TaaPass::reloadIfChanged() {
 void TaaPass::execute(const RenderContext&, RenderTargets& targets) {
     shader.use();
 
-    targets.display.bind(0, GL_READ_ONLY);
+    targets.tonemapped.bind(0, GL_READ_ONLY);
+    targets.display.bind(1, GL_WRITE_ONLY);
     targets.taa_output.bind(2, GL_WRITE_ONLY);
     targets.taa_history.bindSampler(TEX_TAA_HISTORY);
 
@@ -26,9 +27,6 @@ void TaaPass::execute(const RenderContext&, RenderTargets& targets) {
     shader.setFloat("blend_alpha", 0.90f);
 
     GL::dispatch(targets.numGroupsX, targets.numGroupsY);
-    GL::memoryBarrier(GL::Barrier::ImageAccess);
-
-    // Copy the TAA result back into display so downstream passes (AOV overrides,
-    // swap-chain blit) read the resolved image without any renaming.
-    targets.taa_output.copyTo(targets.display);
+    // `display` is next read by the swap-chain blit, and `taa_output` by next frame's sampler.
+    GL::memoryBarrier(GL::Barrier::ImageAccess | GL::Barrier::Framebuffer | GL::Barrier::TextureFetch);
 }

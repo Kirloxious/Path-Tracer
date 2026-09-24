@@ -15,7 +15,7 @@ bool TonemapPass::reloadIfChanged() {
 void TonemapPass::execute(const RenderContext&, RenderTargets& targets) {
     shader.use();
     targets.hdr.bind(0, GL_READ_ONLY);
-    targets.display.bind(1, GL_WRITE_ONLY);
+    targets.tonemapped.bind(1, GL_WRITE_ONLY);
     GL::dispatch(targets.numGroupsX, targets.numGroupsY);
     GL::memoryBarrier(GL::Barrier::ImageAccess);
 }

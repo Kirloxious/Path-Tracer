@@ -115,6 +115,10 @@ void drawSettings(RenderSettings& settings) {
         ImGui::SliderFloat("Target luma", &settings.autoExposureTargetLuma, 0.05f, 0.5f, "%.2f");
         ImGui::SetNextItemWidth(180.0f);
         ImGui::SliderFloat("Adapt tau (s)", &settings.autoExposureTau, 0.05f, 5.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SetNextItemWidth(180.0f);
+        ImGui::SliderFloat("Low percentile", &settings.autoExposureLowPercentile, 0.0f, 0.5f, "%.2f");
+        ImGui::SetNextItemWidth(180.0f);
+        ImGui::SliderFloat("High percentile", &settings.autoExposureHighPercentile, 0.5f, 1.0f, "%.2f");
     } else {
         ImGui::SetNextItemWidth(180.0f);
         ImGui::SliderFloat("Exposure", &settings.exposure, 0.05f, 5.0f, "%.2f", ImGuiSliderFlags_Logarithmic);

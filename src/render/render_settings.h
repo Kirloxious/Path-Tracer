@@ -65,4 +65,9 @@ struct RenderSettings
     float autoExposureTargetLuma = 0.18f; ///< "Middle gray" target — standard photography convention.
     float autoExposureMin = 0.05f;        ///< Clamp floor on the computed exposure.
     float autoExposureMax = 8.0f;         ///< Clamp ceiling on the computed exposure.
+    /// Fractions of the non-black pixels, darkest first, dropped from each end of the
+    /// histogram before averaging — so a small emitter or a patch of deep shadow in view
+    /// does not swing the exposure of everything else.
+    float autoExposureLowPercentile = 0.05f;
+    float autoExposureHighPercentile = 0.95f;
 };
