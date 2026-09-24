@@ -5,7 +5,8 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/constants.glsl"
 
 layout(rgb10_a2, binding = 0) readonly  uniform image2D current_image; // tonemap output
-layout(rgb10_a2, binding = 2) writeonly uniform image2D taa_output_image;
+layout(rgb10_a2, binding = 1) writeonly uniform image2D display_image;
+layout(rgba16f,  binding = 2) writeonly uniform image2D taa_output_image; // next frame's history
 
 layout(binding = TEX_TAA_HISTORY) uniform sampler2D taa_history_tex;         // previous frame's TAA output (LINEAR filtered)
 
@@ -69,6 +70,24 @@ vec3 sample_history_catmull_rom(sampler2D tex, vec2 uv, vec2 tex_size) {
     return result;
 }
 
+void taa_store(ivec2 px, vec3 c) {
+    imageStore(display_image, px, vec4(c, 1.0));
+    imageStore(taa_output_image, px, vec4(c, 1.0));
+}
+
+// Where this pixel's content sits, for reprojection: the primary hit as a point, or for sky
+// the view direction with w = 0, which reprojects the environment through the previous
+// rotation alone — it is infinitely far, so camera translation must not move it.
+vec4 taa_reprojection_target(ivec2 px) {
+    if (!gbuffer_is_sky(gbuffer_raw_normal(px))) {
+        return vec4(gbuffer_world_pos(px, image_size), 1.0);
+    }
+    vec2 ndc  = (vec2(px) + 0.5) / vec2(image_size) * 2.0 - 1.0;
+    // Reversed-Z with a [0,1] clip range puts the near plane at ndc.z = 1.
+    vec4 near = inv_proj_matrix * vec4(ndc, 1.0, 1.0);
+    return vec4(mat3(inv_view_matrix) * (near.xyz / near.w), 0.0);
+}
+
 void main() {
     ivec2 px = ivec2(gl_GlobalInvocationID.xy);
     if (any(greaterThanEqual(px, image_size))) return;
@@ -77,31 +96,22 @@ void main() {
 
     // Frame 1 (post-reset) has no valid history — pass current through untouched.
     if (history_frames <= 1) {
-        imageStore(taa_output_image, px, vec4(cur, 1.0));
+        taa_store(px, cur);
         return;
     }
 
-    // Sky pixels have no valid gbuffer world position; skip reprojection there. The
-    // envmap is view-locked, so keeping the current color for sky is correct — history
-    // reprojection would only introduce ghosting when the camera rotates.
-    if (gbuffer_is_sky(gbuffer_raw_normal(px))) {
-        imageStore(taa_output_image, px, vec4(cur, 1.0));
-        return;
-    }
-    vec3 primary_pos = gbuffer_world_pos(px, image_size);
-
-    // Reproject the primary hit's world pos through the un-jittered previous view*proj
-    // (see camera.cpp: prev_view_proj is deliberately built from baseProjection).
-    vec4 clip_prev = prev_view_proj_matrix * vec4(primary_pos, 1.0);
+    // Through the un-jittered previous view*proj (see camera.cpp: prev_view_proj is
+    // deliberately built from baseProjection).
+    vec4 clip_prev = prev_view_proj_matrix * taa_reprojection_target(px);
     if (clip_prev.w <= 0.0) {
-        imageStore(taa_output_image, px, vec4(cur, 1.0));
+        taa_store(px, cur);
         return;
     }
     vec2 ndc_prev = clip_prev.xy / clip_prev.w;
     vec2 uv_prev  = ndc_prev * 0.5 + 0.5;
 
     if (any(lessThan(uv_prev, vec2(0.0))) || any(greaterThan(uv_prev, vec2(1.0)))) {
-        imageStore(taa_output_image, px, vec4(cur, 1.0));
+        taa_store(px, cur);
         return;
     }
 
@@ -148,5 +158,5 @@ void main() {
     float a = min(blend_alpha, 1.0 - 1.0 / float(history_frames));
     vec3  outc = mix(cur, hist, a);
 
-    imageStore(taa_output_image, px, vec4(outc, 1.0));
+    taa_store(px, outc);
 }

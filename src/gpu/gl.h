@@ -24,6 +24,8 @@ enum class Barrier : GLbitfield
     ImageAccess = GL_SHADER_IMAGE_ACCESS_BARRIER_BIT,
     /// imageStore → later sampler reads of the same texture.
     TextureFetch = GL_TEXTURE_FETCH_BARRIER_BIT,
+    /// imageStore → later framebuffer access to the same texture (blits, draws).
+    Framebuffer = GL_FRAMEBUFFER_BARRIER_BIT,
     /// SSBO writes → glDispatchComputeIndirect reading them as arguments.
     Command = GL_COMMAND_BARRIER_BIT,
     /// Shader writes → later client-side buffer updates or clears.

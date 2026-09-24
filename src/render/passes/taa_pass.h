@@ -11,14 +11,14 @@
 /**
  * @brief Temporal anti-aliasing with neighborhood clamping.
  *
- * Reads `targets.display` (this frame's tonemapped image) and `targets.taa_history` (last
+ * Reads `targets.tonemapped` (this frame's tonemapped image) and `targets.taa_history` (last
  * frame's TAA output, sampled bilinearly), reprojects via the camera UBO's un-jittered
- * `prev_view_proj` using the primary hit's world position from the G-buffer, applies a 3x3 RGB
- * neighborhood clamp to suppress ghosting, and blends.
+ * `prev_view_proj` — the primary hit's world position, or the view direction for sky —
+ * clips history against the 3x3 YCoCg neighbourhood to suppress ghosting, and blends.
  *
- * The result is written into `targets.taa_output`, then copied back into `targets.display` so
- * downstream passes (AOV, the swap-chain blit) see the resolved image. RenderTargets::endFrame()
- * then makes `taa_output` next frame's `taa_history`.
+ * The result is written twice: into `targets.display` for downstream passes (AOV, the swap-chain
+ * blit), and at half-float precision into `targets.taa_output`, which RenderTargets::endFrame()
+ * makes next frame's `taa_history`.
  */
 class TaaPass : public RenderPass
 {

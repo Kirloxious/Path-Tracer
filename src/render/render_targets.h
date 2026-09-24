@@ -27,9 +27,10 @@ struct RenderTargets
     Texture normals;       ///< Primary normals + material type, consumed by the denoiser.
     Texture denoised_ping; ///< A-Trous ping-pong scratch target.
     Texture hdr;           ///< HDR pre-tonemap image — output of the denoiser, modified by bloom, read by auto-exposure + tonemap.
+    Texture tonemapped;    ///< TonemapPass output, TaaPass input. Separate from `display` so TAA can read neighbours while writing.
     Texture display;       ///< Final LDR image blitted to the swap chain.
-    Texture taa_history;   ///< Previous frame's TAA-resolved LDR image (sampled bilinear for reprojection).
-    Texture taa_output;    ///< Scratch target for this frame's TAA write; copied into `display` and swapped into `taa_history`.
+    Texture taa_history;   ///< Previous frame's TAA-resolved image (sampled bilinear for reprojection).
+    Texture taa_output;    ///< This frame's TAA result at history precision; swapped into `taa_history`.
 
     /// Current frame's primary-visibility data, written by RasterGBufferPass.
     GBuffer gbuf;

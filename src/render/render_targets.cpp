@@ -41,13 +41,13 @@ void RenderTargets::allocate(int w, int h) {
     normals = Texture(w, h, GL_RGBA16F);
     denoised_ping = Texture(w, h, GL_RGBA16F);
     hdr = Texture(w, h, GL_RGBA16F);
-    // RGB10_A2, not RGBA8. These three carry tonemapped sRGB values in [0,1], which 8 bits
-    // stores fine as a one-shot image — but taa_output feeds back into taa_history and is
-    // re-blended every frame at up to 0.9 history weight, and 8-bit rounding inside that
-    // loop never settles. 10 bits per channel costs the same 4 bytes and kills it.
+    tonemapped = Texture(w, h, GL_RGB10_A2);
     display = Texture(w, h, GL_RGB10_A2);
-    taa_history = Texture(w, h, GL_RGB10_A2);
-    taa_output = Texture(w, h, GL_RGB10_A2);
+    // Half float, not the 10-bit unorm of the one-shot targets: history is re-blended every
+    // frame at up to 0.9 weight, and at 10 bits any step under ~5 codes rounds back to the
+    // stored value, so it can never settle closer than that to the current frame.
+    taa_history = Texture(w, h, GL_RGBA16F);
+    taa_output = Texture(w, h, GL_RGBA16F);
     gbuf = GBuffer(w, h);
     gbuf_prev = GBuffer(w, h);
     fb = FrameBuffer(display);
