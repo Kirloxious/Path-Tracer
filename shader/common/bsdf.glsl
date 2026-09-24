@@ -78,9 +78,19 @@ float bsdf_G1_smith(float NoV, float alpha) {
 
 /// Schlick Fresnel for a dielectric interface, parameterized by the relative IOR the ray is
 /// crossing into (eta = ior_from / ior_to). Lives here rather than in the transmissive kernel
-/// so the reflection and refraction paths cannot drift apart.
+/// so the reflection and refraction paths cannot drift apart. Returns 1 under total internal
+/// reflection.
 float bsdf_fresnel_dielectric(float cosine, float eta) {
     cosine = clamp(cosine, 0.0, 1.0);
+    // Leaving the denser medium, Schlick must take the transmitted cosine: on the incident one
+    // F sits near r0 right up to the critical angle and then jumps to 1.
+    if (eta > 1.0) {
+        float sin2_t = eta * eta * (1.0 - cosine * cosine);
+        if (sin2_t >= 1.0) {
+            return 1.0;
+        }
+        cosine = sqrt(1.0 - sin2_t);
+    }
     float r0 = (1.0 - eta) / (1.0 + eta);
     r0 = r0 * r0;
     float x  = 1.0 - cosine;
@@ -370,9 +380,7 @@ bool bsdf_sample_transmissive(Material m, vec3 N, vec3 V, float eta, inout Sampl
         return false;
     }
 
-    // Total internal reflection when the refracted angle has no real solution.
-    bool  tir = (eta * eta * (1.0 - VoH * VoH)) > 1.0;
-    float F   = tir ? 1.0 : bsdf_fresnel_dielectric(VoH, eta);
+    float F = bsdf_fresnel_dielectric(VoH, eta);
 
     if (sampler_1d(smp) < F) {
         out_L = reflect(-V, H);
@@ -383,7 +391,7 @@ bool bsdf_sample_transmissive(Material m, vec3 N, vec3 V, float eta, inout Sampl
         }
     } else {
         out_L = refract(-V, H, eta);
-        // Floating-point edge case: the analytic TIR guard above can disagree with refract()'s
+        // Floating-point edge case: the Fresnel's TIR test can disagree with refract()'s
         // internal test near grazing angles, and refract() then returns vec3(0). A zero
         // direction in the ray queue makes inv_dir NaN in BVH traversal, so fall back to
         // reflection — the interface is effectively in TIR by either test.

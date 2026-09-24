@@ -24,7 +24,7 @@ struct ShadowState {
     vec3  env_dir;
     float env_valid;
     vec3  env_le;
-    float _pad;
+    uint  nee_tri; // sampled light triangle, exempt from its own shadow test
 };
 
 layout(std430, binding = BIND_SHADOW_STATE) restrict buffer ShadowStateBuffer {

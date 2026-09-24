@@ -140,7 +140,7 @@ void main() {
         Triangle tri = triangles[cur.light_tri_idx];
         vec3     v0  = vertices[tri.indices.x].position;
         vec3     sp  = v0 + cur.bary.x * tri.e1 + cur.bary.y * tri.e2;
-        if (!is_visible(restir_surface_offset_origin(self_surf), sp)) {
+        if (!is_visible(restir_surface_offset_origin(self_surf), sp, int(cur.light_tri_idx))) {
             cur.W = 0.0;
         }
     }

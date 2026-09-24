@@ -66,7 +66,7 @@ struct alignas(16) ShadowState
     glm::vec3 env_dir;   ///< Direction toward the sampled point on the environment.
     float     env_valid; ///< Non-zero when the environment slot holds a scheduled sample.
     glm::vec3 env_le;    ///< Radiance to add if the environment shadow ray is unoccluded.
-    float     _pad;
+    uint32_t  nee_tri;   ///< Sampled light triangle, exempt from its own shadow test.
 };
 static_assert(sizeof(ShadowState) == 64, "ShadowState size must match std430 layout");
 static_assert(offsetof(ShadowState, nee_dist) == 12);
@@ -75,6 +75,7 @@ static_assert(offsetof(ShadowState, nee_valid) == 28);
 static_assert(offsetof(ShadowState, env_dir) == 32);
 static_assert(offsetof(ShadowState, env_valid) == 44);
 static_assert(offsetof(ShadowState, env_le) == 48);
+static_assert(offsetof(ShadowState, nee_tri) == 60);
 
 /**
  * @brief Wavefront path tracer driven by per-material work queues.

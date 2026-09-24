@@ -26,13 +26,13 @@ void main() {
     vec3 origin   = hit_point + 0.001 * offset_n;
 
     vec3 add = vec3(0.0);
-    if (ss.nee_valid != 0.0 && is_visible(origin, hit_point + ss.nee_dir * ss.nee_dist)) {
+    if (ss.nee_valid != 0.0 && is_visible(origin, hit_point + ss.nee_dir * ss.nee_dist, int(ss.nee_tri))) {
         add += ss.nee_le;
     }
     // The environment sits at infinity, so anything the ray meets occludes it. The distance
     // only has to clear the scene bounds; is_visible shortens t_max by an epsilon, which at
     // this magnitude would round away, hence a value well short of what a float can hold.
-    if (ss.env_valid != 0.0 && is_visible(origin, origin + ss.env_dir * 1e6)) {
+    if (ss.env_valid != 0.0 && is_visible(origin, origin + ss.env_dir * 1e6, NO_SKIP_TRI)) {
         add += ss.env_le;
     }
 
