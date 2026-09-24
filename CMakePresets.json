@@ -28,7 +28,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_SYSTEM_NAME": "Windows",
-        "CMAKE_CXX_FLAGS_RELEASE": "-O3",
+        "CMAKE_CXX_FLAGS_RELEASE": "-O3 -DNDEBUG -march=native",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
         "CMAKE_C_COMPILER": "C:/msys64/ucrt64/bin/x86_64-w64-mingw32-gcc.exe",
         "CMAKE_CXX_COMPILER": "C:/msys64/ucrt64/bin/x86_64-w64-mingw32-g++.exe",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
@@ -43,7 +44,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_SYSTEM_NAME": "Windows",
-        "CMAKE_CXX_FLAGS_RELEASE": "-O3",
+        "CMAKE_CXX_FLAGS_RELEASE": "-O3 -DNDEBUG -march=native",
         "CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
         "CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang++.exe",
         "CMAKE_RC_COMPILER": "C:/Program Files/LLVM/bin/llvm-rc.exe",
@@ -69,6 +70,7 @@
       "binaryDir": "${sourceDir}/out/build/release-macos",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
         "CMAKE_SYSTEM_NAME": "Darwin",
         "CMAKE_C_COMPILER": "/usr/bin/clang",
         "CMAKE_CXX_COMPILER": "/usr/bin/clang++"
@@ -95,7 +97,9 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_SYSTEM_NAME": "Linux",
-        "CMAKE_CXX_FLAGS_RELEASE": "-O3", 
+        "CMAKE_CXX_FLAGS_RELEASE": "-O3 -DNDEBUG -march=native",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
+        "CMAKE_EXE_LINKER_FLAGS": "-fuse-ld=lld",
         "CMAKE_C_COMPILER": "/usr/bin/clang",
         "CMAKE_CXX_COMPILER": "/usr/bin/clang++"
       }
