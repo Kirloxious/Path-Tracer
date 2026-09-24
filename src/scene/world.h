@@ -92,7 +92,7 @@ public:
     /// it in lockstep. CPU-only.
     std::vector<uint32_t> triangleObjectId;
     /// Index of the last emissive triangle after sortEmissiveFirst(), or -1 when the scene has
-    /// no emitters. The shader treats `[0, emissiveLastIndex]` as the NEE candidate range.
+    /// no emitters. buildLightGroups() coalesces `[0, emissiveLastIndex]` into light groups.
     int emissiveLastIndex = -1;
 
     /**

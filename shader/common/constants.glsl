@@ -18,13 +18,11 @@ layout(std140, binding = UBO_FRAME) uniform FrameConstants {
 // Mirrors SceneConstants in src/render/gpu_constants.h.
 layout(std140, binding = UBO_SCENE) uniform SceneConstants {
     int   bvh_root_index;
-    // Emissive triangles are sorted to the front; -1 when the scene has no emitters.
-    int   emissive_last_index;
     int   num_light_groups;
+    ivec2 env_sample_size;
     int   max_bounces;
     float indirect_clamp;
     float env_map_intensity;
-    ivec2 env_sample_size;
     int   env_map_valid; // 0 = no envmap bound → sample_envmap returns black
 };
 

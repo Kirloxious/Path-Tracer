@@ -54,12 +54,11 @@ void Renderer::loadScene(const Scene& scene, const Camera& camera) {
 
     const SceneConstants constants{
         .bvh_root_index = world.bvh.root,
-        .emissive_last_index = world.emissiveLastIndex,
         .num_light_groups = static_cast<int32_t>(world.lightGroups.size()),
+        .env_sample_size = envMap.valid() ? envMap.samplingSize() : glm::ivec2(0),
         .max_bounces = camera.settings.max_bounces,
         .indirect_clamp = camera.settings.indirect_clamp,
         .env_map_intensity = scene.envIntensity,
-        .env_sample_size = envMap.valid() ? envMap.samplingSize() : glm::ivec2(0),
         .env_map_valid = envMap.valid() ? 1 : 0,
     };
     sceneUBO.update(constants);
