@@ -5,9 +5,10 @@
  * @brief GPU-layout-compatible vertex and triangle types shared by the CPU and the shaders.
  */
 
+#include <cstddef>
 #include <cstdint>
 #include <glm/glm.hpp>
-#include <vector>
+#include <span>
 
 /**
  * @brief One indexed vertex, laid out to match the std430 `Vertex` in `scene_buffers.glsl`.
@@ -38,6 +39,8 @@ struct alignas(16) Vertex
 };
 
 static_assert(sizeof(Vertex) == 32, "Vertex must be 32 bytes for std430");
+static_assert(offsetof(Vertex, normal) == 16);
+static_assert(offsetof(Vertex, material_index) == 28);
 
 /**
  * @brief One triangle with precomputed edges and NEE sampling data.
@@ -77,6 +80,11 @@ struct alignas(16) Triangle
 };
 
 static_assert(sizeof(Triangle) == 48, "Triangle must be 48 bytes for std430");
+static_assert(offsetof(Triangle, material_index) == 12);
+static_assert(offsetof(Triangle, e1) == 16);
+static_assert(offsetof(Triangle, area) == 28);
+static_assert(offsetof(Triangle, e2) == 32);
+static_assert(offsetof(Triangle, alias_packed) == 44);
 
 /**
  * @brief Builds a Triangle, baking its edge vectors and area.
@@ -92,7 +100,7 @@ static_assert(sizeof(Triangle) == 48, "Triangle must be 48 bytes for std430");
  * @param material_index Index into World::materials, matching all three vertices'.
  * @return The constructed triangle. `alias_packed` is left at 0 for World::buildLightGroups().
  */
-inline Triangle makeTriangle(const std::vector<Vertex>& vertices, uint32_t i0, uint32_t i1, uint32_t i2, uint32_t material_index) {
+inline Triangle makeTriangle(std::span<const Vertex> vertices, uint32_t i0, uint32_t i1, uint32_t i2, uint32_t material_index) {
     Triangle t;
     t.indices = glm::uvec3(i0, i1, i2);
     t.material_index = material_index;

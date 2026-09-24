@@ -5,6 +5,7 @@
  * @brief Wavefront path tracer: per-material shade kernels driven by GPU work queues.
  */
 
+#include <cstddef>
 #include <array>
 #include <cstdint>
 #include <glm/glm.hpp>
@@ -36,6 +37,17 @@ struct alignas(16) PathState
     uint32_t  hit_triangle_idx; ///< Triangle index of the current hit.
 };
 static_assert(sizeof(PathState) == 96, "PathState size must match std430 layout");
+static_assert(offsetof(PathState, flags) == 12);
+static_assert(offsetof(PathState, radiance) == 16);
+static_assert(offsetof(PathState, rng_state) == 28);
+static_assert(offsetof(PathState, ray_origin) == 32);
+static_assert(offsetof(PathState, pdf_bsdf) == 44);
+static_assert(offsetof(PathState, ray_dir) == 48);
+static_assert(offsetof(PathState, bounce) == 60);
+static_assert(offsetof(PathState, hit_point) == 64);
+static_assert(offsetof(PathState, hit_matid) == 76);
+static_assert(offsetof(PathState, hit_normal) == 80);
+static_assert(offsetof(PathState, hit_triangle_idx) == 92);
 
 /**
  * @brief Companion buffer for NEE plumbing (see `common/path_state.glsl`).
@@ -57,6 +69,12 @@ struct alignas(16) ShadowState
     float     _pad;
 };
 static_assert(sizeof(ShadowState) == 64, "ShadowState size must match std430 layout");
+static_assert(offsetof(ShadowState, nee_dist) == 12);
+static_assert(offsetof(ShadowState, nee_le) == 16);
+static_assert(offsetof(ShadowState, nee_valid) == 28);
+static_assert(offsetof(ShadowState, env_dir) == 32);
+static_assert(offsetof(ShadowState, env_valid) == 44);
+static_assert(offsetof(ShadowState, env_le) == 48);
 
 /**
  * @brief Wavefront path tracer driven by per-material work queues.

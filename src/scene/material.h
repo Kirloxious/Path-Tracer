@@ -5,6 +5,7 @@
  * @brief PBR material description shared verbatim with the shade kernels.
  */
 
+#include <cstddef>
 #include <cmath>
 #include <cstdint>
 #include <glm/ext/vector_float3.hpp>
@@ -207,3 +208,9 @@ struct alignas(16) Material
 };
 
 static_assert(sizeof(Material) == 48, "Material must be 48 bytes for std430");
+static_assert(offsetof(Material, metallic) == 12);
+static_assert(offsetof(Material, emission) == 16);
+static_assert(offsetof(Material, roughness) == 28);
+static_assert(offsetof(Material, ior) == 32);
+static_assert(offsetof(Material, transmission) == 36);
+static_assert(offsetof(Material, type) == 40);

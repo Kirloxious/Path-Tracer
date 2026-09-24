@@ -1,4 +1,6 @@
 #include "render/gui.h"
+
+#include <utility>
 #include "imgui.h"
 
 #include "scene/camera.h"
@@ -128,7 +130,7 @@ void drawSettings(RenderSettings& settings) {
 
     // AOV overlay. Also post-process — swapping mode doesn't invalidate accumulation.
     static const char* aovNames[] = {"Off", "World Normal", "Linear Depth", "Albedo", "Material ID", "BVH Cost", "Variance"};
-    int                aovIdx = static_cast<int>(settings.aovMode);
+    int                aovIdx = std::to_underlying(settings.aovMode);
     ImGui::SetNextItemWidth(180.0f);
     if (ImGui::Combo("AOV", &aovIdx, aovNames, IM_ARRAYSIZE(aovNames))) {
         settings.aovMode = static_cast<AovMode>(aovIdx);

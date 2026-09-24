@@ -5,6 +5,7 @@
  * @brief Equirectangular HDR environment map used as a distant area light.
  */
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <string>
@@ -37,6 +38,8 @@ struct alignas(16) EnvSampleCell
 };
 
 static_assert(sizeof(EnvSampleCell) == 16, "EnvSampleCell size must match std430 layout");
+static_assert(offsetof(EnvSampleCell, alias) == 4);
+static_assert(offsetof(EnvSampleCell, pdfNumerator) == 8);
 
 /**
  * @brief An equirectangular HDR environment map, owned as an rgba32f GL texture.

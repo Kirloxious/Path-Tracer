@@ -62,7 +62,7 @@ struct AABB
  * @param vertices Vertex pool; every index in @p t must be in range.
  * @return The triangle's AABB, already pad()-ed.
  */
-[[nodiscard]] AABB computeAABB(const Triangle& t, const std::vector<Vertex>& vertices);
+[[nodiscard]] AABB computeAABB(const Triangle& t, std::span<const Vertex> vertices);
 
 /// Maximum triangles a leaf may hold. One-triangle leaves make the tree as deep as it can
 /// possibly be (exactly 2n-1 nodes) and pay a full node fetch plus slab test per triangle;
@@ -135,7 +135,7 @@ public:
      *                  Must not be empty (debug builds assert; release builds are UB).
      * @param vertices  Vertex pool the triangle AABBs are derived from.
      */
-    void build(const std::vector<Triangle>& triangles, const std::vector<Vertex>& vertices);
+    void build(std::span<const Triangle> triangles, std::span<const Vertex> vertices);
 
 private:
     /// Intermediate pointer-style node used during construction, before flattening.
@@ -177,8 +177,8 @@ private:
      *                  in place.
      * @return Index in @p tree of the node created for this subtree.
      */
-    [[nodiscard]] static int buildR(std::vector<Node>& tree, std::atomic<int>& nextSlot, const std::vector<AABB>& aabbs, const int* refsBase,
-                                    const std::vector<glm::vec3>& centroids, std::span<int> range);
+    [[nodiscard]] static int buildR(std::vector<Node>& tree, std::atomic<int>& nextSlot, std::span<const AABB> aabbs, const int* refsBase,
+                                    std::span<const glm::vec3> centroids, std::span<int> range);
 
     /**
      * @brief Depth-first flattens a built subtree into `nodes`.

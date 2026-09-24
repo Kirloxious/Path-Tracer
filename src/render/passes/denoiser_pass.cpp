@@ -1,5 +1,7 @@
 #include "render/passes/denoiser_pass.h"
 
+#include <array>
+
 #include "gpu/compute_shader.h"
 #include "core/log.h"
 #include "core/shader_shared.h"
@@ -18,9 +20,9 @@ void DenoiserPass::execute(const RenderContext&, RenderTargets& targets) {
 
     // A-Trous denoiser: 4 ping-pong passes, result HDR in targets.hdr — tonemap is a
     // downstream pass so bloom / auto-exposure can operate on the pre-tonemap image.
-    Texture* srcs[4] = {&targets.accum, &targets.denoised_ping, &targets.hdr, &targets.denoised_ping};
-    Texture* dsts[4] = {&targets.denoised_ping, &targets.hdr, &targets.denoised_ping, &targets.hdr};
-    int      steps[4] = {1, 2, 4, 8};
+    const std::array<const Texture*, 4> srcs = {&targets.accum, &targets.denoised_ping, &targets.hdr, &targets.denoised_ping};
+    const std::array<const Texture*, 4> dsts = {&targets.denoised_ping, &targets.hdr, &targets.denoised_ping, &targets.hdr};
+    constexpr std::array<int, 4>        steps = {1, 2, 4, 8};
 
     // How many standard errors of the per-pixel luminance the colour edge-stop spans. The
     // estimate comes from resolve.comp's temporally accumulated moments, so the width adapts
@@ -45,7 +47,7 @@ void DenoiserPass::execute(const RenderContext&, RenderTargets& targets) {
     glBindTextureUnit(3, targets.moments.id());
     glBindTextureUnit(4, targets.accum.id());
 
-    for (int pass = 0; pass < 4; ++pass) {
+    for (std::size_t pass = 0; pass < steps.size(); ++pass) {
         // Source and normals are sampled, not image-bound: pass 0 reads `accum` (rgba32f)
         // and later passes read the rgba16f ping-pong pair, which a single image format
         // qualifier could not cover. Only the destination stays an image.
