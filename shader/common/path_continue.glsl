@@ -6,6 +6,7 @@
 #include "rng.glsl"
 #include "geom.glsl"
 #include "uniform_locations.glsl"
+#include "constants.glsl"
 
 // Everything a scattered path does *after* its new direction has been chosen: ray-origin
 // offset, bounce accounting, MIS flag bookkeeping, Russian roulette, state store and requeue.
@@ -15,18 +16,13 @@
 // duplicated copies had already started to diverge in their comments — the kind of drift that
 // ends with two subtly different Russian-roulette cutoffs.
 //
-// These uniforms are declared here, not in the kernels, so every shade kernel that continues
-// a path necessarily agrees on the bounce budget.
+// Declared here, not in the kernels, so every shade kernel that continues a path agrees on it.
 layout(location = LOC_BOUNCE_INDEX) uniform int bounce_index;
-layout(location = LOC_MAX_BOUNCES) uniform int max_bounces;
-// Which accumulation frame this is, and so which sample of the low-discrepancy sequence every
-// draw along this path belongs to.
-layout(location = LOC_SAMPLE_INDEX) uniform int sample_index;
 
 // The sampler for one path vertex. Rebasing the dimension on `bounce` is what keeps the
 // vertices of a path drawing from disjoint groups instead of re-walking the same ones.
 Sampler path_sampler(in PathState s) {
-    return sampler_init(s.rng_state, sample_index, s.bounce * SAMPLER_DIMS_PER_BOUNCE);
+    return sampler_init(s.rng_state, frame_index, s.bounce * SAMPLER_DIMS_PER_BOUNCE);
 }
 
 /**

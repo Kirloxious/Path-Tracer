@@ -2,6 +2,7 @@
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 #include "common/gbuffer.glsl"
+#include "common/constants.glsl"
 #include "common/bsdf.glsl"
 
 // Inputs are sampled, not image-loaded, for two reasons. Formats: pass 0 reads `accum`
@@ -21,17 +22,16 @@ layout(binding = 3) uniform sampler2D moments_tex;
 layout(binding = 4) uniform sampler2D history_tex;
 
 layout(location = 0) uniform int step_size;
-layout(location = 1) uniform ivec2 image_size;
-layout(location = 2) uniform float sigma_color_scale;
-layout(location = 3) uniform float sigma_normal;
+layout(location = 1) uniform float sigma_color_scale;
+layout(location = 2) uniform float sigma_normal;
 // Plane-distance tolerance at unit view depth. Scaled by depth at use: a fixed pixel offset
 // spans more world space the further away the surface is, so a constant world-space tolerance
 // would separate a floor from a wall up close and fuse them across the room.
-layout(location = 4) uniform float sigma_plane;
+layout(location = 3) uniform float sigma_plane;
 // Pass 0 derives the variance from `moments_tex` and `history_tex`; passes 1-3 read the
 // variance the previous pass filtered into `src_tex.a`. The two cannot be unified because
 // pass 0's source is `accum`, whose alpha holds the history length instead.
-layout(location = 5) uniform int first_pass;
+layout(location = 4) uniform int first_pass;
 
 // Separable Gaussian kernel: 2D weight = h[i] * h[j]
 const float h[5] = float[5](1.0 / 16.0, 1.0 / 4.0, 3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0);

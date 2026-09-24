@@ -2,13 +2,11 @@
 #define ENVMAP_GLSL
 
 #include "rng.glsl"  // for PI
-#include "uniform_locations.glsl"
+#include "constants.glsl"
 
 // The environment as a distant area light: read on a miss (generate.comp for the primary sky,
 // trace.comp for a continuation) and sampled explicitly by shade_surface's NEE.
-layout(binding = 9) uniform sampler2D env_map_tex;
-layout(location = LOC_ENV_MAP_VALID) uniform int   env_map_valid;      // 0 = no envmap bound → return black
-layout(location = LOC_ENV_MAP_INTENSITY) uniform float env_map_intensity;  // per-scene scale
+layout(binding = TEX_ENV_MAP) uniform sampler2D env_map_tex;
 
 // Importance-sampling grid: a Vose alias table over a downsampled copy of the map, weighted by
 // radiance times the equirect Jacobian. Built in EnvMap::buildSamplingTable.
@@ -24,8 +22,7 @@ struct EnvSampleCell {
     float _pad;
 };
 
-layout(std430, binding = 27) readonly buffer EnvSampleBuffer { EnvSampleCell env_cells[]; };
-layout(location = LOC_ENV_SAMPLE_SIZE) uniform ivec2 env_sample_size;
+layout(std430, binding = BIND_ENV_SAMPLES) readonly buffer EnvSampleBuffer { EnvSampleCell env_cells[]; };
 
 // sin(theta) floor for the poles, where the pdf's 1/sin would otherwise diverge.
 const float ENV_MIN_SIN_THETA = 1e-4;

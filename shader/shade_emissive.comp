@@ -5,10 +5,8 @@ layout(local_size_x = 64) in;
 #include "common/path_state.glsl"
 #include "common/queue.glsl"
 #include "common/scene_buffers.glsl"
-#include "common/uniform_locations.glsl"
 #include "common/clamp.glsl"
 
-layout(location = LOC_NUM_LIGHT_GROUPS) uniform int num_light_groups;
 
 // Which light group owns `tri_idx`. buildLightGroups() emits groups as runs of
 // consecutive emissive triangles, so `begin` is strictly increasing and the group is

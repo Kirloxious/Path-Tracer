@@ -47,10 +47,10 @@ Application::Application(Scene initialScene)
     renderer.addRenderPass(std::make_unique<PathTracerPass>(camera.image_width, camera.image_height));
     renderer.addRenderPass(std::make_unique<DenoiserPass>(denoiserShaderPath));
     renderer.addRenderPass(std::make_unique<BloomPass>(camera.image_width, camera.image_height, settings));
-    renderer.addRenderPass(std::make_unique<AutoExposurePass>(camera.image_width, camera.image_height, settings));
-    renderer.addRenderPass(std::make_unique<TonemapPass>(camera.image_width, camera.image_height));
-    renderer.addRenderPass(std::make_unique<TaaPass>(camera.image_width, camera.image_height));
-    renderer.addRenderPass(std::make_unique<AovPass>(camera.image_width, camera.image_height, settings));
+    renderer.addRenderPass(std::make_unique<AutoExposurePass>(settings));
+    renderer.addRenderPass(std::make_unique<TonemapPass>());
+    renderer.addRenderPass(std::make_unique<TaaPass>());
+    renderer.addRenderPass(std::make_unique<AovPass>(settings));
 
     renderer.addRenderPass(
         std::make_unique<GuiPass>(fpsTimer, gpuTimer, renderer.getPassTimings(), sceneEntries, sceneSwitch, settings)); // keep last
@@ -88,7 +88,7 @@ int Application::run() {
         // moves, which would pin the jitter and leave TAA nothing new to resolve.
         camera.applyJitter(static_cast<int>(framesRendered++));
         renderer.updateCameraUbo(camera);
-        if (renderer.reloadShadersIfChanged(ctx)) {
+        if (renderer.reloadShadersIfChanged()) {
             resetAccumulation();
             ctx.frameIndex = 0;
             historyFrames = 0;

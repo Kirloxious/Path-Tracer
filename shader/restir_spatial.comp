@@ -6,37 +6,31 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/rng.glsl"
 #include "common/restir_common.glsl"
 #include "common/restir_surface.glsl"
-#include "common/uniform_locations.glsl"
 
-layout(std430, binding = 18) restrict buffer RestirReservoirsCurrent {
+layout(std430, binding = BIND_RESERVOIRS_CURRENT) restrict buffer RestirReservoirsCurrent {
     Reservoir reservoirs[];
 };
 
 // Spatial reuse reads from `spatial_input` and writes `reservoirs`. The two
 // spatial passes ping-pong by swapping which underlying Buffer is bound to
 // 18 vs 20 between dispatches.
-layout(std430, binding = 20) restrict readonly buffer RestirSpatialInput {
+layout(std430, binding = BIND_RESERVOIRS_SPATIAL_INPUT) restrict readonly buffer RestirSpatialInput {
     Reservoir spatial_input[];
 };
 
-layout(std430, binding = 24) restrict readonly buffer RestirSurfaceCurrent {
+layout(std430, binding = BIND_SURFACES_CURRENT) restrict readonly buffer RestirSurfaceCurrent {
     RestirSurface surfaces[];
 };
 
 // No G-buffer reads: this pass works entirely in terms of resampling surfaces now.
 
-layout(location = 0) uniform ivec2 image_size;
-layout(location = 1) uniform int   frame_index;
-layout(location = 2) uniform int   k_neighbors;
-layout(location = 3) uniform int   time;
-layout(location = 4) uniform float radius_pixels;
-layout(location = 5) uniform int   pass_index;
+layout(location = 0) uniform int   k_neighbors;
+layout(location = 1) uniform float radius_pixels;
+layout(location = 2) uniform int   pass_index;
 // 0 on every spatial pass but the last. The chosen sample is re-validated by whichever
 // pass runs last, so testing it in an intermediate pass buys nothing and costs a full
 // screen's worth of BVH shadow traversals.
-layout(location = 6) uniform int   test_visibility;
-layout(location = LOC_RUN_SEED) uniform int     run_seed;
-layout(location = LOC_SAMPLE_INDEX) uniform int sample_index;
+layout(location = 3) uniform int   test_visibility;
 
 const float NORMAL_DOT_THRESHOLD = 0.9;
 const float WORLD_POS_DELTA      = 0.5;
@@ -73,8 +67,8 @@ void main() {
     // taps sweep the disc evenly rather than reclustering every frame. The reservoir
     // acceptance test keeps a PCG stream — see restir_initial for why the two are separate.
     // pass_index folds into both so the two spatial dispatches pick different neighbours.
-    Sampler smp = sampler_init(sampler_seed(pid, uint(run_seed) + uint(pass_index) * 0x9e37u + 0x4093u), sample_index, 0u);
-    uint    rng = (pid * 4093u + uint(frame_index) * 65537u + uint(time) * 92837u + uint(pass_index) * 19937u + 0xDEADBEEFu) | 1u;
+    Sampler smp = sampler_init(sampler_seed(pid, run_seed + uint(pass_index) * 0x9e37u + 0x4093u), frame_index, 0u);
+    uint    rng = (pid * 4093u + uint(frame_index) * 65537u + time_seed * 92837u + uint(pass_index) * 19937u + 0xDEADBEEFu) | 1u;
 
     // Which neighbours were actually combined, for the Z pass after selection. Only these
     // contributed to cur.M, so only these can contribute to the divisor.

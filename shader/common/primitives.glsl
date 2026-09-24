@@ -1,6 +1,8 @@
 #ifndef PRIMITIVES_GLSL
 #define PRIMITIVES_GLSL
 
+#include "host_shared.glsl"
+
 //=============================================================================
 // Structs
 //=============================================================================
@@ -48,14 +50,6 @@ struct Vertex
     vec3 position;
     vec3 normal;
 };
-
-// Derived MaterialClass values (see src/scene/material.h). Numbering is unchanged from the
-// old authored MaterialType, so denoiser.comp's edge-stop thresholds and resolve.comp's
-// material-id write keep working without modification.
-const uint MAT_DIFFUSE = 0u;
-const uint MAT_SPECULAR = 1u;
-const uint MAT_TRANSMISSIVE = 2u;
-const uint MAT_EMISSIVE = 3u;
 
 // Mirrors src/scene/material.h. `roughness` is perceptual — GGX alpha is roughness^2.
 // `type` is a derived MaterialClass cached on the CPU by Material::classify(), never authored,

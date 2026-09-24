@@ -1,48 +1,60 @@
 #include "render/renderer.h"
-#include "gpu/buffer.h"
+
+#include <memory>
+
 #include "core/log.h"
+#include "core/shader_shared.h"
+#include "gpu/buffer.h"
+#include "render/gpu_constants.h"
 #include "render/render_pass.h"
 #include "render/render_targets.h"
-#include <memory>
 
 Renderer::Renderer(int w, int h) : targets(w, h) {
     Log::info("Renderer");
+    frameUBO = Buffer(FrameConstants{}, GL_DYNAMIC_DRAW);
+    sceneUBO = Buffer(SceneConstants{}, GL_DYNAMIC_DRAW);
 }
 
 void Renderer::loadScene(const Scene& scene, const Camera& camera) {
+    const World& world = scene.world;
+
     // An unlit scene still gets one zeroed group, so binding 0 never keeps the previous
     // scene's lights; the shaders gate every read on num_light_groups.
     const std::vector<World::LightGroup> noLights(1);
-    const auto&                          lightGroups = scene.world.lightGroups.empty() ? noLights : scene.world.lightGroups;
-    lightGroupsSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 0, lightGroups, GL_STATIC_DRAW);
-    matsSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 1, scene.world.materials, GL_STATIC_DRAW);
-    camUBO = Buffer(GL_UNIFORM_BUFFER, 2, camera.data, GL_DYNAMIC_DRAW); // updated every frame
-    bvhNodesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 3, scene.world.bvh.nodes, GL_STATIC_DRAW);
-    trianglesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 4, scene.world.triangles, GL_STATIC_DRAW);
-    verticesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 5, scene.world.vertices, GL_STATIC_DRAW);
-    // Leaf triangle references. A BVH leaf owns a contiguous run here; each entry indexes
-    // trianglesSSBO. The indirection is what lets leaves batch several triangles without
-    // disturbing the emissive-first triangle ordering that NEE and the shadow ray rely on.
-    triRefsSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 26, scene.world.bvh.triRefs, GL_STATIC_DRAW);
+    lightGroupsSSBO = Buffer(world.lightGroups.empty() ? noLights : world.lightGroups, GL_STATIC_DRAW);
+    matsSSBO = Buffer(world.materials, GL_STATIC_DRAW);
+    camUBO = Buffer(camera.data, GL_DYNAMIC_DRAW);
+    bvhNodesSSBO = Buffer(world.bvh.nodes, GL_STATIC_DRAW);
+    trianglesSSBO = Buffer(world.triangles, GL_STATIC_DRAW);
+    verticesSSBO = Buffer(world.vertices, GL_STATIC_DRAW);
+    // A BVH leaf owns a contiguous run here, each entry indexing trianglesSSBO. The indirection
+    // lets leaves batch triangles without disturbing the emissive-first triangle order.
+    triRefsSSBO = Buffer(world.bvh.triRefs, GL_STATIC_DRAW);
 
-    // Rebuild (or clear) the envmap. Empty path → EnvMap() default-constructs
-    // to invalid, which makes `targets.envMap->valid()` false.
-    if (!scene.envMapPath.empty()) {
-        envMap = EnvMap(scene.envMapPath, scene.envIntensity);
-    } else {
-        envMap = EnvMap();
-    }
-    targets.envMap = &envMap;
+    envMap = scene.envMapPath.empty() ? EnvMap() : EnvMap(scene.envMapPath, scene.envIntensity);
 
-    // The importance-sampling table. Always uploaded, even for a scene with no envmap: the
-    // shaders gate every read on env_map_valid, but leaving the binding empty would make a
-    // stray read undefined rather than merely wrong, and one cell costs nothing.
+    // Uploaded even without an envmap: every read is gated on env_map_valid, but an empty
+    // binding would make a stray read undefined rather than merely wrong.
     const std::vector<EnvSampleCell> fallback(1);
-    envSamplingSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 27, envMap.samplingCells().empty() ? fallback : envMap.samplingCells(), GL_STATIC_DRAW);
+    envSamplingSSBO = Buffer(envMap.samplingCells().empty() ? fallback : envMap.samplingCells(), GL_STATIC_DRAW);
+
+    // Validity comes from the loaded map, not the scene's path: a file that failed to load
+    // leaves a zero-sized sampling grid that envmap_sample would index out of bounds.
+    const SceneConstants constants{
+        .bvh_root_index = world.bvh.root,
+        .emissive_last_index = world.emissiveLastIndex,
+        .num_light_groups = static_cast<int32_t>(world.lightGroups.size()),
+        .max_bounces = camera.settings.max_bounces,
+        .indirect_clamp = camera.settings.indirect_clamp,
+        .env_map_intensity = scene.envIntensity,
+        .env_sample_size = envMap.valid() ? envMap.samplingSize() : glm::ivec2(0),
+        .env_map_valid = envMap.valid() ? 1 : 0,
+    };
+    sceneUBO.update(constants);
 
     Log::info("Renderer: Buffers created");
     for (auto& pass : passes) {
-        pass->uploadUniforms(scene, camera);
+        pass->onSceneLoaded(scene);
     }
 
     Log::info("Renderer: Scene loaded.");
@@ -62,7 +74,33 @@ void Renderer::updateCameraUbo(const Camera& cam) {
     camUBO.update(cam.data);
 }
 
-void Renderer::render(RenderContext& ctx) {
+void Renderer::bindSceneResources() const {
+    lightGroupsSSBO.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_LIGHT_GROUPS);
+    matsSSBO.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_MATERIALS);
+    bvhNodesSSBO.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_BVH_NODES);
+    trianglesSSBO.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_TRIANGLES);
+    verticesSSBO.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_VERTICES);
+    triRefsSSBO.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_TRI_REFS);
+    envSamplingSSBO.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_ENV_SAMPLES);
+
+    camUBO.bindBase(GL_UNIFORM_BUFFER, UBO_CAMERA);
+    frameUBO.bindBase(GL_UNIFORM_BUFFER, UBO_FRAME);
+    sceneUBO.bindBase(GL_UNIFORM_BUFFER, UBO_SCENE);
+
+    envMap.bind(TEX_ENV_MAP);
+}
+
+void Renderer::render(const RenderContext& ctx) {
+    const FrameConstants frame{
+        .image_size = {targets.width, targets.height},
+        .frame_index = ctx.frameIndex,
+        .history_frames = ctx.historyFrames,
+        .time_seed = ctx.timeSeed,
+        .run_seed = ctx.runSeed,
+    };
+    frameUBO.update(frame);
+    bindSceneResources();
+
     // Pull in previous frame's per-pass timestamps before we overwrite them.
     passTimings.beginFrame();
     for (size_t i = 0; i < passes.size(); ++i) {
@@ -73,14 +111,14 @@ void Renderer::render(RenderContext& ctx) {
     passTimings.endFrame();
 }
 
-bool Renderer::reloadShadersIfChanged(RenderContext& ctx) {
+bool Renderer::reloadShadersIfChanged() {
     bool changed = false;
     for (auto& pass : passes) {
-        changed |= pass->reloadIfChanged(ctx);
+        changed |= pass->reloadIfChanged();
     }
-
     return changed;
 }
+
 void Renderer::addRenderPass(std::unique_ptr<RenderPass> pass) {
     passTimings.addPass(pass->name());
     passes.push_back(std::move(pass));

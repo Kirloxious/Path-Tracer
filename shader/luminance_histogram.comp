@@ -1,19 +1,20 @@
 #version 460 core
 layout(local_size_x = 16, local_size_y = 16) in;
 
+#include "common/constants.glsl"
+
 // Builds a 256-bin log-luminance histogram of the HDR image. Uses shared memory
 // so 256 threads per workgroup atomically-hit a local histogram, then merge to
 // the global one — cheaper than a global-atomic-only version by ~100x.
 
 layout(rgba16f, binding = 0) readonly uniform image2D src_image;
 
-layout(std430, binding = 31) buffer HistogramBuffer {
+layout(std430, binding = BIND_HISTOGRAM) buffer HistogramBuffer {
     uint bins[256];
 } hist;
 
-layout(location = 0) uniform ivec2 image_size;
-layout(location = 1) uniform float log_luma_min;
-layout(location = 2) uniform float inv_log_luma_range;
+layout(location = 0) uniform float log_luma_min;
+layout(location = 1) uniform float inv_log_luma_range;
 
 shared uint local_bins[256];
 

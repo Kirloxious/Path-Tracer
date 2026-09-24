@@ -5,32 +5,26 @@
 #include <glad/glad.h>
 
 #include "core/log.h"
+#include "core/shader_shared.h"
 
-TaaPass::TaaPass(int w, int h) : width(w), height(h) {
+TaaPass::TaaPass() {
     Log::info("TaaPass: loading 'shader/taa.comp'");
     shader = ComputeShader("shader/taa.comp");
 }
 
-bool TaaPass::reloadIfChanged(const RenderContext&) {
+bool TaaPass::reloadIfChanged() {
     return shader.reloadIfChanged();
 }
 
-void TaaPass::resize(int w, int h) {
-    width = w;
-    height = h;
-}
-
-void TaaPass::execute(const RenderContext& ctx, RenderTargets& targets) {
+void TaaPass::execute(const RenderContext&, RenderTargets& targets) {
     shader.use();
 
     targets.display.bind(0, GL_READ_ONLY);
     targets.taa_output.bind(2, GL_WRITE_ONLY);
-    glBindTextureUnit(6, targets.gbuf.normal.handle);
-    glBindTextureUnit(10, targets.gbuf.depth.handle); // world position is reconstructed from this
-    glBindTextureUnit(7, targets.taa_history.handle);
+    glBindTextureUnit(TEX_GBUF_NORMAL, targets.gbuf.normal.handle);
+    glBindTextureUnit(TEX_GBUF_DEPTH, targets.gbuf.depth.handle);
+    glBindTextureUnit(TEX_TAA_HISTORY, targets.taa_history.handle);
 
-    shader.setIVec2("image_size", width, height);
-    shader.setInt("frame_index", ctx.historyFrames);
     // High history weight so per-frame jitter mostly cancels out. Catmull-Rom
     // resampling keeps this from turning into visible blur (which pure bilinear at
     // this weight would).
@@ -41,7 +35,8 @@ void TaaPass::execute(const RenderContext& ctx, RenderTargets& targets) {
 
     // Copy the TAA result back into display so downstream passes (AOV overrides,
     // swap-chain blit) read the resolved image without any renaming.
-    glCopyImageSubData(targets.taa_output.handle, GL_TEXTURE_2D, 0, 0, 0, 0, targets.display.handle, GL_TEXTURE_2D, 0, 0, 0, 0, width, height, 1);
+    glCopyImageSubData(
+        targets.taa_output.handle, GL_TEXTURE_2D, 0, 0, 0, 0, targets.display.handle, GL_TEXTURE_2D, 0, 0, 0, 0, targets.width, targets.height, 1);
 
     // Rotate history: this frame's output becomes next frame's history. The old
     // history moves into taa_output where it'll be overwritten next frame. Both

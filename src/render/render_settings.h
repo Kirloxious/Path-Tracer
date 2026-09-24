@@ -5,20 +5,22 @@
  * @brief Runtime-tunable rendering knobs shared between the GUI and the passes.
  */
 
+#include "core/shader_shared.h"
+
 /**
  * @brief Debug AOV overlay selector.
  *
- * Values must stay in sync with the `AOV_*` constants in `shader/aov.comp`.
+ * The values are the `AOV_*` defines from host_shared.glsl, which `aov.comp` switches on.
  */
 enum class AovMode : int
 {
-    None = 0,
-    WorldNormal = 1,
-    LinearDepth = 2,
-    Albedo = 3,
-    MaterialId = 4,
-    BvhCost = 5,
-    Variance = 6,
+    None = AOV_NONE,
+    WorldNormal = AOV_WORLD_NORMAL,
+    LinearDepth = AOV_LINEAR_DEPTH,
+    Albedo = AOV_ALBEDO,
+    MaterialId = AOV_MATERIAL_ID,
+    BvhCost = AOV_BVH_COST,
+    Variance = AOV_VARIANCE,
 };
 
 /**

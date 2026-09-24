@@ -23,20 +23,13 @@
 class TaaPass : public RenderPass
 {
 public:
-    /**
-     * @brief Loads `taa.comp` and caches the dispatch dimensions.
-     * @param width  Framebuffer width in pixels.
-     * @param height Framebuffer height in pixels.
-     */
-    TaaPass(int width, int height);
+    /// Loads `taa.comp`.
+    TaaPass();
 
-    bool        reloadIfChanged(const RenderContext&) override;
-    void        resize(int width, int height) override;
+    bool        reloadIfChanged() override;
     void        execute(const RenderContext&, RenderTargets&) override;
     const char* name() const override { return "TAA"; }
 
 private:
-    int           width;
-    int           height;
     ComputeShader shader;
 };

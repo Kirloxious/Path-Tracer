@@ -48,6 +48,8 @@ void RenderTargets::allocate(int w, int h) {
         glTextureParameteri(t->handle, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     }
 
+    width = w;
+    height = h;
     numGroupsX = (w + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE;
     numGroupsY = (h + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE;
 }

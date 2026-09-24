@@ -2,29 +2,16 @@
 layout(local_size_x = 8, local_size_y = 8) in;
 
 #include "common/scene_buffers.glsl"
-#include "common/rng.glsl" // MAT_* constants live here
-#include "common/uniform_locations.glsl"
+#include "common/rng.glsl"
 #include "common/bvh_traversal.glsl"
 #include "common/gbuffer.glsl"
 
 layout(rgb10_a2, binding = 0) writeonly uniform image2D dst_image;
 layout(rgba32f, binding = 1) readonly  uniform image2D accum_image;
 
-layout(location = 0) uniform ivec2 image_size;
-layout(location = 1) uniform int   aov_mode;
-layout(location = 2) uniform float depth_max;
-layout(location = 3) uniform float bvh_cost_max;
-// bvh_root_index comes from common/bvh_traversal.glsl, which this shader now includes for
-// world_hit_cost() rather than keeping its own copy of the traversal loop.
-
-// Keep in sync with AovMode in src/render/render_settings.h.
-const int AOV_NONE         = 0;
-const int AOV_WORLD_NORMAL = 1;
-const int AOV_LINEAR_DEPTH = 2;
-const int AOV_ALBEDO       = 3;
-const int AOV_MATERIAL_ID  = 4;
-const int AOV_BVH_COST     = 5;
-const int AOV_VARIANCE     = 6;
+layout(location = 0) uniform int   aov_mode; // AOV_* in host_shared.glsl
+layout(location = 1) uniform float depth_max;
+layout(location = 2) uniform float bvh_cost_max;
 
 // Turbo-ish colormap: cheap analytic approximation used for scalar heatmaps.
 // Domain [0,1] → smooth blue → cyan → green → yellow → red ramp.

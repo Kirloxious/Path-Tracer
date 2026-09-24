@@ -5,12 +5,13 @@
  * @brief Wavefront path tracer: per-material shade kernels driven by GPU work queues.
  */
 
+#include <array>
 #include <cstdint>
 #include <glm/glm.hpp>
 
 #include "gpu/buffer.h"
+#include "core/shader_shared.h"
 #include "gpu/compute_shader.h"
-#include "gpu/queue.h"
 #include "render/render_pass.h"
 
 /**
@@ -63,13 +64,13 @@ static_assert(sizeof(ShadowState) == 64, "ShadowState size must match std430 lay
  * One PathState SSBO plus per-bounce queues turn a divergent megakernel into a sequence of
  * coherent dispatches:
  *
- *     generate          (8x8 over image)             → hit_X queues
- *     shadeOpaque          (linear over hit_opaque)        → rayQueue + shadowQueue
- *     shadeTransmissive                                → rayQueue
- *     shadeEmissive                                  → terminal (accumulates Le)
- *     traceShadow       (linear over shadow_queue)   → states[].radiance
- *     trace             (linear over ray_queue)      → hit_X queues  (refill)
- *     resolve           (8x8 over image)             → accum_image + normals_image
+ *     generate           (8x8 over image)                → hit_X queues
+ *     shadeOpaque        (linear over hit_opaque)        → ray + shadow queues
+ *     shadeTransmissive  (linear over hit_transmissive)  → ray + shadow queues
+ *     shadeEmissive      (linear over hit_emissive)      → terminal (accumulates Le)
+ *     traceShadow        (linear over the shadow queue)  → states[].radiance
+ *     trace              (linear over the ray queue)     → hit_X queues (refill)
+ *     resolve            (8x8 over image)                → accum + normals + moments
  *
  * The shade/trace block repeats `max_bounces` times before resolve. `generate.comp` seeds
  * PathState straight from the G-buffer and routes the primary hit into the right queue without
@@ -82,7 +83,7 @@ class PathTracerPass : public RenderPass
 {
 public:
     /**
-     * @brief Loads all nine kernels and allocates the path-state buffers and queues.
+     * @brief Loads all eight kernels and allocates the path-state buffers and queues.
      *
      * Queues are sized for the worst case of one entry per pixel.
      *
@@ -91,21 +92,14 @@ public:
      */
     PathTracerPass(int width, int height);
 
-    void        uploadUniforms(const Scene&, const Camera&) override;
-    bool        reloadIfChanged(const RenderContext&) override;
+    bool        reloadIfChanged() override;
     void        resize(int width, int height) override;
     void        execute(const RenderContext&, RenderTargets&) override;
     const char* name() const override { return "PathTracer"; }
 
 private:
-    int width;
-    int height;
-    int numPixels;
-    int numWorkGroupsX_8x8;
-    int numWorkGroupsY_8x8;
-    /// Worst-case group count for the linear (local size 64) shade and trace kernels. The
-    /// actual per-bounce counts come from the queues via indirect dispatch.
-    int numWorkGroups_64;
+    /// Allocates every per-pixel buffer for a @p width x @p height image.
+    void allocate(int width, int height);
 
     ComputeShader generate;
     ComputeShader trace;
@@ -121,13 +115,10 @@ private:
     Buffer pathStateSSBO;
     Buffer shadowStateSSBO;
     /// Doubles as an SSBO (written by prepareIndirect) and as GL_DISPATCH_INDIRECT_BUFFER
-    /// (read by glDispatchComputeIndirect). Holds 6 uvec3 dispatch args, indexed by SLOT_*.
+    /// (read by glDispatchComputeIndirect). One uvec4 of dispatch args per queue, indexed by Q_*.
     Buffer dispatchArgsSSBO;
-
-    QueueCounters queueCounters;
-    Queue         rayQueue;
-    Queue         hitOpaque;
-    Queue         hitTransmissive;
-    Queue         hitEmissive;
-    Queue         shadowQueue;
+    /// One uint counter per queue in a single SSBO; see queue.glsl for why they are shared.
+    Buffer queueCounters;
+    /// Path indices per queue, indexed by Q_*.
+    std::array<Buffer, NUM_QUEUES> queueIndices;
 };

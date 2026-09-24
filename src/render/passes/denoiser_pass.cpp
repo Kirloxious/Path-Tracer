@@ -2,6 +2,7 @@
 
 #include "gpu/compute_shader.h"
 #include "core/log.h"
+#include "core/shader_shared.h"
 #include "render/render_pass.h"
 
 DenoiserPass::DenoiserPass(const std::filesystem::path& shaderPath) {
@@ -9,27 +10,8 @@ DenoiserPass::DenoiserPass(const std::filesystem::path& shaderPath) {
     shader = ComputeShader(shaderPath);
 }
 
-void DenoiserPass::uploadUniforms(const Scene&, const Camera& camera) {
-    shader.use();
-    shader.setIVec2("image_size", camera.image_width, camera.image_height);
-    shader.setFloat("sigma_normal", 64.0f);
-    // Plane tolerance per unit of view depth. At 1080p / 90° vfov the widest tap reaches
-    // ~0.3 world units at depth 10, so the allowance has to stay well under that to keep a
-    // wall out of the floor's filter; the kernel hot-reloads, so this is worth scrubbing.
-    shader.setFloat("sigma_plane", 0.01f);
-}
-
-bool DenoiserPass::reloadIfChanged(const RenderContext& ctx) {
-    if (!shader.reloadIfChanged()) {
-        return false;
-    }
-    uploadUniforms(ctx.scene, ctx.camera);
-    return true;
-}
-
-void DenoiserPass::resize(int w, int h) {
-    shader.use();
-    shader.setIVec2("image_size", w, h);
+bool DenoiserPass::reloadIfChanged() {
+    return shader.reloadIfChanged();
 }
 
 void DenoiserPass::execute(const RenderContext&, RenderTargets& targets) {
@@ -53,10 +35,12 @@ void DenoiserPass::execute(const RenderContext&, RenderTargets& targets) {
 
     shader.use();
     shader.setFloat("sigma_color_scale", sigmaColorScale);
-    // Depth feeds the plane edge-stop's view-space reconstruction. Bound here rather than
-    // inherited from an earlier pass: nothing in the pass contract says a pass in between
-    // leaves unit 10 alone.
-    glBindTextureUnit(10, targets.gbuf.depth.handle);
+    shader.setFloat("sigma_normal", 64.0f);
+    // Plane tolerance per unit of view depth. At 1080p / 90° vfov the widest tap reaches
+    // ~0.3 world units at depth 10, so the allowance has to stay well under that to keep a
+    // wall out of the floor's filter.
+    shader.setFloat("sigma_plane", 0.01f);
+    glBindTextureUnit(TEX_GBUF_DEPTH, targets.gbuf.depth.handle);
     // Variance inputs. Both describe the frame, not the ping-pong stage, so they are bound
     // once: `accum` carries the per-pixel history length in its alpha.
     glBindTextureUnit(3, targets.moments.handle);

@@ -23,23 +23,17 @@ class AovPass : public RenderPass
 {
 public:
     /**
-     * @brief Loads `aov.comp` and caches the dispatch dimensions.
-     * @param width    Framebuffer width in pixels.
-     * @param height   Framebuffer height in pixels.
+     * @brief Loads `aov.comp`.
      * @param settings Shared settings block; borrowed by reference and read every frame, so it
      *                 must outlive this pass.
      */
-    AovPass(int width, int height, const RenderSettings& settings);
+    explicit AovPass(const RenderSettings& settings);
 
-    void        uploadUniforms(const Scene&, const Camera&) override;
-    bool        reloadIfChanged(const RenderContext&) override;
-    void        resize(int width, int height) override;
+    bool        reloadIfChanged() override;
     void        execute(const RenderContext&, RenderTargets&) override;
     const char* name() const override { return "AOV"; }
 
 private:
-    int                   width;
-    int                   height;
     ComputeShader         shader;
     const RenderSettings& settings;
 };
