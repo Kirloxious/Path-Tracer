@@ -7,8 +7,9 @@
 // the first pass, so every kernel of a frame sees the same values.
 layout(std140, binding = UBO_FRAME) uniform FrameConstants {
     ivec2 image_size;
-    // Frames accumulated since the last reset — and the low-discrepancy sample index, so it
-    // must advance only when a new sample is accumulated.
+    // Frames accumulated since the last reset, counting from 1. sampler_init() derives the
+    // low-discrepancy sample index from it, so it must advance only when a new sample is
+    // accumulated.
     int   frame_index;
     // Frames since temporal history (TAA, ReSTIR) was last invalidated. Survives camera motion.
     int   history_frames;

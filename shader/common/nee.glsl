@@ -68,7 +68,7 @@ uint nee_schedule(in NeeSurface surf, in vec3 throughput, bool allow_light_nee, 
     ss.env_dir   = vec3(0.0);
     ss.env_valid = 0.0;
     ss.env_le    = vec3(0.0);
-    ss._pad      = 0.0;
+    ss.nee_tri   = 0xFFFFFFFFu;
 
     // A delta lobe has zero density for any explicitly chosen direction, so no NEE technique
     // can reach it and the path has to find lights by scattering into them. A smooth opaque
@@ -116,6 +116,7 @@ uint nee_schedule(in NeeSurface surf, in vec3 throughput, bool allow_light_nee, 
                     ss.nee_dist  = dist;
                     ss.nee_le    = clamp_indirect(throughput * f * material_emission(lmat) * cos_theta * mis_weight / light_pdf);
                     ss.nee_valid = 1.0;
+                    ss.nee_tri   = uint(lo);
                 }
             }
         }

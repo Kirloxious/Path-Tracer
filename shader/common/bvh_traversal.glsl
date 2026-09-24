@@ -272,12 +272,16 @@ uint world_hit_cost(in Ray r, in float t_min, in float t_max) {
     return cost;
 }
 
-// Shadow visibility — emissives are light sources, not occluders.
+// Pass as `skip_tri` when the target is not a triangle (the environment).
+const int NO_SKIP_TRI = -1;
+
+// Shadow visibility. Emitters occlude like any other surface — a BSDF ray stops at them, and
+// NEE has to agree or the MIS pair integrates two different things. Only the target light
+// triangle itself is exempt, against grazing hits near its own edges.
 //
 // Any-hit, so there is nothing to gain from near-first ordering: the first occluder found
-// ends the walk whatever order they come in. Still stack-based, because the node layout no
-// longer carries skip pointers.
-bool is_visible(in vec3 origin, in vec3 target) {
+// ends the walk whatever order they come in.
+bool is_visible(in vec3 origin, in vec3 target, int skip_tri) {
     vec3  d        = target - origin;
     float dist2    = dot(d, d);
     float inv_dist = inversesqrt(dist2);
@@ -304,9 +308,7 @@ bool is_visible(in vec3 origin, in vec3 target) {
                 int first = floatBitsToInt(amin.w);
                 for (int i = 0; i < count; ++i) {
                     int tri_idx = tri_refs[first + i];
-                    // Emissive prefix test first: a pure integer compare, so a light leaf
-                    // costs nothing beyond the node fetch already paid for.
-                    if (tri_idx > emissive_last_index && hit_triangle_any(shadow, triangles[tri_idx], t_min, t_max)) {
+                    if (tri_idx != skip_tri && hit_triangle_any(shadow, triangles[tri_idx], t_min, t_max)) {
                         return false;
                     }
                 }

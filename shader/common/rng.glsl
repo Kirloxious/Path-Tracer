@@ -114,10 +114,12 @@ float sampler_1d(inout Sampler s) {
 // vertices draw from disjoint groups; a vertex's own layout is fixed by shade_surface.
 const uint SAMPLER_DIMS_PER_BOUNCE = 12u;
 
-Sampler sampler_init(uint seed, int sample_index, uint dim_base) {
+// `frame` is frame_index, which counts from 1. The sample index must count from 0: a
+// shuffled Sobol' prefix is a complete stratified net only over [0, 2^k).
+Sampler sampler_init(uint seed, int frame, uint dim_base) {
     Sampler s;
     s.seed  = seed;
-    s.index = uint(max(sample_index, 0));
+    s.index = uint(max(frame - 1, 0));
     s.dim   = dim_base;
     return s;
 }

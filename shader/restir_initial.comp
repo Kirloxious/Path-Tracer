@@ -236,7 +236,7 @@ void main() {
         Triangle tri = triangles[r.light_tri_idx];
         vec3 v0 = vertices[tri.indices.x].position;
         vec3 sp = v0 + r.bary.x * tri.e1 + r.bary.y * tri.e2;
-        if (!is_visible(restir_surface_offset_origin(surf), sp)) {
+        if (!is_visible(restir_surface_offset_origin(surf), sp, int(r.light_tri_idx))) {
             r.W = 0.0;
         }
     }
