@@ -116,11 +116,11 @@ void RasterGBufferPass::buildGeometry(const World& world) {
               drawRanges.size());
 }
 
-void RasterGBufferPass::uploadUniforms(const Scene& scene, const Camera&) {
+void RasterGBufferPass::onSceneLoaded(const Scene& scene) {
     buildGeometry(scene.world);
 }
 
-bool RasterGBufferPass::reloadIfChanged(const RenderContext&) {
+bool RasterGBufferPass::reloadIfChanged() {
     return shader.reloadIfChanged();
 }
 

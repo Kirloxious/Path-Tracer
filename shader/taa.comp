@@ -2,15 +2,14 @@
 layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/scene_buffers.glsl"
 #include "common/gbuffer.glsl"
+#include "common/constants.glsl"
 
 layout(rgb10_a2, binding = 0) readonly  uniform image2D current_image; // tonemap output
 layout(rgb10_a2, binding = 2) writeonly uniform image2D taa_output_image;
 
-layout(binding = 7) uniform sampler2D taa_history_tex;         // previous frame's TAA output (LINEAR filtered)
+layout(binding = TEX_TAA_HISTORY) uniform sampler2D taa_history_tex;         // previous frame's TAA output (LINEAR filtered)
 
-layout(location = 0) uniform ivec2 image_size;
-layout(location = 1) uniform int   frame_index;   // frames of valid history; resets on resize / scene switch / shader reload, not camera motion
-layout(location = 2) uniform float blend_alpha;   // upper bound on history weight (e.g. 0.9)
+layout(location = 0) uniform float blend_alpha;   // upper bound on history weight (e.g. 0.9)
 
 // YCoCg keeps luma on one axis and chroma on the other two. Clipping the history in RGB
 // bounds each channel independently, so a history sample that differs mostly in hue gets
@@ -77,7 +76,7 @@ void main() {
     vec3 cur = imageLoad(current_image, px).rgb;
 
     // Frame 1 (post-reset) has no valid history — pass current through untouched.
-    if (frame_index <= 1) {
+    if (history_frames <= 1) {
         imageStore(taa_output_image, px, vec4(cur, 1.0));
         return;
     }
@@ -146,7 +145,7 @@ void main() {
     // Ramp the history weight over the first few frames so early frames rely more on
     // fresh samples, then settle at `blend_alpha`. Matches the accum pass's spirit of
     // trusting history more as we collect more samples.
-    float a = min(blend_alpha, 1.0 - 1.0 / float(frame_index));
+    float a = min(blend_alpha, 1.0 - 1.0 / float(history_frames));
     vec3  outc = mix(cur, hist, a);
 
     imageStore(taa_output_image, px, vec4(outc, 1.0));

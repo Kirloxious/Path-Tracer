@@ -6,7 +6,6 @@
 #include "queue.glsl"
 #include "scene_buffers.glsl"
 #include "rng.glsl"
-#include "uniform_locations.glsl"
 #include "clamp.glsl"
 #include "lights.glsl"
 #include "restir_common.glsl"
@@ -25,9 +24,7 @@
 // smooth reflect/refract path.
 //
 // The including kernel must declare the reservoir buffer before including this header:
-//   layout(std430, binding = 18) restrict readonly buffer RestirReservoirsCurrent { Reservoir reservoirs[]; };
-
-layout(location = LOC_NUM_LIGHT_GROUPS) uniform int num_light_groups;
+//   layout(std430, binding = BIND_RESERVOIRS_CURRENT) restrict readonly buffer RestirReservoirsCurrent { Reservoir reservoirs[]; };
 
 void shade_surface(uint pid) {
     PathState s   = states[pid];

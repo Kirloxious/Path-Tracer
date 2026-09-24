@@ -8,7 +8,7 @@ layout(local_size_x = NUM_QUEUES) in;
 // they only launch the workgroups they actually need (huge savings at late bounces
 // where 95% of paths have died).
 
-layout(std430, binding = 23) restrict writeonly buffer DispatchArgsBuffer {
+layout(std430, binding = BIND_DISPATCH_ARGS) restrict writeonly buffer DispatchArgsBuffer {
     uvec4 dispatch_args[NUM_QUEUES]; // uvec4 (with .w unused) keeps 16-byte std430 alignment
 };
 

@@ -1,16 +1,18 @@
 #version 460 core
 layout(local_size_x = 256) in;
 
+#include "common/host_shared.glsl"
+
 // Reduces the 256-bin histogram to an EMA-smoothed exposure written into the
 // ExposureBuffer TonemapPass reads. The reduction over 256 bins is small
 // enough that a serial pass on thread 0 is simpler and not slower than a
 // shared-memory tree reduction here.
 
-layout(std430, binding = 31) buffer HistogramBuffer {
+layout(std430, binding = BIND_HISTOGRAM) buffer HistogramBuffer {
     uint bins[256];
 } hist;
 
-layout(std430, binding = 30) buffer ExposureBuffer {
+layout(std430, binding = BIND_EXPOSURE) buffer ExposureBuffer {
     float exposure;
     float _padding[3];
 } expo;

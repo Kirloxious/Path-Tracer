@@ -9,24 +9,17 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/restir_surface.glsl"
 #include "common/gbuffer.glsl"
 #include "common/geom.glsl"
-#include "common/uniform_locations.glsl"
 
-layout(std430, binding = 18) restrict buffer RestirReservoirsCurrent {
+layout(std430, binding = BIND_RESERVOIRS_CURRENT) restrict buffer RestirReservoirsCurrent {
     Reservoir reservoirs[];
 };
 
-layout(std430, binding = 24) restrict writeonly buffer RestirSurfaceCurrent {
+layout(std430, binding = BIND_SURFACES_CURRENT) restrict writeonly buffer RestirSurfaceCurrent {
     RestirSurface surfaces[];
 };
 
 
-layout(location = 0) uniform ivec2 image_size;
-layout(location = 1) uniform int frame_index;
-layout(location = 2) uniform int m_initial;
-layout(location = 3) uniform int time;
-layout(location = LOC_RUN_SEED) uniform int run_seed;
-layout(location = LOC_SAMPLE_INDEX) uniform int sample_index;
-layout(location = 4) uniform int num_light_groups;
+layout(location = 0) uniform int m_initial;
 
 // How many perfect-mirror bounces the walk below will follow before giving up. A mirror
 // facing a mirror can recurse indefinitely; 4 covers anything worth resampling and bounds
@@ -213,8 +206,8 @@ void main() {
     // acceptance test is a Bernoulli trial where stratification buys nothing and a shared
     // low-discrepancy stream would only correlate selections, so it keeps a PCG stream seeded
     // distinctly from the path tracer's.
-    Sampler smp = sampler_init(sampler_seed(pid, uint(run_seed) + 0x5419u), sample_index, 0u);
-    uint    rng = (pid * 5419u + uint(frame_index) * 31337u + uint(time) * 78979u + 0xA5A5u) | 1u;
+    Sampler smp = sampler_init(sampler_seed(pid, run_seed + 0x5419u), frame_index, 0u);
+    uint    rng = (pid * 5419u + uint(frame_index) * 31337u + time_seed * 78979u + 0xA5A5u) | 1u;
 
     int M = max(1, m_initial);
     for (int i = 0; i < M; ++i) {

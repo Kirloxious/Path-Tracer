@@ -27,21 +27,17 @@ class AutoExposurePass : public RenderPass
 public:
     /**
      * @brief Loads both kernels and allocates the exposure and histogram SSBOs.
-     * @param width    Framebuffer width in pixels.
-     * @param height   Framebuffer height in pixels.
      * @param settings Shared settings block; borrowed by reference and read every frame, so it
      *                 must outlive this pass.
      */
-    AutoExposurePass(int width, int height, const RenderSettings& settings);
+    explicit AutoExposurePass(const RenderSettings& settings);
 
-    bool        reloadIfChanged(const RenderContext&) override;
+    bool        reloadIfChanged() override;
     void        resize(int width, int height) override;
     void        execute(const RenderContext&, RenderTargets&) override;
     const char* name() const override { return "AutoExpose"; }
 
 private:
-    int                   width;
-    int                   height;
     const RenderSettings& settings;
 
     ComputeShader histogramShader;

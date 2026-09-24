@@ -31,7 +31,7 @@ public:
      */
     BloomPass(int width, int height, const RenderSettings& settings);
 
-    bool        reloadIfChanged(const RenderContext&) override;
+    bool        reloadIfChanged() override;
     void        resize(int width, int height) override;
     void        execute(const RenderContext&, RenderTargets&) override;
     const char* name() const override { return "Bloom"; }

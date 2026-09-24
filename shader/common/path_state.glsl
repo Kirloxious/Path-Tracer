@@ -1,6 +1,8 @@
 #ifndef PATH_STATE_GLSL
 #define PATH_STATE_GLSL
 
+#include "host_shared.glsl"
+
 // Bits in PathState.flags
 const uint FLAG_FRONT_FACE         = 1u << 0; // last hit's face was front-facing
 const uint FLAG_PREV_NON_SPECULAR  = 1u << 1; // previous bounce ran analytic light NEE (whether or not its sample was usable) — shade_emissive applies balance-heuristic MIS using s.pdf_bsdf and the analytic light pdf
@@ -32,7 +34,7 @@ struct PathState {
     uint  hit_triangle_idx;    // set by trace.comp, NO_TRIANGLE at the primary; shade_emissive's MIS and the ray-origin offsets read it
 };
 
-layout(std430, binding = 10) restrict buffer PathStateBuffer {
+layout(std430, binding = BIND_PATH_STATE) restrict buffer PathStateBuffer {
     PathState states[];
 };
 

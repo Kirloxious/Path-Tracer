@@ -2,6 +2,7 @@
 #define GBUFFER_GLSL
 
 #include "scene_buffers.glsl"
+#include "host_shared.glsl"
 
 // Primary-visibility reads.
 //
@@ -15,8 +16,8 @@
 // world units of error on Cornell Box — twenty times the 0.001 offset the tracer relies on
 // to escape self-intersection. Reversed-Z brings it to 2.9e-4 worst case, with no pixel on
 // any scene exceeding 1e-3.
-layout(binding = 6) uniform sampler2D gbuf_normal_tex;
-layout(binding = 10) uniform sampler2D gbuf_depth_tex;
+layout(binding = TEX_GBUF_NORMAL) uniform sampler2D gbuf_normal_tex;
+layout(binding = TEX_GBUF_DEPTH) uniform sampler2D gbuf_depth_tex;
 
 // Raw normal, un-normalized. Length zero means nothing was rasterized at this pixel — the
 // sky sentinel every consumer tests against.

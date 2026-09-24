@@ -3,30 +3,15 @@
 #include <glad/glad.h>
 
 #include "core/log.h"
-#include "scene/scene.h"
-#include "scene/world.h"
+#include "core/shader_shared.h"
 
-AovPass::AovPass(int w, int h, const RenderSettings& s) : width(w), height(h), settings(s) {
+AovPass::AovPass(const RenderSettings& s) : settings(s) {
     Log::info("AovPass: loading 'shader/aov.comp'");
     shader = ComputeShader("shader/aov.comp");
 }
 
-void AovPass::uploadUniforms(const Scene& scene, const Camera&) {
-    shader.use();
-    shader.setInt("bvh_root_index", scene.world.bvh.root);
-}
-
-void AovPass::resize(int w, int h) {
-    width = w;
-    height = h;
-}
-
-bool AovPass::reloadIfChanged(const RenderContext& ctx) {
-    if (shader.reloadIfChanged()) {
-        uploadUniforms(ctx.scene, ctx.camera);
-        return true;
-    }
-    return false;
+bool AovPass::reloadIfChanged() {
+    return shader.reloadIfChanged();
 }
 
 void AovPass::execute(const RenderContext&, RenderTargets& targets) {
@@ -39,10 +24,9 @@ void AovPass::execute(const RenderContext&, RenderTargets& targets) {
     // accum is bound read-only for the variance AOV.
     targets.display.bind(0, GL_WRITE_ONLY);
     targets.accum.bind(1, GL_READ_ONLY);
-    glBindTextureUnit(6, targets.gbuf.normal.handle);
-    glBindTextureUnit(10, targets.gbuf.depth.handle); // world position is reconstructed from this
+    glBindTextureUnit(TEX_GBUF_NORMAL, targets.gbuf.normal.handle);
+    glBindTextureUnit(TEX_GBUF_DEPTH, targets.gbuf.depth.handle);
 
-    shader.setIVec2("image_size", width, height);
     shader.setInt("aov_mode", static_cast<int>(settings.aovMode));
     shader.setFloat("depth_max", settings.aovDepthMax);
     shader.setFloat("bvh_cost_max", settings.aovBvhCostMax);

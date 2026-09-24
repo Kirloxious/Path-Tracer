@@ -1,10 +1,12 @@
 #version 460 core
 
+#include "common/host_shared.glsl"
+
 in vec3 v_world_pos;
 in vec3 v_world_normal;
 flat in uint v_matid;
 
-layout(std140, binding = 2) uniform CameraData
+layout(std140, binding = UBO_CAMERA) uniform CameraData
 {
     mat4  view;
     mat4  projection;

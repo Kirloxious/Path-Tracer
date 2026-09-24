@@ -8,19 +8,19 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/restir_surface.glsl"
 #include "common/gbuffer.glsl"
 
-layout(std430, binding = 18) restrict buffer RestirReservoirsCurrent {
+layout(std430, binding = BIND_RESERVOIRS_CURRENT) restrict buffer RestirReservoirsCurrent {
     Reservoir reservoirs[];
 };
 
-layout(std430, binding = 19) restrict readonly buffer RestirReservoirsPrev {
+layout(std430, binding = BIND_RESERVOIRS_PREV) restrict readonly buffer RestirReservoirsPrev {
     Reservoir prev_reservoirs[];
 };
 
-layout(std430, binding = 24) restrict readonly buffer RestirSurfaceCurrent {
+layout(std430, binding = BIND_SURFACES_CURRENT) restrict readonly buffer RestirSurfaceCurrent {
     RestirSurface surfaces[];
 };
 
-layout(std430, binding = 25) restrict readonly buffer RestirSurfacePrev {
+layout(std430, binding = BIND_SURFACES_PREV) restrict readonly buffer RestirSurfacePrev {
     RestirSurface prev_surfaces[];
 };
 
@@ -28,10 +28,7 @@ layout(std430, binding = 25) restrict readonly buffer RestirSurfacePrev {
 // resampling-surface history (binding 25), which describes what the reservoir actually
 // covers. gbuf_prev is still produced and rotated by RasterGBufferPass for future use.
 
-layout(location = 0) uniform ivec2 image_size;
-layout(location = 1) uniform int   frame_index;
-layout(location = 2) uniform int   m_cap;
-layout(location = 3) uniform int   time;
+layout(location = 0) uniform int m_cap;
 
 // Validation thresholds. These are deliberately generous for v1; tighten if
 // temporal artefacts (ghosting, light leaking through silhouettes) appear.
@@ -96,7 +93,7 @@ void main() {
     Reservoir cur   = reservoirs[pid];
     float     own_M = cur.M;
 
-    uint rng = (pid * 7919u + uint(frame_index) * 50331u + uint(time) * 12289u + 0xCAFEBABEu) | 1u;
+    uint rng = (pid * 7919u + uint(frame_index) * 50331u + time_seed * 12289u + 0xCAFEBABEu) | 1u;
 
     reservoir_combine(cur, prev, p_hat_prev_at_current, rng);
 

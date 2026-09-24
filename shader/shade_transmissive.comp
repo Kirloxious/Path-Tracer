@@ -6,13 +6,11 @@ layout(local_size_x = 64) in;
 #include "common/queue.glsl"
 #include "common/scene_buffers.glsl"
 #include "common/rng.glsl"
-#include "common/uniform_locations.glsl"
 #include "common/geom.glsl"
 #include "common/bsdf.glsl"
 #include "common/nee.glsl"
 #include "common/path_continue.glsl"
 
-layout(location = LOC_NUM_LIGHT_GROUPS) uniform int num_light_groups;
 
 void main() {
     uint qid = gl_GlobalInvocationID.x;

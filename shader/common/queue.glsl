@@ -11,25 +11,17 @@
 // identical. Five queues instead of six means one fewer SSBO block declared in every kernel
 // that includes this header — the headroom the bindless-texture work will need.
 
-const uint Q_RAY          = 0u;
-const uint Q_OPAQUE       = 1u;
-const uint Q_TRANSMISSIVE = 2u;
-const uint Q_EMISSIVE     = 3u;
-const uint Q_SHADOW       = 4u;
+#include "host_shared.glsl"
 
-// A #define, not a `const uint`, so it can size the local_size_x layout qualifier and the
-// dispatch-args array in prepare_indirect.comp.
-#define NUM_QUEUES 5u
-
-layout(std430, binding = 11) restrict buffer QueueCountersBuffer {
+layout(std430, binding = BIND_QUEUE_COUNTERS) restrict buffer QueueCountersBuffer {
     uint q_count[NUM_QUEUES];
 };
 
-layout(std430, binding = 12) restrict buffer RayQueueIndices         { uint ray_queue_idx[]; };
-layout(std430, binding = 13) restrict buffer HitOpaqueIndices        { uint hit_opaque_idx[]; };
-layout(std430, binding = 14) restrict buffer HitTransmissiveIndices  { uint hit_transmissive_idx[]; };
-layout(std430, binding = 15) restrict buffer HitEmissiveIndices      { uint hit_emissive_idx[]; };
-layout(std430, binding = 16) restrict buffer ShadowQueueIndices      { uint shadow_queue_idx[]; };
+layout(std430, binding = BIND_RAY_QUEUE) restrict buffer RayQueueIndices         { uint ray_queue_idx[]; };
+layout(std430, binding = BIND_HIT_OPAQUE_QUEUE) restrict buffer HitOpaqueIndices        { uint hit_opaque_idx[]; };
+layout(std430, binding = BIND_HIT_TRANSMISSIVE_QUEUE) restrict buffer HitTransmissiveIndices  { uint hit_transmissive_idx[]; };
+layout(std430, binding = BIND_HIT_EMISSIVE_QUEUE) restrict buffer HitEmissiveIndices      { uint hit_emissive_idx[]; };
+layout(std430, binding = BIND_SHADOW_QUEUE) restrict buffer ShadowQueueIndices      { uint shadow_queue_idx[]; };
 
 #define ray_queue_count        q_count[Q_RAY]
 #define hit_opaque_count       q_count[Q_OPAQUE]

@@ -1,6 +1,8 @@
 #ifndef SHADOW_STATE_GLSL
 #define SHADOW_STATE_GLSL
 
+#include "host_shared.glsl"
+
 // NEE plumbing between shade_surface (writer) and trace_shadow (reader).
 // Split out of PathState so kernels that don't touch NEE don't pay the traffic
 // cost, and kept in its own header so only these two kernels declare the SSBO —
@@ -25,7 +27,7 @@ struct ShadowState {
     float _pad;
 };
 
-layout(std430, binding = 22) restrict buffer ShadowStateBuffer {
+layout(std430, binding = BIND_SHADOW_STATE) restrict buffer ShadowStateBuffer {
     ShadowState shadow_states[];
 };
 

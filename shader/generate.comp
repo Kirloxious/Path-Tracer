@@ -7,12 +7,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/scene_buffers.glsl"
 #include "common/gbuffer.glsl"
 #include "common/envmap.glsl"
-#include "common/uniform_locations.glsl"
 
-layout(location = 0) uniform ivec2 image_size;
-// Constant for the run. The sampler stratifies a pixel's samples *across* frames, so this is
-// deliberately not the per-frame seed the PCG streams use.
-layout(location = LOC_RUN_SEED) uniform int run_seed;
 
 void main() {
     ivec2 px = ivec2(gl_GlobalInvocationID.xy);

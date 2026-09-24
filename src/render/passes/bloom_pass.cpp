@@ -49,7 +49,7 @@ void BloomPass::resize(int w, int h) {
     buildMips(w, h);
 }
 
-bool BloomPass::reloadIfChanged(const RenderContext&) {
+bool BloomPass::reloadIfChanged() {
     bool any = false;
     any |= downsampleShader.reloadIfChanged();
     any |= upsampleShader.reloadIfChanged();

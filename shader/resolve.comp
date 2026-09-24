@@ -5,14 +5,13 @@ layout(local_size_x = 8, local_size_y = 8) in;
 #include "common/path_state.glsl"
 #include "common/scene_buffers.glsl"
 #include "common/gbuffer.glsl"
+#include "common/constants.glsl"
 
 // Read-write: accumulation and the moments are both running averages read back in place.
 layout(rgba32f, binding = 0) uniform image2D accum_image;
 layout(rg32f, binding = 3) uniform image2D moments_image;
 layout(rgba16f, binding = 2) writeonly uniform image2D normals_image;
 
-layout(location = 0) uniform ivec2 image_size;
-layout(location = 1) uniform int frame_index;
 
 void main() {
     ivec2 px = ivec2(gl_GlobalInvocationID.xy);

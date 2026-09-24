@@ -52,32 +52,32 @@ public:
     virtual ~RenderPass() = default;
 
     /**
-     * @brief Uploads scene-derived uniforms. Called on scene load and after a successful reload.
+     * @brief Called after Renderer::loadScene() has uploaded a new scene.
      *
-     * Takes the newly loaded Scene and the Camera it was loaded with. Nothing per-frame
-     * (frameIndex, timeSeed) is available here — those uniforms belong in execute(), where a
-     * real RenderContext is in hand. Parameters are unnamed in the default implementation so
-     * passes with no scene-derived uniforms need not override it.
+     * Scene-wide shader inputs already live in the SceneConstants UBO; this hook is for passes
+     * that own scene-derived GPU data of their own (raster geometry) or history that a new
+     * scene invalidates (ReSTIR reservoirs).
      */
-    virtual void uploadUniforms(const Scene&, const Camera&) {}
+    virtual void onSceneLoaded(const Scene&) {}
 
     /**
      * @brief Rebuilds this pass's shaders if their sources changed on disk.
      *
-     * Called once per frame. A pass that returns true is expected to have already reuploaded
-     * its scene-derived uniforms; Application additionally resets `frameIndex`, since the new
-     * program may have changed the meaning of the accumulated samples. Takes the current
-     * RenderContext, which passes need in order to reupload per-frame uniforms after a rebuild.
+     * Called once per frame. Application resets accumulation when any pass returns true,
+     * since the new program may have changed the meaning of the accumulated samples. Nothing
+     * needs re-uploading: frame and scene values come from UBOs, and pass-private uniforms
+     * are set in execute().
      *
      * @return true if a shader was successfully rebuilt this frame.
      */
-    virtual bool reloadIfChanged(const RenderContext&) { return false; }
+    virtual bool reloadIfChanged() { return false; }
 
     /**
      * @brief Called when the framebuffer size changes.
      *
-     * Takes the new framebuffer width and height in pixels. Default is a no-op; passes that
-     * cache dimensions or own per-pixel GPU buffers must override to reallocate.
+     * Takes the new framebuffer width and height in pixels. Default is a no-op; only passes
+     * that own size-dependent GPU buffers need to override it — the current size is always
+     * available from RenderTargets.
      */
     virtual void resize(int /*width*/, int /*height*/) {}
 

@@ -3,22 +3,9 @@
 
 #include "scene_buffers.glsl"
 #include "rng.glsl"
-#include "uniform_locations.glsl"
-
-// Caller supplies the BVH root index as a uniform. Each pass that traces
-// uses the same uniform name so the C++ side sets it once per pass.
-layout(location = LOC_BVH_ROOT_INDEX) uniform int bvh_root_index;
-
-// Index of the last emissive triangle. World::sortEmissiveFirst() stable-partitions
-// emissives to the front, so `tri_index > emissive_last_index` is an exact test for
-// "this triangle is not a light" — an integer compare against a uniform, replacing the
-// dependent `mats[tri.material_index].type` fetch is_visible used to do for every
-// candidate leaf. -1 when the scene has no emitters, making every triangle an occluder.
-layout(location = LOC_EMISSIVE_LAST_INDEX) uniform int emissive_last_index;
-
 // Leaf triangle references. A leaf owns the run [first, first + count); each entry indexes
 // TrianglesBuffer. See BVH::triRefs for why the indirection exists.
-layout(std430, binding = 26) readonly buffer TriRefsBuffer { int tri_refs[]; };
+layout(std430, binding = BIND_TRI_REFS) readonly buffer TriRefsBuffer { int tri_refs[]; };
 
 // Traversal stack depth. BVH::build logs the tree's actual max depth at load; this must
 // stay above it, and 64 clears every scene here with room to spare. Overflow would silently

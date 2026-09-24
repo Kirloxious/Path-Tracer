@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <glm/ext/vector_float3.hpp>
 
+#include "core/shader_shared.h"
+
 /**
  * @brief Derived shading class. Selects which `shade_*.comp` kernel a hit is queued into.
  *
@@ -18,16 +20,14 @@
  * function that can be logged and tuned, instead of scattering float comparisons across five
  * shaders where they can silently drift apart.
  *
- * Values must stay in sync with the `MAT_*` constants in the shaders. The numbering is
- * deliberately the same one the old authored MaterialType used, so the denoiser's edge-stop
- * thresholds, `resolve.comp`'s material-id write and the AOV albedo view keep working unchanged.
+ * The values are the shaders' `MAT_*` defines from host_shared.glsl.
  */
 enum class MaterialClass : uint32_t
 {
-    Diffuse = 0,      ///< Broad lobe. The only class ReSTIR will anchor a reservoir on.
-    Specular = 1,     ///< Metal, or a smooth dielectric coat. Near-deterministic scatter.
-    Transmissive = 2, ///< Refractive; `transmission` > 0.
-    Emissive = 3,     ///< Emits light. Gathered into a LightGroup for NEE; paths terminate here.
+    Diffuse = MAT_DIFFUSE,           ///< Broad lobe.
+    Specular = MAT_SPECULAR,         ///< Metal, or a smooth dielectric coat. Near-deterministic scatter.
+    Transmissive = MAT_TRANSMISSIVE, ///< Refractive; `transmission` > 0.
+    Emissive = MAT_EMISSIVE,         ///< Emits light. Gathered into a LightGroup for NEE; paths terminate here.
 };
 
 /**

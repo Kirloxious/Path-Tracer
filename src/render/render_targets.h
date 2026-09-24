@@ -10,8 +10,6 @@
 
 #include "gpu/gbuffer.h"
 
-class EnvMap;
-
 /**
  * @brief Shared ownership of all intermediate render targets, passed to every pass's execute().
  *
@@ -44,9 +42,8 @@ struct RenderTargets
 
     FrameBuffer fb; ///< Wraps `display`, used for the final swap-chain blit.
 
-    /// Optional per-scene HDR envmap. Owned by Renderer, which sets this pointer in
-    /// loadScene() (null if the scene has no envmap). Passes read it in execute().
-    const EnvMap* envMap = nullptr;
+    int width = 0;
+    int height = 0;
 
     GLuint numGroupsX = 0; ///< ceil(width  / WORK_GROUP_SIZE), for 8x8 per-pixel dispatches.
     GLuint numGroupsY = 0; ///< ceil(height / WORK_GROUP_SIZE).

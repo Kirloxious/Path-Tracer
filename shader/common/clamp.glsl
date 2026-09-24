@@ -1,7 +1,7 @@
 #ifndef CLAMP_GLSL
 #define CLAMP_GLSL
 
-#include "uniform_locations.glsl"
+#include "constants.glsl"
 
 // Firefly ceiling for *indirect* radiance contributions.
 //
@@ -14,7 +14,6 @@
 // through untouched (shade_emissive at bounce 0, generate.comp's primary sky) while
 // still bounding the estimator outputs that actually spike: NEE against a small solid
 // angle, ReSTIR's W, and emissives found by a BSDF ray after several bounces.
-layout(location = LOC_INDIRECT_CLAMP) uniform float indirect_clamp;
 
 // Scales the whole contribution down rather than clipping each channel at the ceiling: a
 // per-channel min() on a saturated spike removes only the channels that are over, which
