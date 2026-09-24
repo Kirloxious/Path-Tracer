@@ -41,7 +41,7 @@ float light_group_pdf(in Triangle tri, in vec3 receiver, in vec3 sample_point, i
 }
 
 void main() {
-    uint qid = gl_GlobalInvocationID.x;
+    uint qid = queue_thread_index();
     if (qid >= hit_emissive_count) return;
     uint pid = hit_emissive_idx[qid];
 

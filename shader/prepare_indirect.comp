@@ -1,7 +1,8 @@
 #version 460 core
 #include "common/subgroup.glsl"
-#include "common/queue.glsl"
+#include "common/host_shared.glsl"
 layout(local_size_x = NUM_QUEUES) in;
+#include "common/queue.glsl"
 
 // Reads the current queue counters and writes a matching glDispatchCompute-Indirect
 // arg triple per queue slot. Called before each group of shade/trace dispatches so
@@ -34,8 +35,10 @@ void main() {
     if (i >= NUM_QUEUES) return;
 
     uint c = q_count[i];
-    uint g = (c + LOCAL_SIZE - 1u) / LOCAL_SIZE;
-    dispatch_args[i] = uvec4(g, 1u, 1u, 0u);
+    uint g  = (c + LOCAL_SIZE - 1u) / LOCAL_SIZE;
+    uint gx = min(g, QUEUE_MAX_GROUPS_X);
+    uint gy = (g + QUEUE_MAX_GROUPS_X - 1u) / QUEUE_MAX_GROUPS_X;
+    dispatch_args[i] = uvec4(gx, max(gy, 1u), 1u, 0u);
 
     // Each thread owns exactly one slot, so this races with nothing.
     if ((clear_mask & (1u << i)) != 0u) {

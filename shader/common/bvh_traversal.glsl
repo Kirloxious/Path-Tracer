@@ -147,7 +147,10 @@ bool world_hit_stackless(in Ray r, in float t_min, in float t_max, in int skip_t
         vec4 amax  = nodes[idx].aabb_max;
         int  count = floatBitsToInt(amax.w);
 
-        if (count > 0) {
+        // A leaf popped off the stack was box-tested against the `closest` of its push; a
+        // re-test against today's, on the node already loaded, skips its triangles when a
+        // nearer hit has since been found.
+        if (count > 0 && intersect_aabb(amin.xyz, amax.xyz, inv_dir, neg_ood, t_min, closest)) {
             int first = floatBitsToInt(amin.w);
             for (int i = 0; i < count; ++i) {
                 int   tri_idx = tri_refs[first + i];
@@ -159,6 +162,8 @@ bool world_hit_stackless(in Ray r, in float t_min, in float t_max, in int skip_t
                     best_tri = tri_idx;
                 }
             }
+        }
+        if (count > 0) {
             if (sp == 0) break;
             idx = stack[--sp];
             continue;
@@ -240,13 +245,16 @@ uint world_hit_cost(in Ray r, in float t_min, in float t_max) {
         int  count = floatBitsToInt(amax.w);
 
         if (count > 0) {
-            int first = floatBitsToInt(amin.w);
-            for (int i = 0; i < count; ++i) {
-                cost += 2u; // a triangle test costs more than a slab test — weight it
-                float t;
-                vec2  uv;
-                if (hit_triangle_uv(r, triangles[tri_refs[first + i]], t_min, closest, t, uv)) {
-                    closest = t;
+            cost += 1u;
+            if (intersect_aabb(amin.xyz, amax.xyz, inv_dir, neg_ood, t_min, closest)) {
+                int first = floatBitsToInt(amin.w);
+                for (int i = 0; i < count; ++i) {
+                    cost += 2u; // a triangle test costs more than a slab test — weight it
+                    float t;
+                    vec2  uv;
+                    if (hit_triangle_uv(r, triangles[tri_refs[first + i]], t_min, closest, t, uv)) {
+                        closest = t;
+                    }
                 }
             }
             if (sp == 0) break;

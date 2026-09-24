@@ -9,7 +9,7 @@ layout(local_size_x = 64) in;
 #include "common/geom.glsl"
 
 void main() {
-    uint qid = gl_GlobalInvocationID.x;
+    uint qid = queue_thread_index();
     if (qid >= shadow_queue_count) return;
     uint pid = shadow_queue_idx[qid];
 

@@ -19,7 +19,7 @@ layout(std430, binding = BIND_RESERVOIRS_CURRENT) restrict readonly buffer Resti
 // Transmission still has its own kernel: shade_transmissive.comp keeps the smooth
 // reflect/refract path, which the BSDF here does not model.
 void main() {
-    uint qid = gl_GlobalInvocationID.x;
+    uint qid = queue_thread_index();
     if (qid >= hit_opaque_count) return;
     shade_surface(hit_opaque_idx[qid]);
 }

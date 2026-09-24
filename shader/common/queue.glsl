@@ -18,6 +18,15 @@ layout(std430, binding = BIND_HIT_TRANSMISSIVE_QUEUE) restrict buffer HitTransmi
 layout(std430, binding = BIND_HIT_EMISSIVE_QUEUE) restrict buffer HitEmissiveIndices      { uint hit_emissive_idx[]; };
 layout(std430, binding = BIND_SHADOW_QUEUE) restrict buffer ShadowQueueIndices      { uint shadow_queue_idx[]; };
 
+// GL guarantees only 65535 workgroups per dispatch dimension, which a full-screen queue
+// passes above ~4.2M pixels (4K is 8.3M), so prepare_indirect spills the count into Y.
+const uint QUEUE_MAX_GROUPS_X = 65535u;
+
+// Flattened thread index for a kernel dispatched over a queue by prepare_indirect.
+uint queue_thread_index() {
+    return gl_GlobalInvocationID.y * (gl_NumWorkGroups.x * gl_WorkGroupSize.x) + gl_GlobalInvocationID.x;
+}
+
 #define ray_queue_count        q_count[Q_RAY]
 #define hit_opaque_count       q_count[Q_OPAQUE]
 #define hit_transmissive_count q_count[Q_TRANSMISSIVE]

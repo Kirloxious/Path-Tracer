@@ -229,19 +229,8 @@ void main() {
         reservoir_update(r, tri_idx, bary, p_hat, w_i, rng);
     }
 
+    // Not shadow-tested here: restir_temporal, which always runs next, tests whichever sample
+    // survives its combine, and a combine recomputes W from w_sum and would discard this test.
     reservoir_finalize(r, r.M);
-
-    // Visibility test on the chosen sample. Occluded → keep reservoir state
-    // (so temporal/spatial reuse can recover later) but zero W so this frame's
-    // shading skips it.
-    if (r.W > 0.0 && r.light_tri_idx != RESTIR_INVALID_TRI) {
-        Triangle tri = triangles[r.light_tri_idx];
-        vec3 v0 = vertices[tri.indices.x].position;
-        vec3 sp = v0 + r.bary.x * tri.e1 + r.bary.y * tri.e2;
-        if (!is_visible(restir_surface_offset_origin(surf, sp), sp, NO_SKIP_TRI, int(r.light_tri_idx))) {
-            r.W = 0.0;
-        }
-    }
-
     reservoirs[pid] = r;
 }
