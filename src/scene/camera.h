@@ -5,6 +5,7 @@
  * @brief Free-fly camera, its std140 GPU mirror, and the per-scene camera settings.
  */
 
+#include <cstddef>
 #include <glm/glm.hpp>
 
 #include "core/input.h"
@@ -56,6 +57,13 @@ struct CameraData
     glm::mat4 prev_view_proj;
 };
 static_assert(sizeof(CameraData) == 352, "CameraData must match std140 layout");
+static_assert(offsetof(CameraData, projection) == 64);
+static_assert(offsetof(CameraData, inv_view) == 128);
+static_assert(offsetof(CameraData, inv_projection) == 192);
+static_assert(offsetof(CameraData, lookfrom) == 256);
+static_assert(offsetof(CameraData, focus_distance) == 268);
+static_assert(offsetof(CameraData, defocus_angle) == 272);
+static_assert(offsetof(CameraData, prev_view_proj) == 288);
 
 /**
  * @brief Free-fly camera with jittered projection for progressive anti-aliasing.

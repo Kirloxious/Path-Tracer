@@ -5,6 +5,7 @@
  * @brief Geometry container and scene-building API: vertices, triangles, materials, lights, BVH.
  */
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <string>
@@ -290,3 +291,8 @@ private:
     /// buildLightGroups() once every group's area is known.
     void buildLightGroupSelection();
 };
+
+static_assert(sizeof(World::LightGroup) == 32, "LightGroup must match std430 layout");
+static_assert(offsetof(World::LightGroup, totalArea) == 8);
+static_assert(offsetof(World::LightGroup, aliasPacked) == 12);
+static_assert(offsetof(World::LightGroup, selectPdf) == 16);

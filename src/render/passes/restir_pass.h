@@ -5,6 +5,7 @@
  * @brief ReSTIR DI: reservoir resampling of direct lighting at primary surfaces.
  */
 
+#include <cstddef>
 #include <cstdint>
 #include <glm/glm.hpp>
 
@@ -29,6 +30,11 @@ struct alignas(16) ReservoirData
     float     _pad;
 };
 static_assert(sizeof(ReservoirData) == 32, "Reservoir size must match std430 layout");
+static_assert(offsetof(ReservoirData, M) == 4);
+static_assert(offsetof(ReservoirData, bary) == 8);
+static_assert(offsetof(ReservoirData, w_sum) == 16);
+static_assert(offsetof(ReservoirData, W) == 20);
+static_assert(offsetof(ReservoirData, target_pdf) == 24);
 
 /**
  * @brief CPU-side mirror of `RestirSurface` in `shader/common/restir_surface.glsl`.
@@ -48,6 +54,11 @@ struct alignas(16) RestirSurfaceData
     uint32_t  offset_n; ///< Octahedral-packed ray-origin offset normal (snorm 2x16).
 };
 static_assert(sizeof(RestirSurfaceData) == 48, "RestirSurface size must match std430 layout");
+static_assert(offsetof(RestirSurfaceData, valid) == 12);
+static_assert(offsetof(RestirSurfaceData, normal) == 16);
+static_assert(offsetof(RestirSurfaceData, matid) == 28);
+static_assert(offsetof(RestirSurfaceData, view_dir) == 32);
+static_assert(offsetof(RestirSurfaceData, offset_n) == 44);
 
 /**
  * @brief ReSTIR DI at primary surfaces, producing one reservoir per pixel.

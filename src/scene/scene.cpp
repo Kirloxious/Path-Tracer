@@ -293,7 +293,7 @@ Scene Scene::MirrorFloor() {
     return scene;
 }
 
-static const char* kDefaultEnvMap = "assets/env/kloofendal_overcast_puresky_1k.hdr";
+constexpr const char* DEFAULT_ENV_MAP = "assets/env/kloofendal_overcast_puresky_1k.hdr";
 
 Scene Scene::SphereWorldEnvLit() {
     Scene scene;
@@ -307,7 +307,7 @@ Scene Scene::SphereWorldEnvLit() {
     scene.cameraSettings.lookfrom = glm::vec3(13.0f, 2.0f, 3.0f);
     scene.cameraSettings.lookat = glm::vec3(0.0f, 0.0f, 0.0f);
 
-    scene.envMapPath = kDefaultEnvMap;
+    scene.envMapPath = DEFAULT_ENV_MAP;
     scene.envIntensity = 1.0f;
 
     World& w = scene.world;
@@ -358,7 +358,7 @@ Scene Scene::ShowcaseEnvLit() {
     scene.cameraSettings.lookfrom = glm::vec3(0.0f, 3.0f, 10.0f);
     scene.cameraSettings.lookat = glm::vec3(0.0f, 1.0f, 0.0f);
 
-    scene.envMapPath = kDefaultEnvMap;
+    scene.envMapPath = DEFAULT_ENV_MAP;
     scene.envIntensity = 1.0f;
 
     World& w = scene.world;
@@ -404,7 +404,7 @@ Scene Scene::MaterialGallery() {
     // reflections that make a roughness sweep readable at a glance; the emitters give crisp
     // highlights and real shadows, and they are what put light groups in the scene at all —
     // without them there is no NEE and no ReSTIR to exercise.
-    scene.envMapPath = kDefaultEnvMap;
+    scene.envMapPath = DEFAULT_ENV_MAP;
     scene.envIntensity = 0.45f;
 
     World& w = scene.world;

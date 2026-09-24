@@ -1,5 +1,7 @@
 #include "render/passes/aov_pass.h"
 
+#include <utility>
+
 #include <glad/glad.h>
 
 #include "core/log.h"
@@ -23,7 +25,7 @@ void AovPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     targets.display.bind(0, GL_WRITE_ONLY);
     targets.accum.bind(1, GL_READ_ONLY);
 
-    shader.setInt("aov_mode", static_cast<int>(settings.aovMode));
+    shader.setInt("aov_mode", std::to_underlying(settings.aovMode));
     shader.setFloat("depth_max", settings.aovDepthMax);
     shader.setFloat("bvh_cost_max", settings.aovBvhCostMax);
 

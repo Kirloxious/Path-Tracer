@@ -6,6 +6,7 @@
  */
 
 #include <glad/glad.h>
+#include <span>
 #include <type_traits>
 #include <vector>
 
@@ -47,14 +48,19 @@ public:
     }
 
     /**
-     * @brief Uploads a whole `std::vector`.
+     * @brief Uploads a contiguous range of elements.
      * @tparam T     Element type; must match the shader's std430/std140 layout.
-     * @param data   Elements to upload; `data.size() * sizeof(T)` bytes are allocated.
+     * @param data   Elements to upload; `data.size_bytes()` bytes are allocated.
      * @param usage  GL usage hint.
      */
     template<typename T>
         requires std::is_trivially_copyable_v<T>
-    Buffer(const std::vector<T>& data, GLenum usage) : Buffer(data.data(), data.size() * sizeof(T), usage) {}
+    Buffer(std::span<const T> data, GLenum usage) : Buffer(data.data(), data.size_bytes(), usage) {}
+
+    /// Uploads a whole `std::vector`; see the span overload.
+    template<typename T>
+        requires std::is_trivially_copyable_v<T>
+    Buffer(const std::vector<T>& data, GLenum usage) : Buffer(std::span<const T>(data), usage) {}
 
     /**
      * @brief Uploads a single struct (e.g. a UBO).

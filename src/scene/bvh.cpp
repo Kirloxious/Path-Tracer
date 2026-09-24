@@ -1,6 +1,7 @@
 #include "scene/bvh.h"
 #include "core/log.h"
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <future>
@@ -17,7 +18,7 @@ namespace {
 constexpr int PAR_THRESHOLD = 16384;
 } // namespace
 
-AABB computeAABB(const Triangle& t, const std::vector<Vertex>& vertices) {
+AABB computeAABB(const Triangle& t, std::span<const Vertex> vertices) {
     const glm::vec3& p0 = vertices[t.indices.x].position;
     const glm::vec3& p1 = vertices[t.indices.y].position;
     const glm::vec3& p2 = vertices[t.indices.z].position;
@@ -32,8 +33,8 @@ AABB surroundingBox(const AABB& a, const AABB& b) {
     return {glm::min(a.min, b.min), glm::max(a.max, b.max)};
 }
 
-int BVH::buildR(std::vector<Node>& tree, std::atomic<int>& nextSlot, const std::vector<AABB>& aabbs, const int* refsBase,
-                const std::vector<glm::vec3>& centroids, std::span<int> range) {
+int BVH::buildR(std::vector<Node>& tree, std::atomic<int>& nextSlot, std::span<const AABB> aabbs, const int* refsBase,
+                std::span<const glm::vec3> centroids, std::span<int> range) {
     assert(!range.empty());
 
     Node node;
@@ -104,8 +105,8 @@ int BVH::buildR(std::vector<Node>& tree, std::atomic<int>& nextSlot, const std::
             continue;
         }
 
-        Bin         bins[NUM_BINS] = {};
-        const float scale = static_cast<float>(NUM_BINS) / centroidExtent[axis];
+        std::array<Bin, NUM_BINS> bins{};
+        const float               scale = static_cast<float>(NUM_BINS) / centroidExtent[axis];
 
         for (const int idx : range) {
             int b = static_cast<int>((centroids[idx][axis] - centroidBounds.min[axis]) * scale);
@@ -118,10 +119,10 @@ int BVH::buildR(std::vector<Node>& tree, std::atomic<int>& nextSlot, const std::
             }
         }
 
-        float leftAreas[NUM_BINS - 1];
-        int   leftCounts[NUM_BINS - 1];
-        AABB  sweepBox = bins[0].aabb;
-        int   sweepCount = bins[0].count;
+        std::array<float, NUM_BINS - 1> leftAreas{};
+        std::array<int, NUM_BINS - 1>   leftCounts{};
+        AABB                            sweepBox = bins[0].aabb;
+        int                             sweepCount = bins[0].count;
         for (int i = 1; i < NUM_BINS; ++i) {
             leftAreas[i - 1] = (sweepCount > 0) ? sweepBox.surfaceArea() : 0.0f;
             leftCounts[i - 1] = sweepCount;
@@ -178,7 +179,7 @@ int BVH::buildR(std::vector<Node>& tree, std::atomic<int>& nextSlot, const std::
     return buildSerial(mid);
 }
 
-void BVH::build(const std::vector<Triangle>& triangles, const std::vector<Vertex>& vertices) {
+void BVH::build(std::span<const Triangle> triangles, std::span<const Vertex> vertices) {
     assert(!triangles.empty());
 
     const int n = static_cast<int>(triangles.size());

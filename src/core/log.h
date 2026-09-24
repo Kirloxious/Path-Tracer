@@ -5,12 +5,13 @@
  * @brief Minimal single-header logger with ANSI colour output.
  */
 
+#include <cstdio>
 #include <format>
-#include <iostream>
+#include <print>
 #include <string_view>
 
 /**
- * @brief Formatted, colourised logging on top of std::format.
+ * @brief Formatted, colourised logging on top of std::format / std::println.
  *
  * `info` / `warn` go to stdout (green / yellow); `error` goes to stderr (red). Colour escapes
  * are always emitted — pipe through `strip-ansi` if you need plain text. Every function takes
@@ -33,7 +34,7 @@ constexpr std::string_view RED_BOLD = "\033[1;31m";
  * @param args  Values substituted into @p fmt.
  */
 template<typename... Args> void info(std::format_string<Args...> fmt, Args&&... args) {
-    std::cout << detail::GREEN_BOLD << "[INFO] " << detail::RESET << std::format(fmt, std::forward<Args>(args)...) << '\n';
+    std::println(stdout, "{}[INFO] {}{}", detail::GREEN_BOLD, detail::RESET, std::format(fmt, std::forward<Args>(args)...));
 }
 
 /**
@@ -43,7 +44,7 @@ template<typename... Args> void info(std::format_string<Args...> fmt, Args&&... 
  * @param args  Values substituted into @p fmt.
  */
 template<typename... Args> void warn(std::format_string<Args...> fmt, Args&&... args) {
-    std::cout << detail::YELLOW_BOLD << "[WARN] " << detail::RESET << std::format(fmt, std::forward<Args>(args)...) << '\n';
+    std::println(stdout, "{}[WARN] {}{}", detail::YELLOW_BOLD, detail::RESET, std::format(fmt, std::forward<Args>(args)...));
 }
 
 /**
@@ -53,7 +54,7 @@ template<typename... Args> void warn(std::format_string<Args...> fmt, Args&&... 
  * @param args  Values substituted into @p fmt.
  */
 template<typename... Args> void error(std::format_string<Args...> fmt, Args&&... args) {
-    std::cerr << detail::RED_BOLD << "[ERROR] " << detail::RESET << std::format(fmt, std::forward<Args>(args)...) << '\n';
+    std::println(stderr, "{}[ERROR] {}{}", detail::RED_BOLD, detail::RESET, std::format(fmt, std::forward<Args>(args)...));
 }
 
 } // namespace Log
