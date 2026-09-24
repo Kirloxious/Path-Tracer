@@ -7,8 +7,9 @@
 
 #include <string_view>
 
+#include "render/render_settings.h"
 #include "render/render_targets.h"
-#include <scene/scene.h>
+#include "scene/scene.h"
 
 /**
  * @brief Per-frame state passed by reference to every RenderPass call.
@@ -20,6 +21,8 @@ struct RenderContext
 {
     const Scene&  scene;
     const Camera& camera;
+    /// GUI-tunable post-process knobs. Mutating them never resets accumulation.
+    const RenderSettings& settings;
     /// Frames accumulated since the last reset; 1 on the first frame of a new accumulation, 0 on
     /// a frame whose shaders were just reloaded.
     int frameIndex;
@@ -44,7 +47,12 @@ struct RenderContext
  *
  * Passes are registered with Renderer::addRenderPass() and run in registration order. The
  * order is load-bearing: Raster → ReSTIR → PathTracer → Denoiser → Bloom → AutoExposure →
- * Tonemap → TAA → AOV → Gui, with GuiPass necessarily last.
+ * Tonemap → TAA → AOV.
+ *
+ * Renderer binds everything scene- and frame-wide (scene SSBOs, the camera/frame/scene UBOs,
+ * the env map and the current G-buffer's textures) before the first pass, and rotates the
+ * G-buffer and TAA history around the frame. A pass binds only resources it owns, plus the
+ * post-process image units 0..4 it uses privately.
  *
  * Non-copyable — passes own GL resources.
  */

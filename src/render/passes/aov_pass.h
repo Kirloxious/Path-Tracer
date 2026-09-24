@@ -7,7 +7,6 @@
 
 #include "gpu/compute_shader.h"
 #include "render/render_pass.h"
-#include "render/render_settings.h"
 
 /**
  * @brief Overwrites the display texture with a debug visualization of an intermediate buffer.
@@ -22,18 +21,13 @@
 class AovPass : public RenderPass
 {
 public:
-    /**
-     * @brief Loads `aov.comp`.
-     * @param settings Shared settings block; borrowed by reference and read every frame, so it
-     *                 must outlive this pass.
-     */
-    explicit AovPass(const RenderSettings& settings);
+    /// Loads `aov.comp`.
+    AovPass();
 
     bool             reloadIfChanged() override;
     void             execute(const RenderContext&, RenderTargets&) override;
     std::string_view name() const override { return "AOV"; }
 
 private:
-    ComputeShader         shader;
-    const RenderSettings& settings;
+    ComputeShader shader;
 };

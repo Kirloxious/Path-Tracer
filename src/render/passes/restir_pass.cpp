@@ -71,9 +71,6 @@ void RestirPass::execute(const RenderContext&, RenderTargets& targets) {
     (useAAsCurrent ? surfacesA : surfacesB).bindBase(GL_SHADER_STORAGE_BUFFER, BIND_SURFACES_CURRENT);
     (useAAsCurrent ? surfacesB : surfacesA).bindBase(GL_SHADER_STORAGE_BUFFER, BIND_SURFACES_PREV);
 
-    glBindTextureUnit(TEX_GBUF_NORMAL, targets.gbuf.normal.id());
-    glBindTextureUnit(TEX_GBUF_DEPTH, targets.gbuf.depth.id());
-
     initial.use();
     initial.setInt("m_initial", M_INITIAL_DEFAULT);
     glDispatchCompute(targets.numGroupsX, targets.numGroupsY, 1);

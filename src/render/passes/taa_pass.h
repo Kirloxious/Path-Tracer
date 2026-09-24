@@ -17,8 +17,8 @@
  * neighborhood clamp to suppress ghosting, and blends.
  *
  * The result is written into `targets.taa_output`, then copied back into `targets.display` so
- * downstream passes (AOV, the swap-chain blit) see the resolved image. `taa_output` and
- * `taa_history` are then swapped, making this frame's result next frame's history.
+ * downstream passes (AOV, the swap-chain blit) see the resolved image. RenderTargets::endFrame()
+ * then makes `taa_output` next frame's `taa_history`.
  */
 class TaaPass : public RenderPass
 {

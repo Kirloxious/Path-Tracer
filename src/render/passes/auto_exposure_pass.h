@@ -8,7 +8,6 @@
 #include "gpu/buffer.h"
 #include "gpu/compute_shader.h"
 #include "render/render_pass.h"
-#include "render/render_settings.h"
 
 /**
  * @brief Two-step luminance-based auto exposure.
@@ -27,10 +26,9 @@ class AutoExposurePass : public RenderPass
 public:
     /**
      * @brief Loads both kernels and allocates the exposure and histogram SSBOs.
-     * @param settings Shared settings block; borrowed by reference and read every frame, so it
-     *                 must outlive this pass.
+     * @param initialExposure Seeds the exposure buffer so the first frame is not black.
      */
-    explicit AutoExposurePass(const RenderSettings& settings);
+    explicit AutoExposurePass(float initialExposure);
 
     bool             reloadIfChanged() override;
     void             resize(int width, int height) override;
@@ -38,8 +36,6 @@ public:
     std::string_view name() const override { return "AutoExpose"; }
 
 private:
-    const RenderSettings& settings;
-
     ComputeShader histogramShader;
     ComputeShader reduceShader;
 

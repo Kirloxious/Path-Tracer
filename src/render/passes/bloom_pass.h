@@ -10,7 +10,6 @@
 #include "gpu/compute_shader.h"
 #include "gpu/texture.h"
 #include "render/render_pass.h"
-#include "render/render_settings.h"
 
 /**
  * @brief COD Advances / Jimenez bloom over a progressively halved mip chain.
@@ -26,10 +25,8 @@ public:
      * @brief Loads both kernels and allocates the mip chain for the given size.
      * @param width    Framebuffer width in pixels.
      * @param height   Framebuffer height in pixels.
-     * @param settings Shared settings block; borrowed by reference and read every frame, so it
-     *                 must outlive this pass.
      */
-    BloomPass(int width, int height, const RenderSettings& settings);
+    BloomPass(int width, int height);
 
     bool             reloadIfChanged() override;
     void             resize(int width, int height) override;
@@ -44,13 +41,9 @@ private:
      */
     void buildMips(int w, int h);
 
-    const RenderSettings& settings;
-
     ComputeShader downsampleShader;
     ComputeShader upsampleShader;
 
     /// Progressive halving of the source resolution. mips[0] is w/2 x h/2.
     std::vector<Texture> mips;
-    std::vector<int>     mipWidths;
-    std::vector<int>     mipHeights;
 };

@@ -21,7 +21,7 @@ struct Scene;
 struct SceneEntry;
 
 /**
- * @brief Stateless ImGui drawing helpers, called from GuiPass::execute().
+ * @brief Stateless ImGui drawing helpers, called once per frame from Application::run().
  *
  * Every draw* function assumes beginFrame() has already run this frame and that endFrame()
  * will run after. The only state the GUI itself carries between frames is SceneSwitchState,
@@ -107,4 +107,4 @@ void drawPassTimings(const PassTimings& passTimings);
  */
 void drawStats(const FPSTimer& fps, const GPUTimer& gpu, const PassTimings& passTimings, const Scene& scene, const Camera& camera,
                const std::vector<SceneEntry>& entries, SceneSwitchState& sceneSwitch, RenderSettings& settings);
-}; // namespace Gui
+} // namespace Gui

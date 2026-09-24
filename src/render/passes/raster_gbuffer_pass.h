@@ -22,10 +22,6 @@
  * and depth. Face culling is disabled because the Cornell-box scene mixes windings; the
  * fragment shader flips normals against the view direction to match the path tracer's
  * `set_face_normal` convention.
- *
- * execute() also swaps `targets.gbuf` with `targets.gbuf_prev` at entry, so this frame's draws
- * overwrite the frame-N-2 slot and frame N-1 survives in `gbuf_prev` for the temporal ReSTIR
- * pass. Nothing may be inserted between this pass and RestirPass that reads `gbuf_prev`.
  */
 class RasterGBufferPass : public RenderPass
 {

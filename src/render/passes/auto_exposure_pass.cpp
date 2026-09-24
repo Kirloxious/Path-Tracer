@@ -10,14 +10,12 @@ namespace {
 constexpr int HIST_BINS = 256;
 } // namespace
 
-AutoExposurePass::AutoExposurePass(const RenderSettings& s) : settings(s) {
-    Log::info("AutoExposurePass: loading histogram/reduce shaders");
-    histogramShader = ComputeShader("shader/luminance_histogram.comp");
-    reduceShader = ComputeShader("shader/auto_exposure.comp");
+AutoExposurePass::AutoExposurePass(float initialExposure)
+    : histogramShader("shader/luminance_histogram.comp"), reduceShader("shader/auto_exposure.comp") {
 
     // ExposureBuffer: { float exposure; float pad[3]; }. Seed with the user's
     // exposure so the first frame doesn't display a random gain.
-    const std::array<float, 4> init = {s.exposure, 0.0f, 0.0f, 0.0f};
+    const std::array<float, 4> init = {initialExposure, 0.0f, 0.0f, 0.0f};
     exposureSSBO = Buffer(init, GL_DYNAMIC_COPY);
 
     // HistogramBuffer: 256 uint bins, zero-initialised.
@@ -39,6 +37,7 @@ bool AutoExposurePass::reloadIfChanged() {
 }
 
 void AutoExposurePass::execute(const RenderContext& ctx, RenderTargets& targets) {
+    const RenderSettings& settings = ctx.settings;
     exposureSSBO.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_EXPOSURE);
     histogramSSBO.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_HISTOGRAM);
 

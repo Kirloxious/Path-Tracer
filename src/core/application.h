@@ -22,8 +22,8 @@
  *
  * The constructor creates the GL context (via Window), registers the render passes in their
  * fixed order — Raster → ReSTIR → PathTracer → Denoiser → Bloom → AutoExposure → Tonemap →
- * TAA → AOV → Gui — and calls Renderer::loadScene(). GuiPass must stay last so the overlay
- * draws over the resolved image.
+ * TAA → AOV — and calls Renderer::loadScene(). The ImGui overlay is built after the passes
+ * and drawn after the swap-chain blit, so it always sits on top of the image.
  *
  * Non-copyable: it owns GL objects and a GLFW window.
  */
@@ -69,8 +69,7 @@ private:
     Camera camera;
     Window window;
 
-    // Everything from here to `renderer` needs the GL context and is referenced by passes the
-    // renderer owns, so it must be constructed after `window` and destroyed after `renderer`.
+    // Needs the GL context, so it must be constructed after `window`.
     GPUTimer gpuTimer;
     FPSTimer fpsTimer;
 
