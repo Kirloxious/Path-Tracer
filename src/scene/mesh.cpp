@@ -78,15 +78,3 @@ Mesh makeTriangleMesh(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, std::string name
     mesh.indices = {glm::uvec3(0, 1, 2)};
     return mesh;
 }
-
-Mesh makeMeshFromOBJ(const OBJMesh& objMesh) {
-    Mesh mesh;
-    mesh.name = objMesh.name;
-    mesh.vertices = objMesh.vertices;
-    mesh.indices = objMesh.indices;
-    // The Object supplies the material, so one asset can be placed under several.
-    for (Vertex& vert : mesh.vertices) {
-        vert.material_index = 0;
-    }
-    return mesh;
-}

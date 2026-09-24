@@ -7,34 +7,14 @@
 #include "scene/primitive.h"
 #include "scene/world.h"
 
-RasterGBufferPass::RasterGBufferPass(const std::filesystem::path& vertPath, const std::filesystem::path& fragPath) {
-    Log::info("RasterGBufferPass: loading '{}' + '{}'", vertPath.string(), fragPath.string());
-    shader = RasterShader(vertPath, fragPath);
-}
-
-RasterGBufferPass::~RasterGBufferPass() {
-    releaseGeometry();
-}
-
-void RasterGBufferPass::releaseGeometry() {
-    if (ebo) {
-        glDeleteBuffers(1, &ebo);
-        ebo = 0;
-    }
-    if (vbo) {
-        glDeleteBuffers(1, &vbo);
-        vbo = 0;
-    }
-    if (vao) {
-        glDeleteVertexArrays(1, &vao);
-        vao = 0;
-    }
-    indexCount = 0;
-    drawRanges.clear();
-}
+RasterGBufferPass::RasterGBufferPass(const std::filesystem::path& vertPath, const std::filesystem::path& fragPath) : shader(vertPath, fragPath) {}
 
 void RasterGBufferPass::buildGeometry(const World& world) {
-    releaseGeometry();
+    vao.reset();
+    vbo = Buffer();
+    ebo = Buffer();
+    indexCount = 0;
+    drawRanges.clear();
 
     if (world.vertices.empty() || world.triangles.empty()) {
         Log::warn("RasterGBufferPass: no geometry to rasterize");
@@ -86,28 +66,28 @@ void RasterGBufferPass::buildGeometry(const World& world) {
 
     indexCount = static_cast<GLsizei>(indices.size());
 
-    glCreateVertexArrays(1, &vao);
-    glCreateBuffers(1, &vbo);
-    glCreateBuffers(1, &ebo);
+    vbo = Buffer(world.vertices, GL_STATIC_DRAW);
+    ebo = Buffer(indices, GL_STATIC_DRAW);
 
-    glNamedBufferData(vbo, world.vertices.size() * sizeof(Vertex), world.vertices.data(), GL_STATIC_DRAW);
-    glNamedBufferData(ebo, indices.size() * sizeof(uint32_t), indices.data(), GL_STATIC_DRAW);
+    GLuint vaoId = 0;
+    glCreateVertexArrays(1, &vaoId);
+    vao.reset(vaoId);
 
     constexpr GLuint bindingIndex = 0;
-    glVertexArrayVertexBuffer(vao, bindingIndex, vbo, 0, sizeof(Vertex));
-    glVertexArrayElementBuffer(vao, ebo);
+    glVertexArrayVertexBuffer(vaoId, bindingIndex, vbo.id(), 0, sizeof(Vertex));
+    glVertexArrayElementBuffer(vaoId, ebo.id());
 
-    glEnableVertexArrayAttrib(vao, 0);
-    glVertexArrayAttribFormat(vao, 0, 3, GL_FLOAT, GL_FALSE, offsetof(Vertex, position));
-    glVertexArrayAttribBinding(vao, 0, bindingIndex);
+    glEnableVertexArrayAttrib(vaoId, 0);
+    glVertexArrayAttribFormat(vaoId, 0, 3, GL_FLOAT, GL_FALSE, offsetof(Vertex, position));
+    glVertexArrayAttribBinding(vaoId, 0, bindingIndex);
 
-    glEnableVertexArrayAttrib(vao, 1);
-    glVertexArrayAttribFormat(vao, 1, 3, GL_FLOAT, GL_FALSE, offsetof(Vertex, normal));
-    glVertexArrayAttribBinding(vao, 1, bindingIndex);
+    glEnableVertexArrayAttrib(vaoId, 1);
+    glVertexArrayAttribFormat(vaoId, 1, 3, GL_FLOAT, GL_FALSE, offsetof(Vertex, normal));
+    glVertexArrayAttribBinding(vaoId, 1, bindingIndex);
 
-    glEnableVertexArrayAttrib(vao, 2);
-    glVertexArrayAttribIFormat(vao, 2, 1, GL_UNSIGNED_INT, offsetof(Vertex, material_index));
-    glVertexArrayAttribBinding(vao, 2, bindingIndex);
+    glEnableVertexArrayAttrib(vaoId, 2);
+    glVertexArrayAttribIFormat(vaoId, 2, 1, GL_UNSIGNED_INT, offsetof(Vertex, material_index));
+    glVertexArrayAttribBinding(vaoId, 2, bindingIndex);
 
     Log::info("RasterGBufferPass: {} vertices, {} indices ({} triangles) across {} object run(s)",
               world.vertices.size(),
@@ -134,7 +114,7 @@ void RasterGBufferPass::execute(const RenderContext&, RenderTargets& targets) {
     // preserving frame N-1 data for temporal consumers downstream.
     std::swap(targets.gbuf, targets.gbuf_prev);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, targets.gbuf.fb.handle);
+    glBindFramebuffer(GL_FRAMEBUFFER, targets.gbuf.fb.id());
     glViewport(0, 0, targets.gbuf.width, targets.gbuf.height);
 
     glEnable(GL_DEPTH_TEST);
@@ -150,12 +130,12 @@ void RasterGBufferPass::execute(const RenderContext&, RenderTargets& targets) {
 
     const float zeroNormal[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     const float clearDepth = 0.0f; // reversed-Z: 0 is the far plane
-    glClearNamedFramebufferfv(targets.gbuf.fb.handle, GL_COLOR, GBuffer::ATTACH_NORMAL, zeroNormal);
-    glClearNamedFramebufferfv(targets.gbuf.fb.handle, GL_DEPTH, 0, &clearDepth);
+    glClearNamedFramebufferfv(targets.gbuf.fb.id(), GL_COLOR, GBuffer::ATTACH_NORMAL, zeroNormal);
+    glClearNamedFramebufferfv(targets.gbuf.fb.id(), GL_DEPTH, 0, &clearDepth);
 
     shader.use();
 
-    glBindVertexArray(vao);
+    glBindVertexArray(vao.get());
     // `drawRanges` tiles the buffer exactly, so a draw per object would submit the same
     // triangles at N times the CPU cost.
     glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, nullptr);

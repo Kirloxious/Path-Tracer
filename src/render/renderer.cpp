@@ -1,6 +1,7 @@
 #include "render/renderer.h"
 
 #include <memory>
+#include <stdexcept>
 
 #include "core/log.h"
 #include "core/shader_shared.h"
@@ -18,6 +19,17 @@ Renderer::Renderer(int w, int h) : targets(w, h) {
 void Renderer::loadScene(const Scene& scene, const Camera& camera) {
     const World& world = scene.world;
 
+    // The only step that can fail, so it runs first: a throw leaves the previous scene intact.
+    EnvMap nextEnvMap;
+    if (!scene.envMapPath.empty()) {
+        auto loaded = EnvMap::load(scene.envMapPath, scene.envIntensity);
+        if (!loaded) {
+            throw std::runtime_error(loaded.error());
+        }
+        nextEnvMap = std::move(*loaded);
+    }
+    envMap = std::move(nextEnvMap);
+
     // An unlit scene still gets one zeroed group, so binding 0 never keeps the previous
     // scene's lights; the shaders gate every read on num_light_groups.
     const std::vector<World::LightGroup> noLights(1);
@@ -31,15 +43,11 @@ void Renderer::loadScene(const Scene& scene, const Camera& camera) {
     // lets leaves batch triangles without disturbing the emissive-first triangle order.
     triRefsSSBO = Buffer(world.bvh.triRefs, GL_STATIC_DRAW);
 
-    envMap = scene.envMapPath.empty() ? EnvMap() : EnvMap(scene.envMapPath, scene.envIntensity);
-
     // Uploaded even without an envmap: every read is gated on env_map_valid, but an empty
     // binding would make a stray read undefined rather than merely wrong.
     const std::vector<EnvSampleCell> fallback(1);
     envSamplingSSBO = Buffer(envMap.samplingCells().empty() ? fallback : envMap.samplingCells(), GL_STATIC_DRAW);
 
-    // Validity comes from the loaded map, not the scene's path: a file that failed to load
-    // leaves a zero-sized sampling grid that envmap_sample would index out of bounds.
     const SceneConstants constants{
         .bvh_root_index = world.bvh.root,
         .emissive_last_index = world.emissiveLastIndex,

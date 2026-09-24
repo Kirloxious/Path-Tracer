@@ -5,11 +5,14 @@
  * @brief GPU and CPU frame timers, ring-buffered to avoid pipeline stalls.
  */
 
-#include "gpu/buffer.h"
 #include <GLFW/glfw3.h>
 #include <array>
-#include <utility>
+#include <span>
+#include <string>
+#include <string_view>
 #include <vector>
+
+#include "gpu/gl_handle.h"
 
 /**
  * @brief How many frames of GPU queries to keep in flight before reading one back.
@@ -23,32 +26,26 @@ inline constexpr int TIMER_FRAMES_IN_FLIGHT = 4;
  * Wraps Renderer::render(). The reported value is a one-second running average, and
  * historyData() additionally keeps the last HISTORY raw samples for the GUI plot.
  *
- * Owns raw GL query handles, so it is non-copyable.
+ * Move-only.
  */
 class GPUTimer
 {
 public:
     /// Allocates the ring of timer queries.
     GPUTimer() {
-        glGenQueries(TIMER_FRAMES_IN_FLIGHT, queryIDs.data());
+        for (QueryHandle& q : queries) {
+            GLuint id = 0;
+            glGenQueries(1, &id);
+            q.reset(id);
+        }
         lastSnapshot = glfwGetTime();
     }
-
-    ~GPUTimer() {
-        if (queryIDs[0]) {
-            glDeleteQueries(TIMER_FRAMES_IN_FLIGHT, queryIDs.data());
-        }
-    }
-
-    // Owns raw GL query handles; copying would double-free them.
-    GPUTimer(const GPUTimer&) = delete;
-    GPUTimer& operator=(const GPUTimer&) = delete;
 
     /// Number of raw per-frame samples retained for the GUI plot.
     static constexpr int HISTORY = 120;
 
     /// Begins the current ring slot's timer query. Pair with end().
-    void start() const { glBeginQuery(GL_TIME_ELAPSED, queryIDs[write]); }
+    void start() const { glBeginQuery(GL_TIME_ELAPSED, queries[write].get()); }
 
     /**
      * @brief Ends the current query, advances the ring, and reads back the oldest result.
@@ -72,11 +69,11 @@ public:
             return; // still filling the ring during the first few frames
         }
         GLuint available = GL_FALSE;
-        glGetQueryObjectuiv(queryIDs[read], GL_QUERY_RESULT_AVAILABLE, &available);
+        glGetQueryObjectuiv(queries[read].get(), GL_QUERY_RESULT_AVAILABLE, &available);
         if (available == GL_FALSE) {
             return; // keep the previous sample rather than stalling
         }
-        glGetQueryObjectui64v(queryIDs[read], GL_QUERY_RESULT, &lastComputeTime);
+        glGetQueryObjectui64v(queries[read].get(), GL_QUERY_RESULT, &lastComputeTime);
 
         history[historyOffset] = static_cast<float>(lastComputeTime / 1e6);
         historyOffset = (historyOffset + 1) % HISTORY;
@@ -95,16 +92,16 @@ public:
 
     /// @return GPU time for the render in milliseconds, averaged over the last second.
     double computeTimeMs() const { return displayComputeMs; }
-    /// @return Pointer to HISTORY raw per-frame samples in milliseconds (a circular buffer).
-    const float* historyData() const { return history; }
+    /// @return The last HISTORY raw per-frame samples in milliseconds (a circular buffer).
+    std::span<const float, HISTORY> historyData() const { return history; }
     /// @return Index of the oldest entry in historyData(), i.e. where the plot should start.
     int historyOffsetIndex() const { return historyOffset; }
 
 private:
-    std::array<GLuint, TIMER_FRAMES_IN_FLIGHT> queryIDs{};
-    std::array<bool, TIMER_FRAMES_IN_FLIGHT>   hasResult{};
-    int                                        write = 0;
-    GLuint64                                   lastComputeTime = 0;
+    std::array<QueryHandle, TIMER_FRAMES_IN_FLIGHT> queries;
+    std::array<bool, TIMER_FRAMES_IN_FLIGHT>        hasResult{};
+    int                                             write = 0;
+    GLuint64                                        lastComputeTime = 0;
 
     double                  displayComputeMs = 0.0;
     GLuint64                accumNs = 0;
@@ -112,8 +109,8 @@ private:
     double                  lastSnapshot = 0.0;
     static constexpr double snapshotInterval = 1.0;
 
-    float history[HISTORY] = {};
-    int   historyOffset = 0;
+    std::array<float, HISTORY> history{};
+    int                        historyOffset = 0;
 };
 
 /**
@@ -124,30 +121,11 @@ private:
  * avoid the nested-active-query conflict with the outer GPUTimer that already wraps
  * Renderer::render(). Results are EWMA-smoothed for a readable GUI panel.
  *
- * Owns raw GL query handles, so it is non-copyable.
+ * Move-only.
  */
 class PassTimings
 {
 public:
-    PassTimings() = default;
-
-    ~PassTimings() {
-        for (Pass& pass : passes) {
-            for (Slot& slot : pass.slots) {
-                if (slot.qStart) {
-                    glDeleteQueries(1, &slot.qStart);
-                }
-                if (slot.qEnd) {
-                    glDeleteQueries(1, &slot.qEnd);
-                }
-            }
-        }
-    }
-
-    // Owns raw GL query handles; copying would double-free them on destruction.
-    PassTimings(const PassTimings&) = delete;
-    PassTimings& operator=(const PassTimings&) = delete;
-
     /**
      * @brief Registers one pass and allocates its query pairs.
      *
@@ -155,17 +133,18 @@ public:
      * demand so the pass count is never capped — a fixed cap silently dropped the last passes
      * from the panel whenever the pipeline grew.
      *
-     * @param name Display name for the GUI panel. Must be a static string: it is stored by
-     *             pointer, not copied.
+     * @param name Display name for the GUI panel.
      */
-    void addPass(const char* name) {
+    void addPass(std::string_view name) {
         Pass pass;
         pass.name = name;
         for (Slot& slot : pass.slots) {
-            glGenQueries(1, &slot.qStart);
-            glGenQueries(1, &slot.qEnd);
+            GLuint ids[2] = {};
+            glGenQueries(2, ids);
+            slot.qStart.reset(ids[0]);
+            slot.qEnd.reset(ids[1]);
         }
-        passes.push_back(pass);
+        passes.push_back(std::move(pass));
     }
 
     /**
@@ -181,14 +160,14 @@ public:
                 continue; // still filling the ring during the first few frames
             }
             GLuint available = GL_FALSE;
-            glGetQueryObjectuiv(slot.qEnd, GL_QUERY_RESULT_AVAILABLE, &available);
+            glGetQueryObjectuiv(slot.qEnd.get(), GL_QUERY_RESULT_AVAILABLE, &available);
             if (available == GL_FALSE) {
                 continue; // keep the previous sample rather than stalling
             }
             GLuint64 tStart = 0;
             GLuint64 tEnd = 0;
-            glGetQueryObjectui64v(slot.qStart, GL_QUERY_RESULT, &tStart);
-            glGetQueryObjectui64v(slot.qEnd, GL_QUERY_RESULT, &tEnd);
+            glGetQueryObjectui64v(slot.qStart.get(), GL_QUERY_RESULT, &tStart);
+            glGetQueryObjectui64v(slot.qEnd.get(), GL_QUERY_RESULT, &tEnd);
             // EWMA smoothing (α = 0.1) — same feel as GPUTimer's second-window average
             // without needing a wall-clock snapshot loop.
             const double ms = (tEnd > tStart) ? static_cast<double>(tEnd - tStart) / 1e6 : 0.0;
@@ -204,7 +183,7 @@ public:
         if (!inRange(idx)) {
             return;
         }
-        glQueryCounter(passes[static_cast<size_t>(idx)].slots[write].qStart, GL_TIMESTAMP);
+        glQueryCounter(passes[static_cast<size_t>(idx)].slots[write].qStart.get(), GL_TIMESTAMP);
     }
 
     /**
@@ -216,7 +195,7 @@ public:
             return;
         }
         Slot& slot = passes[static_cast<size_t>(idx)].slots[write];
-        glQueryCounter(slot.qEnd, GL_TIMESTAMP);
+        glQueryCounter(slot.qEnd.get(), GL_TIMESTAMP);
         slot.hasResult = true;
     }
 
@@ -226,7 +205,7 @@ public:
     /// @return Number of registered passes.
     int count() const { return static_cast<int>(passes.size()); }
     /** @param i Pass index in [0, count()). @return The pass's display name. */
-    const char* nameFor(int i) const { return passes[static_cast<size_t>(i)].name; }
+    std::string_view nameFor(int i) const { return passes[static_cast<size_t>(i)].name; }
     /** @param i Pass index in [0, count()). @return EWMA-smoothed GPU time in milliseconds. */
     double msFor(int i) const { return passes[static_cast<size_t>(i)].ms; }
 
@@ -234,15 +213,15 @@ private:
     /// One frame's query pair for one pass.
     struct Slot
     {
-        GLuint qStart = 0;
-        GLuint qEnd = 0;
-        bool   hasResult = false;
+        QueryHandle qStart;
+        QueryHandle qEnd;
+        bool        hasResult = false;
     };
 
     /// One registered pass: its label, smoothed timing, and per-frame query slots.
     struct Pass
     {
-        const char*                              name = nullptr;
+        std::string                              name;
         double                                   ms = 0.0;
         std::array<Slot, TIMER_FRAMES_IN_FLIGHT> slots{};
     };
@@ -304,8 +283,8 @@ public:
     double fps() const { return displayFps; }
     /// @return Mean wall-clock frame time in milliseconds, averaged over the last second.
     double frameTimeMs() const { return displayFrameMs; }
-    /// @return Pointer to HISTORY raw frame times in milliseconds (a circular buffer).
-    const float* historyData() const { return history; }
+    /// @return The last HISTORY raw frame times in milliseconds (a circular buffer).
+    std::span<const float, HISTORY> historyData() const { return history; }
     /// @return Index of the oldest entry in historyData(), i.e. where the plot should start.
     int historyOffsetIndex() const { return historyOffset; }
 
@@ -319,6 +298,6 @@ private:
     double                  displayFrameMs = 0.0;
     static constexpr double snapshotInterval = 1.0;
 
-    float history[HISTORY] = {};
-    int   historyOffset = 0;
+    std::array<float, HISTORY> history{};
+    int                        historyOffset = 0;
 };

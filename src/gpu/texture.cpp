@@ -7,7 +7,9 @@ Texture::Texture(int width, int height, GLenum internalFormat) : width(width), h
         Log::error("Texture created with invalid dimensions: {} x {}", width, height);
         return;
     }
+    GLuint handle = 0;
     glCreateTextures(GL_TEXTURE_2D, 1, &handle);
+    m_handle.reset(handle);
     glTextureStorage2D(handle, 1, internalFormat, width, height);
     glTextureParameteri(handle, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTextureParameteri(handle, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -45,7 +47,9 @@ Texture::Texture(int width, int height, GLenum internalFormat, GLenum pixelForma
         Log::error("Texture: bad upload ({}x{}, pixels={})", width, height, pixels);
         return;
     }
+    GLuint handle = 0;
     glCreateTextures(GL_TEXTURE_2D, 1, &handle);
+    m_handle.reset(handle);
     glTextureStorage2D(handle, 1, internalFormat, width, height);
     glTextureParameteri(handle, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTextureParameteri(handle, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -54,34 +58,10 @@ Texture::Texture(int width, int height, GLenum internalFormat, GLenum pixelForma
     glTextureSubImage2D(handle, 0, 0, 0, width, height, pixelFormat, pixelType, pixels);
 }
 
-Texture::~Texture() {
-    if (handle) {
-        glDeleteTextures(1, &handle);
-    }
-}
-
-Texture::Texture(Texture&& o) noexcept : handle(o.handle), width(o.width), height(o.height), internalFormat(o.internalFormat) {
-    o.handle = 0;
-}
-
-Texture& Texture::operator=(Texture&& o) noexcept {
-    if (this != &o) {
-        if (handle) {
-            glDeleteTextures(1, &handle);
-        }
-        handle = o.handle;
-        width = o.width;
-        height = o.height;
-        internalFormat = o.internalFormat;
-        o.handle = 0;
-    }
-    return *this;
-}
-
 void Texture::bindForAccumulation() const {
-    glBindImageTexture(0, handle, 0, GL_FALSE, 0, GL_READ_WRITE, internalFormat);
+    glBindImageTexture(0, id(), 0, GL_FALSE, 0, GL_READ_WRITE, internalFormat);
 }
 
 void Texture::bind(int unit, GLenum access) const {
-    glBindImageTexture(unit, handle, 0, GL_FALSE, 0, access, internalFormat);
+    glBindImageTexture(unit, id(), 0, GL_FALSE, 0, access, internalFormat);
 }

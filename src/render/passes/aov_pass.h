@@ -29,9 +29,9 @@ public:
      */
     explicit AovPass(const RenderSettings& settings);
 
-    bool        reloadIfChanged() override;
-    void        execute(const RenderContext&, RenderTargets&) override;
-    const char* name() const override { return "AOV"; }
+    bool             reloadIfChanged() override;
+    void             execute(const RenderContext&, RenderTargets&) override;
+    std::string_view name() const override { return "AOV"; }
 
 private:
     ComputeShader         shader;

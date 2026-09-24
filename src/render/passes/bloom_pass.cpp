@@ -37,8 +37,8 @@ void BloomPass::buildMips(int w, int h) {
         mips.emplace_back(mw, mh, GL_RGBA16F);
         // Bilinear so the 13-tap downsample and 3x3 tent upsample can sample
         // between texels without hand-rolling weights per corner.
-        glTextureParameteri(mips.back().handle, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTextureParameteri(mips.back().handle, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTextureParameteri(mips.back().id(), GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTextureParameteri(mips.back().id(), GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         mipWidths.push_back(mw);
         mipHeights.push_back(mh);
     }
@@ -71,7 +71,7 @@ void BloomPass::execute(const RenderContext&, RenderTargets& targets) {
     for (int i = 0; i < static_cast<int>(mips.size()); ++i) {
         // First pass reads the HDR image and applies the soft-knee prefilter;
         // subsequent passes chain mip[i-1] → mip[i] with the raw downsample.
-        GLuint srcHandle = (i == 0) ? targets.hdr.handle : mips[i - 1].handle;
+        GLuint srcHandle = (i == 0) ? targets.hdr.id() : mips[i - 1].id();
         glBindTextureUnit(0, srcHandle);
         mips[i].bind(1, GL_WRITE_ONLY);
 
@@ -89,7 +89,7 @@ void BloomPass::execute(const RenderContext&, RenderTargets& targets) {
     upsampleShader.setFloat("radius", settings.bloomFilterRadius);
 
     for (int i = static_cast<int>(mips.size()) - 1; i > 0; --i) {
-        glBindTextureUnit(0, mips[i].handle);
+        glBindTextureUnit(0, mips[i].id());
         // The upsample shader does an in-place additive blend, so bind rw.
         mips[i - 1].bind(1, GL_READ_WRITE);
         upsampleShader.setIVec2("dst_size", mipWidths[i - 1], mipHeights[i - 1]);
@@ -102,7 +102,7 @@ void BloomPass::execute(const RenderContext&, RenderTargets& targets) {
     }
 
     // -------- Final composite: mip[0] additively blended into hdr with `strength` --------
-    glBindTextureUnit(0, mips[0].handle);
+    glBindTextureUnit(0, mips[0].id());
     targets.hdr.bind(1, GL_READ_WRITE);
     upsampleShader.setIVec2("dst_size", targets.hdr.width, targets.hdr.height);
     upsampleShader.setFloat("strength", settings.bloomStrength);

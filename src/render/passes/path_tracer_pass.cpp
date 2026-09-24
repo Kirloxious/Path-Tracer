@@ -66,8 +66,8 @@ bool PathTracerPass::reloadIfChanged() {
 void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     const int maxBounces = ctx.camera.settings.max_bounces;
 
-    glBindTextureUnit(TEX_GBUF_NORMAL, targets.gbuf.normal.handle);
-    glBindTextureUnit(TEX_GBUF_DEPTH, targets.gbuf.depth.handle);
+    glBindTextureUnit(TEX_GBUF_NORMAL, targets.gbuf.normal.id());
+    glBindTextureUnit(TEX_GBUF_DEPTH, targets.gbuf.depth.id());
 
     pathStateSSBO.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_PATH_STATE);
     shadowStateSSBO.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_SHADOW_STATE);

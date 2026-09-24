@@ -31,10 +31,10 @@ public:
      */
     BloomPass(int width, int height, const RenderSettings& settings);
 
-    bool        reloadIfChanged() override;
-    void        resize(int width, int height) override;
-    void        execute(const RenderContext&, RenderTargets&) override;
-    const char* name() const override { return "Bloom"; }
+    bool             reloadIfChanged() override;
+    void             resize(int width, int height) override;
+    void             execute(const RenderContext&, RenderTargets&) override;
+    std::string_view name() const override { return "Bloom"; }
 
 private:
     /**

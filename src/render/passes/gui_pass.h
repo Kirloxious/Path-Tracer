@@ -38,8 +38,8 @@ public:
     GuiPass(const FPSTimer& fps, const GPUTimer& gpu, const PassTimings& passTimings, const std::vector<SceneEntry>& sceneEntries,
             Gui::SceneSwitchState& sceneSwitch, RenderSettings& settings);
 
-    void        execute(const RenderContext&, RenderTargets&) override;
-    const char* name() const override { return "Gui"; }
+    void             execute(const RenderContext&, RenderTargets&) override;
+    std::string_view name() const override { return "Gui"; }
 
 private:
     const FPSTimer&                fpsTimer;

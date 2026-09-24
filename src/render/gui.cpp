@@ -49,10 +49,10 @@ void drawPerformance(const FPSTimer& fps, const GPUTimer& gpu) {
 
     const ImVec2 plotSize(220.0f, 36.0f);
 
-    ImGui::PlotLines("##frametime", fps.historyData(), FPSTimer::HISTORY, fps.historyOffsetIndex(), nullptr, 0.0f, 33.33f, plotSize);
+    ImGui::PlotLines("##frametime", fps.historyData().data(), FPSTimer::HISTORY, fps.historyOffsetIndex(), nullptr, 0.0f, 33.33f, plotSize);
 
     ImGui::Text("Compute  %6.2f ms", gpu.computeTimeMs());
-    ImGui::PlotLines("##compute", gpu.historyData(), GPUTimer::HISTORY, gpu.historyOffsetIndex(), nullptr, 0.0f, 33.33f, plotSize);
+    ImGui::PlotLines("##compute", gpu.historyData().data(), GPUTimer::HISTORY, gpu.historyOffsetIndex(), nullptr, 0.0f, 33.33f, plotSize);
 }
 
 void drawSceneSwitcher(const std::vector<SceneEntry>& entries, SceneSwitchState& state) {
@@ -144,7 +144,8 @@ void drawSettings(RenderSettings& settings) {
 
 void drawPassTimings(const PassTimings& timings) {
     for (int i = 0; i < timings.count(); ++i) {
-        ImGui::Text("%-10s %6.2f ms", timings.nameFor(i), timings.msFor(i));
+        const std::string_view name = timings.nameFor(i);
+        ImGui::Text("%-10.*s %6.2f ms", static_cast<int>(name.size()), name.data(), timings.msFor(i));
     }
 }
 

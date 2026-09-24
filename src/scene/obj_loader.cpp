@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <unordered_map>
 
 #include "core/log.h"
@@ -33,17 +34,15 @@ struct VertexKeyHash
 };
 } // namespace
 
-OBJMesh loadOBJ(const std::filesystem::path& path, uint32_t material_index, float scale, glm::vec3 offset, float rotateY) {
-    OBJMesh mesh;
+std::expected<Mesh, std::string> loadOBJ(const std::filesystem::path& path, float scale, glm::vec3 offset, float rotateY) {
+    Mesh mesh;
     mesh.name = path.stem().string();
-    mesh.material_index = material_index;
 
     if (!std::filesystem::exists(path)) {
-        Log::error("OBJ file does not exist: {}", path.string());
-        return mesh;
+        return std::unexpected(std::format("OBJ file does not exist: {}", path.string()));
     }
     if (scale <= 0.0f) {
-        Log::warn("OBJ '{}' loaded with non-positive scale {} — mesh will be degenerate", path.filename().string(), scale);
+        return std::unexpected(std::format("OBJ '{}' requested with non-positive scale {}", path.string(), scale));
     }
 
     tinyobj::attrib_t                attrib;
@@ -52,8 +51,7 @@ OBJMesh loadOBJ(const std::filesystem::path& path, uint32_t material_index, floa
     std::string                      err;
 
     if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &err, path.string().c_str())) {
-        Log::error("Failed to load OBJ file: {} — {}", path.string(), err);
-        return mesh;
+        return std::unexpected(std::format("Failed to load OBJ file: {} — {}", path.string(), err));
     }
     if (!err.empty()) {
         Log::warn("OBJ: {}", err);
@@ -177,9 +175,8 @@ OBJMesh loadOBJ(const std::filesystem::path& path, uint32_t material_index, floa
     }
 
     if (mesh.indices.empty()) {
-        Log::warn("OBJ '{}' loaded but produced 0 triangles", path.filename().string());
-    } else {
-        Log::info("Loaded OBJ: {} — {} triangles, {} unique vertices", path.filename().string(), mesh.indices.size(), mesh.vertices.size());
+        return std::unexpected(std::format("OBJ '{}' contains no triangles", path.string()));
     }
+    Log::info("Loaded OBJ: {} — {} triangles, {} unique vertices", path.filename().string(), mesh.indices.size(), mesh.vertices.size());
     return mesh;
 }

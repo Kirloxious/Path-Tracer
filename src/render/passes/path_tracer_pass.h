@@ -92,10 +92,10 @@ public:
      */
     PathTracerPass(int width, int height);
 
-    bool        reloadIfChanged() override;
-    void        resize(int width, int height) override;
-    void        execute(const RenderContext&, RenderTargets&) override;
-    const char* name() const override { return "PathTracer"; }
+    bool             reloadIfChanged() override;
+    void             resize(int width, int height) override;
+    void             execute(const RenderContext&, RenderTargets&) override;
+    std::string_view name() const override { return "PathTracer"; }
 
 private:
     /// Allocates every per-pixel buffer for a @p width x @p height image.

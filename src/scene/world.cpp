@@ -79,16 +79,16 @@ void World::addTriQuad(glm::vec3 corner, glm::vec3 u, glm::vec3 v, Material mat)
     addTriQuad(corner, u, v, addMaterial(mat));
 }
 
-void World::addMesh(const OBJMesh& mesh) {
+void World::addMesh(const Mesh& mesh, uint32_t material_index) {
     const std::size_t firstTriangle = triangles.size();
     const uint32_t    baseVertex = static_cast<uint32_t>(vertices.size());
     vertices.reserve(vertices.size() + mesh.vertices.size());
     for (const Vertex& v : mesh.vertices) {
-        vertices.emplace_back(v.position, v.normal, mesh.material_index);
+        vertices.emplace_back(v.position, v.normal, material_index);
     }
     triangles.reserve(triangles.size() + mesh.indices.size());
     for (const glm::uvec3& tri : mesh.indices) {
-        triangles.push_back(makeTriangle(vertices, baseVertex + tri.x, baseVertex + tri.y, baseVertex + tri.z, mesh.material_index));
+        triangles.push_back(makeTriangle(vertices, baseVertex + tri.x, baseVertex + tri.y, baseVertex + tri.z, material_index));
     }
     recordImmediateObject(mesh.name.empty() ? "Mesh" : mesh.name, firstTriangle);
 }
@@ -96,10 +96,6 @@ void World::addMesh(const OBJMesh& mesh) {
 uint32_t World::addMeshAsset(Mesh mesh) {
     meshes.push_back(std::move(mesh));
     return static_cast<uint32_t>(meshes.size()) - 1;
-}
-
-uint32_t World::addMeshAsset(const OBJMesh& mesh) {
-    return addMeshAsset(makeMeshFromOBJ(mesh));
 }
 
 uint32_t World::addObject(std::string name, uint32_t meshId, const glm::mat4& transform, uint32_t material_index) {

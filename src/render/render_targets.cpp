@@ -44,8 +44,8 @@ void RenderTargets::allocate(int w, int h) {
     // ↔ output) the incoming taa_history handle keeps bilinear reprojection working
     // without any per-frame glTextureParameteri fixup. Image writes ignore filter mode.
     for (const Texture* t : {&taa_history, &taa_output}) {
-        glTextureParameteri(t->handle, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTextureParameteri(t->handle, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTextureParameteri(t->id(), GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTextureParameteri(t->id(), GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     }
 
     width = w;

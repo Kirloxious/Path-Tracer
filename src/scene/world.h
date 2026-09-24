@@ -14,7 +14,6 @@
 #include "scene/bvh.h"
 #include "scene/material.h"
 #include "scene/mesh.h"
-#include "scene/obj_loader.h"
 
 /// Object::meshId for geometry an immediate-mode builder appended directly.
 inline constexpr uint32_t NO_MESH = 0xFFFFFFFFu;
@@ -119,17 +118,6 @@ public:
     uint32_t addMeshAsset(Mesh mesh);
 
     /**
-     * @brief addMeshAsset() overload that adapts a loadOBJ() result.
-     *
-     * Load with loadOBJ()'s default scale/offset/rotation, or the load's transform is baked
-     * into the asset and every placement inherits it.
-     *
-     * @param mesh Mesh from loadOBJ(); its material is dropped (the Object supplies one).
-     * @return Its index in `meshes`.
-     */
-    uint32_t addMeshAsset(const OBJMesh& mesh);
-
-    /**
      * @brief Places a mesh asset in the world.
      *
      * Nothing is appended here — create() does the flattening, so objects may be added in any
@@ -227,10 +215,11 @@ public:
     void addTriQuad(glm::vec3 corner, glm::vec3 u, glm::vec3 v, Material mat);
 
     /**
-     * @brief Appends a loaded OBJ mesh, rebasing its indices onto `vertices`.
-     * @param mesh Mesh from loadOBJ(). An empty mesh (a failed load) contributes nothing.
+     * @brief Appends a world-space mesh, rebasing its indices onto `vertices`.
+     * @param mesh           Geometry to copy in, e.g. from loadOBJ().
+     * @param material_index Material applied to every vertex and triangle.
      */
-    void addMesh(const OBJMesh& mesh);
+    void addMesh(const Mesh& mesh, uint32_t material_index);
 
     /**
      * @brief Finalizes the world: instantiates objects, sorts emitters, builds lights + BVH.
