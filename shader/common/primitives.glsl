@@ -51,9 +51,8 @@ struct Vertex
     vec3 normal;
 };
 
-// Mirrors src/scene/material.h. `roughness` is perceptual — GGX alpha is roughness^2.
-// `type` is a derived MaterialClass cached on the CPU by Material::classify(), never authored,
-// so every routing test below stays an exact integer compare.
+// Mirrors src/scene/material.h. `type` is derived on the CPU by Material::classify(), never
+// authored, so routing stays an exact integer compare.
 struct Material
 {
     vec3 base_color;    // albedo (dielectric) or F0 tint (conductor)
@@ -66,24 +65,19 @@ struct Material
     float _pad0;
 };
 
-// Emitted radiance. `base_color` tints `emission`, so every estimator that touches a light —
-// NEE, ReSTIR's target pdf, the BSDF-hits-emissive path, and the CPU's group power weighting —
-// has to go through this or a tinted emitter casts light of a different colour than it shows.
+// Emitted radiance. Every estimator that touches a light must go through this (as does the
+// CPU's group power weighting, Material::emittedRadiance), or a tinted emitter casts light of
+// a different colour than it shows.
 vec3 material_emission(in Material mat) {
     return mat.base_color * mat.emission;
 }
 
-// 32 bytes: two vec4s, with the link data bit-cast into the .w lanes the box does not use.
-// Two nodes per 64-byte cache line instead of 1.33 — traversal is bound on node fetches.
-//
-// The left child is implicit. BVH::flatten emits [self, left subtree, right subtree] depth
-// first, so a node's left child is always the next slot and only the right one is stored.
+// 32 bytes, two nodes per cache line; the link data is bit-cast into the .w lanes (read back
+// with floatBitsToInt). BVH::flatten lays nodes out depth-first, so the left child is always
+// the next slot and only the right one is stored.
 //
 //   interior: aabb_min.w = right child index,  aabb_max.w = 0
 //   leaf:     aabb_min.w = first triangle ref, aabb_max.w = triangle count (> 0)
-//
-// Read the .w lanes back with floatBitsToInt. A count of 0 is what marks a node interior,
-// so every leaf carries at least one triangle.
 struct BVHNodeFlat
 {
     vec4 aabb_min;

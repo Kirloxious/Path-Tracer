@@ -3,10 +3,8 @@ layout(local_size_x = 256) in;
 
 #include "common/host_shared.glsl"
 
-// Reduces the 256-bin histogram to an EMA-smoothed exposure written into the
-// ExposureBuffer TonemapPass reads. The reduction over 256 bins is small
-// enough that a serial pass on thread 0 is simpler and not slower than a
-// shared-memory tree reduction here.
+// Reduces the histogram to a smoothed exposure. 256 bins are few enough that a serial loop on
+// thread 0 is no slower than a tree reduction.
 
 layout(std430, binding = BIND_HISTOGRAM) buffer HistogramBuffer {
     uint bins[256];
@@ -29,11 +27,8 @@ layout(location = 8) uniform float low_percentile;  // fraction of non-black pix
 layout(location = 9) uniform float high_percentile; // ... and everything past this from the bright end
 
 void main() {
-    // Thread 0 does the whole reduction; the other 255 threads only exist so
-    // the histogram-clear loop below can run in parallel.
     if (gl_LocalInvocationIndex == 0u) {
-        // Skip bin 0 — reserved for essentially-black pixels; including them
-        // biases the mean toward 0 and blows out dark scenes.
+        // Bin 0 holds essentially-black pixels, which would blow out dark scenes.
         float total = 0.0;
         for (uint i = 1u; i < 256u; ++i) {
             total += float(hist.bins[i]);
@@ -60,15 +55,12 @@ void main() {
 
         float target_exposure = clamp(target_luma / max(avg_luma, 1e-4), min_exposure, max_exposure);
 
-        // Smoothed in log2, where brightening and darkening by the same number of stops take
-        // the same time; in linear the EMA covers the stops of a rise far faster than those of
-        // an equal drop.
+        // Smoothed in log2, so rises and drops of equal stops adapt equally fast.
         float alpha    = clamp(1.0 - exp(-dt / max(tau, 1e-3)), 0.0, 1.0);
         float log_next = mix(log2(max(expo.exposure, 1e-6)), log2(target_exposure), alpha);
         expo.exposure  = (reset_exposure == 1) ? target_exposure : exp2(log_next);
     }
 
-    // All 256 threads cooperate to zero the histogram for next frame.
     memoryBarrierBuffer();
     barrier();
     hist.bins[gl_LocalInvocationIndex] = 0u;

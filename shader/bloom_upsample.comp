@@ -1,9 +1,8 @@
 #version 460 core
 layout(local_size_x = 8, local_size_y = 8) in;
 
-// 3x3 tent-filter upsample, additively blended into the destination mip. On
-// the final pass the destination is the HDR image itself and `strength` scales
-// the contribution.
+// 3x3 tent upsample, added into the next larger mip — on the final pass `hdr`, scaled by
+// `strength`.
 
 layout(binding = 0) uniform sampler2D src_tex;                    // smaller mip
 layout(rgba16f, binding = 1) uniform image2D dst_image;           // larger mip (or hdr)
@@ -19,7 +18,6 @@ void main() {
     vec2 uv = (vec2(p) + 0.5) / vec2(dst_size);
     vec2 ts = radius / vec2(textureSize(src_tex, 0));
 
-    // 3x3 tent kernel (1 2 1 / 2 4 2 / 1 2 1) / 16.
     vec3 s =
         textureLod(src_tex, uv + vec2(-ts.x, -ts.y), 0.0).rgb * 1.0 +
         textureLod(src_tex, uv + vec2( 0.0,  -ts.y), 0.0).rgb * 2.0 +

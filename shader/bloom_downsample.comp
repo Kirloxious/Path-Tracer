@@ -1,10 +1,10 @@
 #version 460 core
 layout(local_size_x = 8, local_size_y = 8) in;
 
-// COD Advances 2014 (Jimenez) 13-tap partial-Karis downsample. Reads via
-// bilinear sampler so each texture() call already averages a 2x2 quad — the
-// 13 taps cover a 4x4 footprint with the four inner offset taps weighted
-// more heavily to preserve detail across the halving step.
+#include "common/math.glsl"
+
+// 13-tap downsample with partial Karis average (Jimenez, "Next Generation Post Processing in
+// Call of Duty: Advanced Warfare", SIGGRAPH 2014). Bilinear taps cover a 4x4 footprint.
 
 layout(binding = 0) uniform sampler2D src_tex;             // source mip (or hdr on the first pass)
 layout(rgba16f, binding = 1) writeonly uniform image2D dst_image; // destination mip
@@ -14,19 +14,17 @@ layout(location = 1) uniform int   apply_threshold; // 1 on the first (hdr → m
 layout(location = 2) uniform float threshold;       // soft knee luminance
 layout(location = 3) uniform float knee;            // soft-knee width
 
-// Karis-averaged 2x2 quad reduce — folds fireflies into 4-tap mean before summing.
+// 1/(1 + luma)-weighted mean, so a single firefly cannot dominate its quad.
 vec3 karis_average(vec3 c0, vec3 c1, vec3 c2, vec3 c3) {
-    float l0 = 1.0 / (1.0 + dot(c0, vec3(0.2126, 0.7152, 0.0722)));
-    float l1 = 1.0 / (1.0 + dot(c1, vec3(0.2126, 0.7152, 0.0722)));
-    float l2 = 1.0 / (1.0 + dot(c2, vec3(0.2126, 0.7152, 0.0722)));
-    float l3 = 1.0 / (1.0 + dot(c3, vec3(0.2126, 0.7152, 0.0722)));
+    float l0 = 1.0 / (1.0 + luminance(c0));
+    float l1 = 1.0 / (1.0 + luminance(c1));
+    float l2 = 1.0 / (1.0 + luminance(c2));
+    float l3 = 1.0 / (1.0 + luminance(c3));
     float wsum = l0 + l1 + l2 + l3;
     return (c0 * l0 + c1 * l1 + c2 * l2 + c3 * l3) / max(wsum, 1e-6);
 }
 
-// Soft-knee prefilter — only used on the first downsample. Keeps a smooth
-// falloff around `threshold` instead of a hard clip so the bloom edge doesn't
-// look like a step function on gradients.
+// Soft-knee threshold, so bloom fades in rather than stepping on at `threshold`.
 vec3 prefilter(vec3 c) {
     float l = max(max(c.r, c.g), c.b);
     float soft = l - threshold + knee;
@@ -40,11 +38,11 @@ void main() {
     ivec2 p = ivec2(gl_GlobalInvocationID.xy);
     if (p.x >= dst_size.x || p.y >= dst_size.y) return;
 
-    // Center in dst pixel; texel offsets are in *source* texel units.
+    // Offsets below are in source texels.
     vec2  uv = (vec2(p) + 0.5) / vec2(dst_size);
     vec2  ts = 1.0 / vec2(textureSize(src_tex, 0));
 
-    // 13-tap footprint — a, b, c, d, e, f, g are the outer ring; h, i, j, k are inner.
+    // a..i: 3x3 grid two texels apart; j..m: the inner diagonal taps.
     vec3 a = textureLod(src_tex, uv + ts * vec2(-2.0, -2.0), 0.0).rgb;
     vec3 b = textureLod(src_tex, uv + ts * vec2( 0.0, -2.0), 0.0).rgb;
     vec3 c = textureLod(src_tex, uv + ts * vec2( 2.0, -2.0), 0.0).rgb;
@@ -59,13 +57,8 @@ void main() {
     vec3 l = textureLod(src_tex, uv + ts * vec2(-1.0,  1.0), 0.0).rgb;
     vec3 m = textureLod(src_tex, uv + ts * vec2( 1.0,  1.0), 0.0).rgb;
 
-    // Partial-Karis inside each of the five 2x2 sub-quads — but only on the first
-    // downsample, which is the step that reads the raw HDR image and therefore the only
-    // one that can see a single-pixel firefly. `apply_threshold` marks exactly that pass.
-    //
-    // The 1/(1+luma) weighting is a nonlinear energy sink: applied again at every mip it
-    // compounds, progressively darkening the bloom and flattening its falloff. COD/Jimenez
-    // apply it once, for this reason.
+    // Karis on the first downsample only: that is the one pass that can see a single-pixel
+    // firefly, and the weighting loses energy, which would compound at every mip.
     vec3 result;
     if (apply_threshold == 1) {
         vec3 box_center = karis_average(j, k, l, m);              // inner 2x2 gets 0.5 weight

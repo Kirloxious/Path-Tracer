@@ -3,28 +3,18 @@
 
 #include "scene_buffers.glsl"
 #include "rng.glsl"
-// Leaf triangle references. A leaf owns the run [first, first + count); each entry indexes
-// TrianglesBuffer. See BVH::triRefs for why the indirection exists.
+// A leaf owns the run [first, first + count), each entry indexing TrianglesBuffer — an
+// indirection so leaves can batch triangles without disturbing the emissive-first order.
 layout(std430, binding = BIND_TRI_REFS) readonly buffer TriRefsBuffer { int tri_refs[]; };
 
-// Traversal stack depth. BVH::build logs the tree's actual max depth at load; this must
-// stay above it, and 64 clears every scene here with room to spare. Overflow would silently
-// drop a subtree, so pushes are guarded below rather than trusted.
+// Must stay above the tree depth BVH::build logs at load: an overflowing push is dropped,
+// silently losing that subtree.
 const int BVH_STACK_SIZE = 64;
 
-// Reciprocal ray direction for the slab test, with zero components nudged to a tiny but
-// finite magnitude.
-//
-// A plain `1.0 / d` yields +-inf on an axis-aligned ray, and `aabb_min * inv_dir` then
-// evaluates 0 * inf = NaN whenever that box face sits on the origin plane. GLSL leaves
-// min()/max() unspecified for NaN inputs, so the node is accepted or rejected at the
-// driver's whim. Cornell-box walls are axis-aligned and rays travelling along them are
-// the common case here, not a corner case.
-//
-// 1e-8 keeps the reciprocal at 1e8: large enough that the axis stops constraining an
-// interior ray, small enough that `aabb * 1e8` cannot overflow at any scene scale we
-// build. A ray whose origin is outside the slab still gets two same-signed huge t values
-// and is correctly rejected.
+// Reciprocal ray direction with zero components nudged to +-1e-8. A plain 1/d gives inf on an
+// axis-aligned ray, and 0 * inf = NaN where a box face sits on the origin plane — min()/max()
+// on NaN are unspecified, and rays along axis-aligned Cornell walls are the common case. 1e8
+// is large enough to stop constraining the axis, small enough not to overflow.
 vec3 safe_inv_dir(in vec3 d) {
     const float eps = 1e-8;
     vec3        s   = vec3(d.x < 0.0 ? -eps : eps, d.y < 0.0 ? -eps : eps, d.z < 0.0 ? -eps : eps);
@@ -36,11 +26,8 @@ void set_face_normal_local(in vec3 ray_dir, in vec3 outward_normal, inout HitRec
     hit.normal     = hit.front_face ? outward_normal : -outward_normal;
 }
 
-// Ray/triangle intersection reporting only the barycentric hit parameters. Vertex normals
-// are deliberately NOT touched here: world_hit_stackless can accept several progressively
-// closer triangles while descending, and interpolating + normalizing a shading normal for
-// each one is work the final hit throws away. Deferring it past the loop also shrinks the
-// live register set inside the hottest loop in the tracer, which buys occupancy.
+// Möller-Trumbore, reporting only t and the barycentrics: shading attributes are computed once
+// for the final hit, which also keeps the traversal loop's register set small.
 bool hit_triangle_uv(in Ray r, in Triangle tri, float t_min, float t_max, out float out_t, out vec2 out_uv) {
     vec3  h = cross(r.direction, tri.e2);
     float a = dot(tri.e1, h);
@@ -88,15 +75,11 @@ bool intersect_aabb(in vec3 mn, in vec3 mx, in vec3 inv_dir, in vec3 neg_ood, in
     vec3  t2     = mx * inv_dir + neg_ood;
     float t_near = max(max(min(t1.x, t2.x), min(t1.y, t2.y)), min(t1.z, t2.z));
     float t_far  = min(min(max(t1.x, t2.x), max(t1.y, t2.y)), max(t1.z, t2.z));
-    // `<=` on the slab compare so a ray exactly tangent to one face (t_near == t_far on
-    // that axis) is still accepted — Cornell-box walls are axis-aligned and rays along
-    // their plane otherwise miss the wall's node entirely.
+    // `<=` so a ray in the plane of an axis-aligned wall (t_near == t_far) still enters its node.
     return t_near <= t_far && t_far > t_min && t_near < t_max;
 }
 
-// As above, but also reports where the ray enters the box. Ordered traversal descends into
-// whichever child it enters first, so that the nearer subtree gets a chance to shrink
-// `closest` before the farther one is ever tested.
+// As above, also reporting where the ray enters the box, for ordered traversal.
 bool intersect_aabb_entry(in vec3 mn, in vec3 mx, in vec3 inv_dir, in vec3 neg_ood, in float t_min, in float t_max, out float entry) {
     vec3  t1     = mn * inv_dir + neg_ood;
     vec3  t2     = mx * inv_dir + neg_ood;
@@ -109,134 +92,34 @@ bool intersect_aabb_entry(in vec3 mn, in vec3 mx, in vec3 inv_dir, in vec3 neg_o
 // Pass as a `skip_tri` argument when there is no triangle to exclude.
 const int NO_SKIP_TRI = -1;
 
-// Closest-hit traversal. Returns triangle index in `out_tri_index` for callers
-// that need it (e.g. NEE light identification).
+// Closest-hit traversal, the one loop behind world_hit() and world_hit_cost(). Ordered: the
+// nearer child is descended first, so its hits can cull the farther one.
 //
 // `skip_tri` is the triangle the ray leaves from, or NO_SKIP_TRI. A planar triangle can never
 // legitimately be re-hit by a ray leaving it, so excluding it makes self-intersection on it
 // impossible whatever the float error — the origin offset only has to clear its neighbours.
 //
-// Ordered: at each interior node both children are slab-tested, the nearer is descended
-// into and the farther is pushed. That lets the near subtree shrink `closest` first, so the
-// far subtree is often rejected outright — the skip-pointer scheme this replaced always
-// walked left-first and had no way to express the ordering.
-bool world_hit_stackless(in Ray r, in float t_min, in float t_max, in int skip_tri, out HitRecord hit, out int out_tri_index) {
+// @return the hit triangle, or -1 on a miss. `out_cost` counts traversal steps, triangle tests
+//         weighted double; world_hit() discards it and the compiler drops the counting.
+int bvh_closest_hit(in Ray r, float t_min, float t_max, int skip_tri, out float out_t, out vec2 out_uv, out uint out_cost) {
     vec3  inv_dir  = safe_inv_dir(r.direction);
     vec3  neg_ood  = -r.origin * inv_dir;
     float closest  = t_max;
     int   best_tri = -1;
     vec2  best_uv  = vec2(0.0);
+    uint  cost     = 1u;
+
+    out_t    = t_max;
+    out_uv   = vec2(0.0);
+    out_cost = cost;
 
     int stack[BVH_STACK_SIZE];
     int sp  = 0;
     int idx = bvh_root_index;
 
-    // Reject the whole tree up front so the loop below can assume the current node's box
-    // was already tested by whoever scheduled it.
-    {
-        vec4 amin = nodes[idx].aabb_min;
-        vec4 amax = nodes[idx].aabb_max;
-        if (!intersect_aabb(amin.xyz, amax.xyz, inv_dir, neg_ood, t_min, closest)) {
-            out_tri_index = -1;
-            return false;
-        }
-    }
-
-    while (true) {
-        vec4 amin  = nodes[idx].aabb_min;
-        vec4 amax  = nodes[idx].aabb_max;
-        int  count = floatBitsToInt(amax.w);
-
-        // A leaf popped off the stack was box-tested against the `closest` of its push; a
-        // re-test against today's, on the node already loaded, skips its triangles when a
-        // nearer hit has since been found.
-        if (count > 0 && intersect_aabb(amin.xyz, amax.xyz, inv_dir, neg_ood, t_min, closest)) {
-            int first = floatBitsToInt(amin.w);
-            for (int i = 0; i < count; ++i) {
-                int   tri_idx = tri_refs[first + i];
-                float t;
-                vec2  uv;
-                if (tri_idx != skip_tri && hit_triangle_uv(r, triangles[tri_idx], t_min, closest, t, uv)) {
-                    closest  = t;
-                    best_uv  = uv;
-                    best_tri = tri_idx;
-                }
-            }
-        }
-        if (count > 0) {
-            if (sp == 0) break;
-            idx = stack[--sp];
-            continue;
-        }
-
-        int left  = idx + 1;
-        int right = floatBitsToInt(amin.w);
-
-        float entry_l;
-        float entry_r;
-        bool  hit_l = intersect_aabb_entry(nodes[left].aabb_min.xyz, nodes[left].aabb_max.xyz, inv_dir, neg_ood, t_min, closest, entry_l);
-        bool  hit_r = intersect_aabb_entry(nodes[right].aabb_min.xyz, nodes[right].aabb_max.xyz, inv_dir, neg_ood, t_min, closest, entry_r);
-
-        if (hit_l && hit_r) {
-            int near_child = (entry_l <= entry_r) ? left : right;
-            int far_child  = (entry_l <= entry_r) ? right : left;
-            if (sp < BVH_STACK_SIZE) {
-                stack[sp++] = far_child;
-            }
-            idx = near_child;
-        } else if (hit_l) {
-            idx = left;
-        } else if (hit_r) {
-            idx = right;
-        } else {
-            if (sp == 0) break;
-            idx = stack[--sp];
-        }
-    }
-
-    out_tri_index = best_tri;
-    if (best_tri < 0) return false;
-
-    // Hit attributes, computed exactly once for the surviving triangle.
-    Triangle tri      = triangles[best_tri];
-    vec3     n0       = vertices[tri.indices.x].normal;
-    vec3     n1       = vertices[tri.indices.y].normal;
-    vec3     n2       = vertices[tri.indices.z].normal;
-    vec3     n_interp = normalize((1.0 - best_uv.x - best_uv.y) * n0 + best_uv.x * n1 + best_uv.y * n2);
-
-    // From the barycentrics rather than origin + t * dir: its error then scales with the
-    // vertex magnitude, which is what offset_ray_origin()'s ULP margin is sized against, not
-    // with the length of the ray.
-    hit.t              = closest;
-    hit.point          = vertices[tri.indices.x].position + best_uv.x * tri.e1 + best_uv.y * tri.e2;
-    hit.mat_index      = tri.material_index;
-    hit.triangle_index = uint(best_tri);
-    set_face_normal_local(r.direction, n_interp, hit);
-    return true;
-}
-
-// Traversal-cost probe for the BVH-cost AOV: walks exactly as world_hit_stackless does,
-// including the ordering and the `closest` early-out, but accumulates a step count instead
-// of hit attributes. Lives here rather than in aov.comp so there is one traversal loop in
-// the tree — the duplicate copy silently stopped matching the moment the node layout
-// changed, which is precisely the drift this avoids.
-uint world_hit_cost(in Ray r, in float t_min, in float t_max) {
-    vec3  inv_dir = safe_inv_dir(r.direction);
-    vec3  neg_ood = -r.origin * inv_dir;
-    float closest = t_max;
-    uint  cost    = 0u;
-
-    int stack[BVH_STACK_SIZE];
-    int sp  = 0;
-    int idx = bvh_root_index;
-
-    {
-        cost += 1u;
-        vec4 amin = nodes[idx].aabb_min;
-        vec4 amax = nodes[idx].aabb_max;
-        if (!intersect_aabb(amin.xyz, amax.xyz, inv_dir, neg_ood, t_min, closest)) {
-            return cost;
-        }
+    // Tested up front so the loop can assume every node it visits already passed its box test.
+    if (!intersect_aabb(nodes[idx].aabb_min.xyz, nodes[idx].aabb_max.xyz, inv_dir, neg_ood, t_min, closest)) {
+        return -1;
     }
 
     while (true) {
@@ -245,15 +128,21 @@ uint world_hit_cost(in Ray r, in float t_min, in float t_max) {
         int  count = floatBitsToInt(amax.w);
 
         if (count > 0) {
+            // A popped leaf passed its box test against an older, larger `closest`; re-testing
+            // on the loaded node skips its triangles once a nearer hit exists.
             cost += 1u;
             if (intersect_aabb(amin.xyz, amax.xyz, inv_dir, neg_ood, t_min, closest)) {
                 int first = floatBitsToInt(amin.w);
                 for (int i = 0; i < count; ++i) {
-                    cost += 2u; // a triangle test costs more than a slab test — weight it
+                    int tri_idx = tri_refs[first + i];
+                    if (tri_idx == skip_tri) continue;
+                    cost += 2u;
                     float t;
                     vec2  uv;
-                    if (hit_triangle_uv(r, triangles[tri_refs[first + i]], t_min, closest, t, uv)) {
-                        closest = t;
+                    if (hit_triangle_uv(r, triangles[tri_idx], t_min, closest, t, uv)) {
+                        closest  = t;
+                        best_uv  = uv;
+                        best_tri = tri_idx;
                     }
                 }
             }
@@ -287,19 +176,53 @@ uint world_hit_cost(in Ray r, in float t_min, in float t_max) {
             idx = stack[--sp];
         }
     }
+
+    out_t    = closest;
+    out_uv   = best_uv;
+    out_cost = cost;
+    return best_tri;
+}
+
+// Closest hit with its surface attributes. `out_tri_index` is -1 on a miss.
+bool world_hit(in Ray r, in float t_min, in float t_max, in int skip_tri, out HitRecord hit, out int out_tri_index) {
+    float t;
+    vec2  uv;
+    uint  cost;
+    int   best_tri = bvh_closest_hit(r, t_min, t_max, skip_tri, t, uv, cost);
+    out_tri_index  = best_tri;
+    if (best_tri < 0) return false;
+
+    Triangle tri      = triangles[best_tri];
+    vec3     n0       = vertices[tri.indices.x].normal;
+    vec3     n1       = vertices[tri.indices.y].normal;
+    vec3     n2       = vertices[tri.indices.z].normal;
+    vec3     n_interp = normalize((1.0 - uv.x - uv.y) * n0 + uv.x * n1 + uv.y * n2);
+
+    // From the barycentrics, not origin + t * dir, so its error scales with vertex magnitude —
+    // what offset_ray_origin()'s ULP margin is sized for — rather than with ray length.
+    hit.t              = t;
+    hit.point          = vertices[tri.indices.x].position + uv.x * tri.e1 + uv.y * tri.e2;
+    hit.mat_index      = tri.material_index;
+    hit.triangle_index = uint(best_tri);
+    set_face_normal_local(r.direction, n_interp, hit);
+    return true;
+}
+
+// Traversal step count for the BVH-cost AOV, from the same loop the tracer runs.
+uint world_hit_cost(in Ray r, in float t_min, in float t_max) {
+    float t;
+    vec2  uv;
+    uint  cost;
+    bvh_closest_hit(r, t_min, t_max, NO_SKIP_TRI, t, uv, cost);
     return cost;
 }
 
-// Shortens a shadow ray relative to its length, so the target's neighbours are not hit at
-// t ~ dist at any scene scale.
+// Relative, so the target's neighbouring triangles are not hit at t ~ dist at any scene scale.
 const float SHADOW_T_MAX_SCALE = 1.0 - 1e-4;
 
-// Shadow visibility. Emitters occlude like any other surface — a BSDF ray stops at them, and
-// NEE has to agree or the MIS pair integrates two different things. The origin and target
-// triangles are exempt; either may be NO_SKIP_TRI.
-//
-// Any-hit, so there is nothing to gain from near-first ordering: the first occluder found
-// ends the walk whatever order they come in.
+// Any-hit shadow visibility, so unordered. Emitters occlude like any other surface: a BSDF ray
+// stops at them, and NEE must agree or the MIS pair integrates different things. The origin
+// and target triangles are exempt; either may be NO_SKIP_TRI.
 bool is_visible(in vec3 origin, in vec3 target, int origin_tri, int target_tri) {
     vec3  d        = target - origin;
     float dist2    = dot(d, d);
@@ -332,7 +255,6 @@ bool is_visible(in vec3 origin, in vec3 target, int origin_tri, int target_tri) 
                     }
                 }
             } else {
-                // Both children are candidates; descend left, defer right.
                 if (sp < BVH_STACK_SIZE) {
                     stack[sp++] = floatBitsToInt(amin.w);
                 }

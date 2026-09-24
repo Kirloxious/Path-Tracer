@@ -1,29 +1,12 @@
 #ifndef RNG_GLSL
 #define RNG_GLSL
 
-const float infinity = 1.0 / 0.0;
-const float PI = 3.14159265358979323846;
-
 //=============================================================================
 // Hash / white-noise stream
 //=============================================================================
 
-// Seed a PCG state. Mixes pixel id, frame index, and a per-run `time` seed so
-// (a) adjacent pixels get independent sequences, (b) successive frames get
-// fresh sequences, (c) different program runs produce different patterns —
-// without (c), frame 1 looks identical every launch.
-//
-// PCG handles a zero state fine (it advances multiplicatively), so we drop the
-// | 1u that xorshift required.
-uint init_rng(uint pid, int frame_index, uint time_seed) {
-    return pid * 1973u + uint(frame_index) * 9277u + time_seed * 26699u + 1u;
-}
-
-// PCG output XSH-RR variant (Melissa O'Neill, "PCG: A Family of Simple Fast
-// Space-Efficient Statistically Good Algorithms for Random Number Generation").
-// Replaces xorshift32 — xorshift produced visible structured noise when
-// neighbouring kernels seeded their state with small additive offsets, since
-// xorshift takes many iterations to fully decorrelate two close starting states.
+// PCG, RXS-M-XS output (O'Neill, "PCG: A Family of Simple Fast Space-Efficient Statistically
+// Good Algorithms for Random Number Generation"). Also the hash under sampler_mix().
 uint pcg_advance(inout uint state) {
     state = state * 747796405u + 2891336453u;
     uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
@@ -38,22 +21,15 @@ float random_unilateral(inout uint state) {
 // Low-discrepancy sampler
 //=============================================================================
 
-// Owen-scrambled Sobol' (Burley 2020, "Practical Hash-Based Owen Scrambling").
+// Owen-scrambled Sobol' (Burley 2020, "Practical Hash-Based Owen Scrambling"): stratified
+// across samples, randomized per pixel, still unbiased.
 //
-// PCG above is a good hash, but its points are white noise: N of them cover the integration
-// domain no better than chance. A Sobol' sequence stratifies them and Owen scrambling
-// randomizes it per pixel *without* destroying that stratification, so the estimator stays
-// unbiased while error falls faster — which shows up as visibly less noise at the low sample
-// counts a progressive renderer spends most of its time at.
+// The sample index is the accumulation frame, so the stratified set is one pixel's samples
+// *across frames* and `seed` must not vary with the frame — swapping sampler_seed() for
+// pcg_seed() silently reduces this to white noise.
 //
-// The sample index is the accumulation frame, so what forms the stratified set is one pixel's
-// samples *across frames*. `seed` therefore must not vary with the frame; that is the whole
-// difference between sampler_seed() and init_rng() above, and swapping them silently reduces
-// this to white noise.
-//
-// Dimensions are padded rather than drawn from one high-dimensional sequence: each group gets
-// its own shuffle and scramble of the same 2D sequence. Sobol' degrades in high dimensions
-// anyway, and padding keeps every individual group a proper stratified set.
+// Dimensions are padded: each 2D group gets its own shuffle and scramble of the same sequence,
+// which keeps every group a proper stratified set where a high-dimensional Sobol' would degrade.
 struct Sampler {
     uint seed;   // per-pixel, fixed for the run
     uint index;  // sample index — the accumulation frame
@@ -65,8 +41,15 @@ uint sampler_mix(uint a, uint b) {
     return pcg_advance(h);
 }
 
+// Seed for a white-noise stream, fresh every frame. `stream` keeps two kernels drawing in one
+// frame from sharing a sequence.
+uint pcg_seed(uint pid, uint time_seed, uint stream) {
+    return sampler_mix(sampler_mix(pid, time_seed), stream);
+}
+
 // Nested uniform scramble: a few ALU ops standing in for a full Owen scramble, which would
-// otherwise need the sample set materialized. Constants from Burley 2020.
+// otherwise need the sample set materialized. Constants from Vegdahl's improved
+// Laine-Karras hash ("Building a Better LK Hash", 2021).
 uint sampler_owen(uint x, uint seed) {
     x = bitfieldReverse(x);
     x ^= x * 0x3d20adeau;
@@ -90,9 +73,8 @@ uvec2 sobol_2d(uint index) {
     return uvec2(bitfieldReverse(index), y);
 }
 
-// [0, 1) with 24 bits of mantissa. Scaling the whole 32-bit word instead rounds to exactly
-// 1.0 near the top of the range, which every caller that indexes an array by `u * count`
-// depends on never happening.
+// [0, 1) with 24 bits. Scaling all 32 bits rounds to exactly 1.0 near the top, which every
+// caller indexing an array by `u * count` relies on never happening.
 float sampler_unilateral(uint x) {
     return float(x >> 8) * (1.0 / 16777216.0);
 }
@@ -110,8 +92,7 @@ float sampler_1d(inout Sampler s) {
     return sampler_unilateral(sampler_owen(bitfieldReverse(shuffled), sampler_mix(s.seed, g * 3u + 1u)));
 }
 
-// Dimension groups reserved per path vertex. The shade kernels rebase on `bounce` so a path's
-// vertices draw from disjoint groups; a vertex's own layout is fixed by shade_surface.
+// Dimension groups reserved per path vertex; see shade_surface for the layout within one.
 const uint SAMPLER_DIMS_PER_BOUNCE = 12u;
 
 // `frame` is frame_index, which counts from 1. The sample index must count from 0: a
@@ -124,8 +105,8 @@ Sampler sampler_init(uint seed, int frame, uint dim_base) {
     return s;
 }
 
-// Pins the next draw to a known group, so a decision that follows a branch still lands on the
-// same dimension every frame however that branch went.
+// Pins the next draw to a known group, so a draw after a branch lands on the same dimension
+// every frame whichever way the branch went.
 void sampler_set_dim(inout Sampler s, uint dim) {
     s.dim = dim;
 }

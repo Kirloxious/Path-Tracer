@@ -1,20 +1,14 @@
 #ifndef ENVMAP_GLSL
 #define ENVMAP_GLSL
 
-#include "rng.glsl"  // for PI
+#include "math.glsl"
 #include "constants.glsl"
 
-// The environment as a distant area light: read on a miss (generate.comp for the primary sky,
-// trace.comp for a continuation) and sampled explicitly by shade_surface's NEE.
 layout(binding = TEX_ENV_MAP) uniform sampler2D env_map_tex;
 
-// Importance-sampling grid: a Vose alias table over a downsampled copy of the map, weighted by
-// radiance times the equirect Jacobian. Built in EnvMap::buildSamplingTable.
-//
-// Without it the environment is reachable only by rays that happen to escape, so a map whose
-// energy is concentrated in a small bright sun fireflies indefinitely — the estimator has to
-// find a few hundred pixels of sky by chance. The tradeoff is that the sampled density must
-// agree exactly with envmap_pdf() below, since MIS weights every contribution by their ratio.
+// Importance-sampling grid: an alias table over a downsample of the map, weighted by radiance
+// times the equirect Jacobian (EnvMap::buildSamplingTable). The density envmap_sample() draws
+// with must agree exactly with envmap_pdf(), since MIS weights every contribution by their ratio.
 struct EnvSampleCell {
     float accept;
     uint  alias;
@@ -27,14 +21,9 @@ layout(std430, binding = BIND_ENV_SAMPLES) readonly buffer EnvSampleBuffer { Env
 // sin(theta) floor for the poles, where the pdf's 1/sin would otherwise diverge.
 const float ENV_MIN_SIN_THETA = 1e-4;
 
-// Equirectangular (lat-long) lookup. Input direction must be unit length.
-// Y-up convention matches the rest of the tracer (glm::vec3(0, 1, 0) = vup).
-// phi ∈ [-π, π] maps to u ∈ [0, 1]; theta ∈ [0, π] maps to v ∈ [0, 1].
-// atan(dir.z, dir.x) puts phi=0 at +X, +π/2 at +Z — an arbitrary but consistent yaw.
-//
-// These two are exact inverses, and the sampler depends on that: it draws a uv, converts to a
-// direction, and its pdf is looked up by converting back. Any drift between them mis-weights
-// every environment sample in the image.
+// Equirectangular, Y up: phi in [-pi, pi] -> u, theta in [0, pi] -> v, phi = 0 at +X. Input
+// must be unit length. These two must stay exact inverses — the sampler draws a uv and its pdf
+// is looked up by converting the direction back.
 vec2 envmap_dir_to_uv(vec3 dir) {
     float phi   = atan(dir.z, dir.x);
     float theta = acos(clamp(dir.y, -1.0, 1.0));
@@ -57,8 +46,7 @@ float envmap_sin_theta(vec3 dir) {
     return max(sqrt(max(0.0, 1.0 - dir.y * dir.y)), ENV_MIN_SIN_THETA);
 }
 
-/// Solid-angle density this sampler would have used for `dir`. The BSDF side of MIS needs it
-/// to weight a ray that escaped to the sky against the NEE sample that could have found it.
+/// Solid-angle density envmap_sample() would have drawn `dir` with, for the BSDF side of MIS.
 float envmap_pdf(vec3 dir) {
     if (env_map_valid == 0) return 0.0;
     vec2  uv = envmap_dir_to_uv(dir);

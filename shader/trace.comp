@@ -19,13 +19,9 @@ void main() {
 
     HitRecord hit;
     int       tri_index;
-    if (!world_hit_stackless(r, 0.0, 1e30, int(states[pid].hit_triangle_idx), hit, tri_index)) {
-        // Miss — the ray escaped to the environment. Only continuation rays reach trace.comp
-        // (generate.comp handles the primary sky), so this contribution is always indirect.
-        //
-        // Balance-heuristic MIS against the environment NEE sample the previous vertex drew.
-        // Absent the flag no competing estimator ran — a delta lobe, or a scene with no
-        // envmap — and the full contribution is taken.
+    if (!world_hit(r, 0.0, 1e30, int(states[pid].hit_triangle_idx), hit, tri_index)) {
+        // Escaped to the environment. Always indirect: generate.comp handles the primary sky.
+        // Without FLAG_PREV_ENV_NEE no competing estimator ran and the full contribution counts.
         float weight = 1.0;
         if ((states[pid].flags & FLAG_PREV_ENV_NEE) != 0u) {
             float env_pdf  = envmap_pdf(r.direction);
@@ -38,9 +34,6 @@ void main() {
         return;
     }
 
-    // One read-modify-write on `flags`, not two. The old pair of `|=` / `&=~` branches
-    // both touch the same dword, so a warp that diverges on front_face paid two full
-    // round-trips to it instead of one.
     uint flags = states[pid].flags;
     flags = hit.front_face ? (flags | FLAG_FRONT_FACE) : (flags & ~FLAG_FRONT_FACE);
 

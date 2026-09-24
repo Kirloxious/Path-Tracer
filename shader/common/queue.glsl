@@ -1,10 +1,8 @@
 #ifndef QUEUE_GLSL
 #define QUEUE_GLSL
 
-// All queue counters share one SSBO. NVIDIA caps GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS
-// at 16; with one counter per queue plus one indices block each, plus path_state (×1) and
-// scene (×5), a counter-per-queue layout linked at 18 blocks and failed ("error C5058: no
-// buffers available for bindable storage buffer"). Sharing the counter SSBO avoids that.
+// All queue counters share one SSBO: NVIDIA caps a compute shader at 16 storage blocks, and a
+// counter block per queue pushed the worst kernel to 18 (link error C5058).
 
 #include "host_shared.glsl"
 
@@ -33,17 +31,9 @@ uint queue_thread_index() {
 #define hit_emissive_count     q_count[Q_EMISSIVE]
 #define shadow_queue_count     q_count[Q_SHADOW]
 
-// Queue append.
-//
-// Every thread that reaches one of these pushes to the same counter address, so the naive
-// form serializes one atomic per thread — and in trace.comp or generate.comp nearly every
-// thread in a subgroup pushes to the *same* queue, so that is 32 atomics where one would
-// do. Aggregating across the subgroup does a single atomicAdd for the whole group and hands
-// each thread its slot from the ballot's prefix count.
-//
-// subgroupBallot() reflects the invocations active at the call site, which is exactly the
-// set that is pushing — these are called from inside divergent control flow, and that is
-// fine, since elect/broadcastFirst operate on the same active set.
+// Queue append, aggregated per subgroup: nearly every lane of a subgroup pushes to the same
+// counter, so one atomicAdd per subgroup replaces up to 32. Safe inside divergent control flow —
+// the ballot and readFirstInvocation both see exactly the lanes that are pushing.
 #if defined(GL_ARB_shader_ballot) && defined(GL_ARB_gpu_shader_int64)
 
 uint ballot_bit_count(uint64_t mask) {
@@ -51,9 +41,6 @@ uint ballot_bit_count(uint64_t mask) {
     return uint(bitCount(halves.x) + bitCount(halves.y));
 }
 
-// One atomic for the whole subgroup: the lowest active lane reserves `count` slots and
-// readFirstInvocationARB broadcasts the base back to everyone. Each lane's own slot is the
-// base plus how many active lanes precede it.
 #define QUEUE_PUSH(slot, arr, pid)                                                                 \
     uint64_t _mask   = ballotARB(true);                                                            \
     uint     _n      = ballot_bit_count(_mask);                                                    \
@@ -67,7 +54,6 @@ uint ballot_bit_count(uint64_t mask) {
 
 #else
 
-// Fallback: one atomic per thread, as before.
 #define QUEUE_PUSH(slot, arr, pid)                                                                 \
     uint _s = atomicAdd(q_count[slot], 1u);                                                        \
     arr[_s] = pid;

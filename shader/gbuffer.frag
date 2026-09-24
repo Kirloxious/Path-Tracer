@@ -1,38 +1,22 @@
 #version 460 core
 
-#include "common/host_shared.glsl"
+#include "common/camera.glsl"
 
 in vec3 v_world_pos;
 in vec3 v_world_normal;
 flat in uint v_matid;
 
-layout(std140, binding = UBO_CAMERA) uniform CameraData
-{
-    mat4  view;
-    mat4  projection;
-    mat4  inv_view;
-    mat4  inv_projection;
-    vec3  lookfrom;
-    float focus_distance;
-    float defocus_angle;
-    mat4  prev_view_proj;
-} camera;
-
 layout(location = 0) out vec4 o_normal;
 
 void main() {
-    // Match the BVH's set_face_normal convention: flip the stored outward normal so
-    // it always faces the camera. Using gl_FrontFacing is fragile — it depends on
-    // triangle winding, which addSphere does not align with the outward vertex normal,
-    // so the floor-sphere top renders with an inverted normal under that scheme.
+    // Flipped toward the camera by the interpolated normal, matching the tracer's
+    // set_face_normal; gl_FrontFacing goes by winding and would disagree where the two do.
     vec3 N        = normalize(v_world_normal);
-    vec3 view_dir = normalize(v_world_pos - camera.lookfrom);
+    vec3 view_dir = normalize(v_world_pos - camera_position);
     if (dot(view_dir, N) > 0.0) {
         N = -N;
     }
 
-    // World position is no longer stored: consumers reconstruct it from the depth buffer,
-    // which already holds the same information. The material index moves into .w — exact in
-    // a half float for any index below 2048.
+    // Material index as a half float: exact below 2048.
     o_normal = vec4(N, float(v_matid));
 }

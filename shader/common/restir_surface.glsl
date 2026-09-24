@@ -4,30 +4,18 @@
 #include "scene_buffers.glsl"
 #include "geom.glsl"
 
-// The surface a pixel's reservoir actually describes.
+// The surface a pixel's reservoir describes. Past a mirror chain that is not the rasterized
+// surface — a mirror floor's reservoir describes the sphere reflected in it — so reuse
+// validation reads this, while reprojection still uses the G-buffer (which pixel saw it).
 //
-// ReSTIR DI resamples direct lighting at a diffuse surface. For a diffuse primary that is
-// simply the G-buffer hit, and the G-buffer was the only surface description the ReSTIR
-// kernels needed. Once resampling follows a mirror chain, the reservoir's surface is no
-// longer the surface the pixel rasterized — the mirror floor's reservoir describes the
-// sphere reflected in it, several metres away and facing a different direction.
-//
-// So the resampling surface is stored explicitly. Every place that used to read the
-// G-buffer to get (P, N, albedo) for a reservoir reads this instead; the G-buffer is still
-// what drives *reprojection*, because that is about which pixel sees the reflection.
-//
-// Stores the view direction rather than a cached albedo: the target pdf evaluates the full
-// metallic-roughness BRDF, which is view-dependent and needs every material parameter, so it
-// refetches the Material through `matid` instead. That keeps the struct at 48 bytes — it is
-// read k=5 times per spatial pass, twice per frame, so growing it is not free.
-//
-// 48 bytes, std430.
+// 48 bytes, std430; read k times per spatial pass, so the Material is refetched through
+// `matid` rather than cached here.
 struct RestirSurface {
     vec3 position;  // world-space resampling vertex
-    uint valid;     // 0 = this pixel has no diffuse resampling vertex (sky, emissive, fuzzy specular)
+    uint valid;     // 0 = no resampling vertex: sky, or a chain ending where restir_can_anchor() fails
     vec3 normal;    // shading normal there, already normalized and front-facing
     uint matid;     // material at the resampling vertex, for reuse validation
-    vec3 view_dir;  // unit vector from the resampling vertex toward the viewer, for the BRDF
+    vec3 view_dir;  // unit, toward the previous path vertex
     uint offset_n;  // octahedral-packed ray-origin offset normal; see restir_surface_offset_origin
 };
 
@@ -50,18 +38,15 @@ vec3 restir_unpack_normal(uint p) {
     return normalize(n);
 }
 
-// Shadow-ray origin toward `target`. `offset_n` is the geometric normal past a mirror and the
-// shading normal at a primary. Both take the primary's depth margin, since the struct does not
-// record which it is — on a shadow ray a slightly larger offset past a mirror costs nothing.
+// Shadow-ray origin toward `target`. The struct does not record whether `offset_n` is a primary's
+// shading normal or a traced hit's geometric one, so both take the primary's depth margin.
 vec3 restir_surface_offset_origin(in RestirSurface s, vec3 target) {
     return offset_primary_origin(s.position, restir_unpack_normal(s.offset_n), target - s.position);
 }
 
-// Reuse gate between two resampling surfaces (temporal history, spatial neighbour).
-//
-// The plane distance, not the Euclidean one: neighbours across a flat wall are valid reuse
-// partners at any lateral distance, while a parallel surface behind a silhouette is not.
-// Tolerance is relative to view distance so it means the same at any scene scale.
+// Reuse gate between two resampling surfaces. Plane distance, not Euclidean: neighbours across a
+// flat wall are valid partners at any lateral distance. Relative to view distance, so it holds
+// at any scene scale.
 const float RESTIR_NORMAL_DOT_MIN  = 0.9;
 const float RESTIR_PLANE_DIST_REL  = 0.01;
 

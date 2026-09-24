@@ -2,22 +2,10 @@
 #include "common/subgroup.glsl"
 layout(local_size_x = 64) in;
 
-#include "common/host_shared.glsl"
-#include "common/restir_common.glsl"
-
-layout(std430, binding = BIND_RESERVOIRS_CURRENT) restrict readonly buffer RestirReservoirsCurrent {
-    Reservoir reservoirs[];
-};
-
 #include "common/shade_surface.glsl"
 
-// Every reflective surface — MaterialClass::Diffuse and MaterialClass::Specular alike.
-//
-// The metallic-roughness BSDF gives both classes the same body, so they share one queue and
-// one dispatch — one fewer SSBO block in every kernel that includes queue.glsl.
-//
-// Transmission still has its own kernel: shade_transmissive.comp keeps the smooth
-// reflect/refract path, which the BSDF here does not model.
+// Diffuse and Specular share one queue and kernel — one BSDF covers both, and it saves an SSBO
+// block in every kernel that includes queue.glsl.
 void main() {
     uint qid = queue_thread_index();
     if (qid >= hit_opaque_count) return;

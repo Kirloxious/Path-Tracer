@@ -4,30 +4,19 @@
 layout(local_size_x = NUM_QUEUES) in;
 #include "common/queue.glsl"
 
-// Reads the current queue counters and writes a matching glDispatchCompute-Indirect
-// arg triple per queue slot. Called before each group of shade/trace dispatches so
-// they only launch the workgroups they actually need (huge savings at late bounces
-// where 95% of paths have died).
+// Turns each queue counter into glDispatchComputeIndirect args, so shade/trace dispatches scale
+// with live paths rather than pixels.
 
 layout(std430, binding = BIND_DISPATCH_ARGS) restrict writeonly buffer DispatchArgsBuffer {
     uvec4 dispatch_args[NUM_QUEUES]; // uvec4 (with .w unused) keeps 16-byte std430 alignment
 };
 
-// All shade/trace/traceShadow kernels are `local_size_x = 64`. Hardcoded to keep
-// this kernel branchless.
+// Keep in sync with the queue kernels' local_size_x.
 const uint LOCAL_SIZE = 64u;
 
-// Bitmask of counter slots to zero after their dispatch args have been written.
-//
-// The counter clears used to be one glNamedBufferSubData call per queue per bounce —
-// ~200 driver round-trips per frame at 32 bounces, each one a client-side buffer update
-// that also had to be ordered against shader writes with GL_BUFFER_UPDATE_BARRIER_BIT.
-// This kernel already runs at exactly the points where a queue has just been drained and
-// already has the counter bound, so it does the zeroing itself.
-//
-// A slot may only be cleared once every kernel that reads it as a loop bound has run:
-// the shade kernels bound on hit_*, trace_shadow on shadow, trace on ray. The two
-// dispatches per bounce therefore clear different halves — see PathTracerPass::execute.
+// Counter slots to zero once their args are written. A slot may be cleared only after every
+// kernel bounded by it has run, so the two dispatches per bounce clear different halves (see
+// PathTracerPass::execute).
 layout(location = 0) uniform uint clear_mask;
 
 void main() {
@@ -40,7 +29,6 @@ void main() {
     uint gy = (g + QUEUE_MAX_GROUPS_X - 1u) / QUEUE_MAX_GROUPS_X;
     dispatch_args[i] = uvec4(gx, max(gy, 1u), 1u, 0u);
 
-    // Each thread owns exactly one slot, so this races with nothing.
     if ((clear_mask & (1u << i)) != 0u) {
         q_count[i] = 0u;
     }
