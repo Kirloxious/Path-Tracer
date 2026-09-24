@@ -9,22 +9,22 @@
 
 #include <vector>
 
+#include "gpu/gl_handle.h"
 #include "gpu/texture.h"
 
 /**
  * @brief Owns one FBO wrapping caller-supplied textures.
  *
  * The FBO holds only references to its attachments — the Texture objects must outlive it.
- * An incomplete framebuffer is reported through Log::error and leaves `handle` at 0 rather
+ * An incomplete framebuffer is reported through Log::error and leaves `id()` at 0 rather
  * than throwing.
  *
- * Non-copyable, movable.
+ * Move-only.
  */
 class FrameBuffer
 {
 public:
-    GLuint handle = 0;
-    int    numColorAttachments = 0;
+    int numColorAttachments = 0;
     /// Dimensions of the attachments, captured at construction. blit() reads from this
     /// FBO, so the source rect must come from here — taking it from a caller-supplied
     /// texture let a size mismatch silently blit the wrong region.
@@ -49,7 +49,6 @@ public:
      * @param depthAttachment  Optional depth target, or nullptr for no depth attachment.
      */
     FrameBuffer(const std::vector<const Texture*>& colorAttachments, const Texture* depthAttachment);
-    ~FrameBuffer();
 
     /**
      * @brief Blits colour attachment 0 to the default (swap-chain) framebuffer.
@@ -66,9 +65,8 @@ public:
      */
     void blitAttachment(int attachmentIndex, int dstWidth, int dstHeight) const;
 
-    // Non-copyable, movable
-    FrameBuffer(const FrameBuffer&) = delete;
-    FrameBuffer& operator=(const FrameBuffer&) = delete;
-    FrameBuffer(FrameBuffer&& o) noexcept;
-    FrameBuffer& operator=(FrameBuffer&& o) noexcept;
+    [[nodiscard]] GLuint id() const { return m_handle.get(); }
+
+private:
+    FramebufferHandle m_handle;
 };

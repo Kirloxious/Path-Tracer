@@ -40,18 +40,18 @@ void DenoiserPass::execute(const RenderContext&, RenderTargets& targets) {
     // ~0.3 world units at depth 10, so the allowance has to stay well under that to keep a
     // wall out of the floor's filter.
     shader.setFloat("sigma_plane", 0.01f);
-    glBindTextureUnit(TEX_GBUF_DEPTH, targets.gbuf.depth.handle);
+    glBindTextureUnit(TEX_GBUF_DEPTH, targets.gbuf.depth.id());
     // Variance inputs. Both describe the frame, not the ping-pong stage, so they are bound
     // once: `accum` carries the per-pixel history length in its alpha.
-    glBindTextureUnit(3, targets.moments.handle);
-    glBindTextureUnit(4, targets.accum.handle);
+    glBindTextureUnit(3, targets.moments.id());
+    glBindTextureUnit(4, targets.accum.id());
 
     for (int pass = 0; pass < 4; ++pass) {
         // Source and normals are sampled, not image-bound: pass 0 reads `accum` (rgba32f)
         // and later passes read the rgba16f ping-pong pair, which a single image format
         // qualifier could not cover. Only the destination stays an image.
-        glBindTextureUnit(0, srcs[pass]->handle);
-        glBindTextureUnit(1, targets.normals.handle);
+        glBindTextureUnit(0, srcs[pass]->id());
+        glBindTextureUnit(1, targets.normals.id());
         dsts[pass]->bind(2, GL_WRITE_ONLY);
         shader.setInt("step_size", steps[pass]);
         // Pass 0's source is `accum`, whose alpha is the history length; from pass 1 on the

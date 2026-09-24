@@ -26,9 +26,9 @@ public:
      */
     explicit DenoiserPass(const std::filesystem::path& shaderPath);
 
-    bool        reloadIfChanged() override;
-    void        execute(const RenderContext&, RenderTargets&) override;
-    const char* name() const override { return "Denoiser"; }
+    bool             reloadIfChanged() override;
+    void             execute(const RenderContext&, RenderTargets&) override;
+    std::string_view name() const override { return "Denoiser"; }
 
 private:
     ComputeShader shader;

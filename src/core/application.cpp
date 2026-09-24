@@ -1,6 +1,7 @@
 #include "core/application.h"
 
 #include <chrono>
+#include <exception>
 #include <memory>
 
 #include "render/passes/aov_pass.h"
@@ -125,19 +126,28 @@ void Application::applyPendingSceneSwitch() {
     }
 
     const int idx = sceneSwitch.requested;
+    sceneSwitch.requested = -1;
     Log::info("Switching scene to '{}'", sceneEntries[idx].name);
 
-    scene = sceneEntries[idx].factory();
-    camera = Camera(scene.cameraSettings);
-    camera.resize(window.width, window.height);
+    // Build and upload the new scene before replacing anything, so a missing asset leaves the
+    // current scene running instead of half-replaced.
+    try {
+        Scene  next = sceneEntries[idx].factory();
+        Camera nextCamera(next.cameraSettings);
+        nextCamera.resize(window.width, window.height);
+        renderer.loadScene(next, nextCamera);
+        scene = std::move(next);
+        camera = std::move(nextCamera);
+    } catch (const std::exception& e) {
+        Log::error("Scene '{}' failed to load, keeping '{}': {}", sceneEntries[idx].name, scene.name, e.what());
+        return;
+    }
 
-    renderer.loadScene(scene, camera);
     window.setTitle(scene.name);
     resetAccumulation();
     historyFrames = 0;
 
     sceneSwitch.current = idx;
-    sceneSwitch.requested = -1;
 }
 
 void Application::resetAccumulation() {

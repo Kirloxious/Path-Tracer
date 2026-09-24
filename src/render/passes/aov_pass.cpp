@@ -24,8 +24,8 @@ void AovPass::execute(const RenderContext&, RenderTargets& targets) {
     // accum is bound read-only for the variance AOV.
     targets.display.bind(0, GL_WRITE_ONLY);
     targets.accum.bind(1, GL_READ_ONLY);
-    glBindTextureUnit(TEX_GBUF_NORMAL, targets.gbuf.normal.handle);
-    glBindTextureUnit(TEX_GBUF_DEPTH, targets.gbuf.depth.handle);
+    glBindTextureUnit(TEX_GBUF_NORMAL, targets.gbuf.normal.id());
+    glBindTextureUnit(TEX_GBUF_DEPTH, targets.gbuf.depth.id());
 
     shader.setInt("aov_mode", static_cast<int>(settings.aovMode));
     shader.setFloat("depth_max", settings.aovDepthMax);

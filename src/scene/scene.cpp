@@ -2,12 +2,24 @@
 
 #include <algorithm>
 #include <limits>
+#include <stdexcept>
 
 #include "core/log.h"
 #include "scene/obj_loader.h"
 #include "core/utils.h"
 
 #include <glm/gtc/matrix_transform.hpp>
+
+namespace {
+// A scene whose asset is missing fails as a whole rather than rendering without it.
+Mesh requireOBJ(const std::filesystem::path& path, float scale = 1.0f, glm::vec3 offset = glm::vec3(0.0f), float rotateY = 0.0f) {
+    auto mesh = loadOBJ(path, scale, offset, rotateY);
+    if (!mesh) {
+        throw std::runtime_error(mesh.error());
+    }
+    return std::move(*mesh);
+}
+} // namespace
 
 Scene Scene::CornellBox() {
     Scene scene;
@@ -85,10 +97,10 @@ Scene Scene::CornellBox() {
     constexpr float PI = 3.14159265f;
 
     uint32_t bunnyMat = w.addMaterial(Material::Principled(glm::vec3(0.9f, 0.7f, 0.3f), 1.0f, 0.224f));
-    w.addMesh(loadOBJ("assets/standford-bunny.obj", bunnyMat, 80.0f, glm::vec3(S * 0.5f, shortH - 2.6f, S * 0.35f), PI));
+    w.addMesh(requireOBJ("assets/standford-bunny.obj", 80.0f, glm::vec3(S * 0.5f, shortH - 2.6f, S * 0.35f), PI), bunnyMat);
 
     uint32_t suzanneMat = w.addMaterial(Material::Glass(1.5f));
-    w.addMesh(loadOBJ("assets/suzanne.obj", suzanneMat, 4.0f, glm::vec3(S * 0.66f, tallH + 4.0f, S * 0.63f), PI));
+    w.addMesh(requireOBJ("assets/suzanne.obj", 4.0f, glm::vec3(S * 0.66f, tallH + 4.0f, S * 0.63f), PI), suzanneMat);
 
     w.create();
     Log::info("Total triangles: {}", w.triangles.size());
@@ -175,7 +187,7 @@ Scene Scene::Showcase() {
 
     // Loaded in object space and placed by transform: a second copy is one more addObject().
     auto place = [&](const char* name, const char* path, uint32_t material, float scale, glm::vec3 offset) {
-        const uint32_t meshId = w.addMeshAsset(loadOBJ(path, 0));
+        const uint32_t meshId = w.addMeshAsset(requireOBJ(path));
         return w.addObject(name, meshId, glm::scale(glm::translate(glm::mat4(1.0f), offset), glm::vec3(scale)), material);
     };
 
@@ -236,9 +248,9 @@ Scene Scene::MirrorFloor() {
     // Load an OBJ at (x, z) and shift it vertically so its lowest vertex sits exactly at floorY —
     // each mesh's authoring origin differs (Suzanne is centred, the dragon's pivot is its underside),
     // so hand-tuning y per-mesh is fragile. This stays correct under any scale or Y-rotation.
-    auto loadStanding = [&](const std::filesystem::path& path, uint32_t mat, float scale, float x, float z, float rotateY = 0.0f) -> OBJMesh {
-        OBJMesh m = loadOBJ(path, mat, scale, glm::vec3(x, 0.0f, z), rotateY);
-        float   yMin = std::numeric_limits<float>::infinity();
+    auto loadStanding = [&](const std::filesystem::path& path, float scale, float x, float z, float rotateY = 0.0f) -> Mesh {
+        Mesh  m = requireOBJ(path, scale, glm::vec3(x, 0.0f, z), rotateY);
+        float yMin = std::numeric_limits<float>::infinity();
         for (const auto& v : m.vertices) {
             yMin = std::min(yMin, v.position.y);
         }
@@ -267,11 +279,11 @@ Scene Scene::MirrorFloor() {
 
     // Lambertian Suzanne on the left — lifted so her chin sits on the mirror.
     uint32_t suzanneMat = w.addMaterial(Material::Lambertian(glm::vec3(0.85f, 0.35f, 0.25f)));
-    w.addMesh(loadStanding("assets/suzanne.obj", suzanneMat, 1.0f, -0.5f, -5.0f));
+    w.addMesh(loadStanding("assets/suzanne.obj", 1.0f, -0.5f, -5.0f), suzanneMat);
 
     // Metal gold dragon in the middle — fuzz softens the highlights without going full mirror.
     uint32_t dragonMat = w.addMaterial(Material::Principled(glm::vec3(0.9f, 0.75f, 0.4f), 1.0f, 0.224f));
-    w.addMesh(loadStanding("assets/xyzrgb_dragon.obj", dragonMat, 0.02f, 0.0f, subjectsZ));
+    w.addMesh(loadStanding("assets/xyzrgb_dragon.obj", 0.02f, 0.0f, subjectsZ), dragonMat);
 
     // Lambertian sphere on the right — radius 1, centre at y = floorY + 1, so its bottom sits exactly on the floor.
     w.addSphere(glm::vec3(3.5f, floorY + 1.0f, subjectsZ), 1.0f, Material::Lambertian(glm::vec3(0.25f, 0.55f, 0.8f)), sphereLat, sphereLon);
@@ -358,16 +370,16 @@ Scene Scene::ShowcaseEnvLit() {
     // Overhead emissive sun removed — env carries the lighting.
 
     uint32_t bunnyMat = w.addMaterial(Material::Lambertian(glm::vec3(0.9f, 0.7f, 0.2f)));
-    w.addMesh(loadOBJ("assets/standford-bunny.obj", bunnyMat, 10.0f, glm::vec3(0.0f, -0.33f, 0.0f)));
+    w.addMesh(requireOBJ("assets/standford-bunny.obj", 10.0f, glm::vec3(0.0f, -0.33f, 0.0f)), bunnyMat);
 
     uint32_t spotMat = w.addMaterial(Material::Lambertian(glm::vec3(0.9f, 0.85f, 0.7f)));
-    w.addMesh(loadOBJ("assets/spot.obj", spotMat, 1.0f, glm::vec3(-3.0f, 0.737f, 0.0f)));
+    w.addMesh(requireOBJ("assets/spot.obj", 1.0f, glm::vec3(-3.0f, 0.737f, 0.0f)), spotMat);
 
     uint32_t suzanneMat = w.addMaterial(Material::Principled(glm::vec3(0.9f, 0.7f, 0.3f), 1.0f, 0.316f));
-    w.addMesh(loadOBJ("assets/suzanne.obj", suzanneMat, 0.7f, glm::vec3(4.75f, 0.6f, -2.87f)));
+    w.addMesh(requireOBJ("assets/suzanne.obj", 0.7f, glm::vec3(4.75f, 0.6f, -2.87f)), suzanneMat);
 
     uint32_t dragonMat = w.addMaterial(Material::Glass(1.5f));
-    w.addMesh(loadOBJ("assets/xyzrgb_dragon.obj", dragonMat, 0.015f, glm::vec3(0.0f, 0.94f, -2.5f)));
+    w.addMesh(requireOBJ("assets/xyzrgb_dragon.obj", 0.015f, glm::vec3(0.0f, 0.94f, -2.5f)), dragonMat);
 
     w.addSphere(glm::vec3(2.5f, 0.5f, 2.0f), 0.5f, Material::Glass(1.5f));
 

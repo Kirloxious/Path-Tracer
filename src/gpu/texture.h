@@ -7,19 +7,20 @@
 
 #include <glad/glad.h>
 
+#include "gpu/gl_handle.h"
+
 /**
  * @brief Owns one immutable-storage `GL_TEXTURE_2D`, usable as a sampler or a compute image.
  *
  * Single mip level, `GL_CLAMP_TO_EDGE` on both axes. Construction failure (non-positive
  * dimensions, or a null pixel pointer on the upload overload) is reported through Log::error
- * and leaves `handle` at 0 rather than throwing.
+ * and leaves `id()` at 0 rather than throwing.
  *
- * Non-copyable, movable — a moved-from Texture has `handle == 0` and destroys nothing.
+ * Move-only; a moved-from Texture has `id() == 0`.
  */
 class Texture
 {
 public:
-    GLuint handle = 0;
     int    width = 0;
     int    height = 0;
     GLenum internalFormat = GL_RGBA32F;
@@ -53,7 +54,6 @@ public:
      * @param pixels         Row-major source pixels; must not be null.
      */
     Texture(int width, int height, GLenum internalFormat, GLenum pixelFormat, GLenum pixelType, const void* pixels);
-    ~Texture();
 
     /// Binds this texture as image unit 0 with `GL_READ_WRITE` — the convention for the
     /// progressive-accumulation target.
@@ -66,9 +66,8 @@ public:
      */
     void bind(int unit, GLenum access) const;
 
-    // Non-copyable, movable
-    Texture(const Texture&) = delete;
-    Texture& operator=(const Texture&) = delete;
-    Texture(Texture&& o) noexcept;
-    Texture& operator=(Texture&& o) noexcept;
+    [[nodiscard]] GLuint id() const { return m_handle.get(); }
+
+private:
+    TextureHandle m_handle;
 };

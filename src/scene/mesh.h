@@ -10,7 +10,6 @@
 
 #include <glm/glm.hpp>
 
-#include "scene/obj_loader.h"
 #include "scene/primitive.h"
 
 /**
@@ -68,10 +67,3 @@ struct Mesh
  * @return The one-triangle mesh.
  */
 [[nodiscard]] Mesh makeTriangleMesh(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, std::string name = "Triangle");
-
-/**
- * @brief Adapts a loaded OBJ into a Mesh asset, dropping its material.
- * @param mesh Mesh from loadOBJ(). An empty mesh produces an empty asset.
- * @return The converted asset, named after OBJMesh::name.
- */
-[[nodiscard]] Mesh makeMeshFromOBJ(const OBJMesh& mesh);

@@ -26,9 +26,9 @@ public:
     /// Loads `taa.comp`.
     TaaPass();
 
-    bool        reloadIfChanged() override;
-    void        execute(const RenderContext&, RenderTargets&) override;
-    const char* name() const override { return "TAA"; }
+    bool             reloadIfChanged() override;
+    void             execute(const RenderContext&, RenderTargets&) override;
+    std::string_view name() const override { return "TAA"; }
 
 private:
     ComputeShader shader;

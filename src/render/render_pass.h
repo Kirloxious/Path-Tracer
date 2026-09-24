@@ -5,6 +5,8 @@
  * @brief The RenderPass contract and the per-frame context handed to every pass.
  */
 
+#include <string_view>
+
 #include "render/render_targets.h"
 #include <scene/scene.h>
 
@@ -88,15 +90,8 @@ public:
      */
     virtual void execute(const RenderContext& ctx, RenderTargets& targets) = 0;
 
-    /**
-     * @brief Short display name for the per-pass GPU timer panel.
-     *
-     * The default placeholder means adding a new pass doesn't force a rebuild of the panel.
-     * Must return a static string — PassTimings stores it by pointer.
-     *
-     * @return The pass's label.
-     */
-    virtual const char* name() const { return "Pass"; }
+    /// @return Short display name for the per-pass GPU timer panel.
+    virtual std::string_view name() const = 0;
 
     RenderPass() = default;
     RenderPass(const RenderPass&) = delete;

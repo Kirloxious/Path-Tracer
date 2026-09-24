@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "core/log.h"
+#include "gpu/gl_handle.h"
 
 /**
  * @brief Owns one GL buffer (SSBO / UBO / dispatch-indirect).
@@ -18,13 +19,11 @@
  * whoever dispatches the work that reads it, so a buffer's binding point is visible at the
  * dispatch site instead of being a side effect of when it happened to be created.
  *
- * Non-copyable, movable — a moved-from Buffer has `id == 0` and deletes nothing.
+ * Move-only; a moved-from Buffer has `id() == 0`.
  */
 class Buffer
 {
 public:
-    GLuint id = 0;
-
     Buffer() = default;
 
     /**
@@ -41,7 +40,9 @@ public:
         if (byteSize == 0) {
             Log::warn("Buffer allocated with byteSize=0");
         }
+        GLuint id = 0;
         glCreateBuffers(1, &id);
+        m_handle.reset(id);
         glNamedBufferData(id, byteSize, data, usage);
     }
 
@@ -75,7 +76,7 @@ public:
      * @param byteSize Number of bytes to write.
      * @param offset   Destination byte offset into the buffer.
      */
-    void update(const void* data, size_t byteSize, size_t offset = 0) { glNamedBufferSubData(id, offset, byteSize, data); }
+    void update(const void* data, size_t byteSize, size_t offset = 0) { glNamedBufferSubData(id(), offset, byteSize, data); }
 
     /**
      * @brief Overwrites the buffer with a single struct.
@@ -95,36 +96,20 @@ public:
     }
 
     /// Zeroes every byte.
-    void clear() const { glClearNamedBufferData(id, GL_R8UI, GL_RED_INTEGER, GL_UNSIGNED_BYTE, nullptr); }
+    void clear() const { glClearNamedBufferData(id(), GL_R8UI, GL_RED_INTEGER, GL_UNSIGNED_BYTE, nullptr); }
 
     /**
      * @brief Binds to an indexed binding point.
      * @param target GL_SHADER_STORAGE_BUFFER or GL_UNIFORM_BUFFER.
      * @param index  Binding index — a BIND_* / UBO_* constant from core/shader_shared.h.
      */
-    void bindBase(GLenum target, GLuint index) const { glBindBufferBase(target, index, id); }
+    void bindBase(GLenum target, GLuint index) const { glBindBufferBase(target, index, id()); }
 
     /// Binds to a non-indexed target such as GL_DISPATCH_INDIRECT_BUFFER.
-    void bind(GLenum target) const { glBindBuffer(target, id); }
+    void bind(GLenum target) const { glBindBuffer(target, id()); }
 
-    ~Buffer() {
-        if (id) {
-            glDeleteBuffers(1, &id);
-        }
-    }
+    [[nodiscard]] GLuint id() const { return m_handle.get(); }
 
-    Buffer(const Buffer&) = delete;
-    Buffer& operator=(const Buffer&) = delete;
-
-    Buffer(Buffer&& o) noexcept : id(o.id) { o.id = 0; }
-    Buffer& operator=(Buffer&& o) noexcept {
-        if (this != &o) {
-            if (id) {
-                glDeleteBuffers(1, &id);
-            }
-            id = o.id;
-            o.id = 0;
-        }
-        return *this;
-    }
+private:
+    BufferHandle m_handle;
 };

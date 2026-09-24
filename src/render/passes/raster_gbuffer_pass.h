@@ -9,6 +9,8 @@
 #include <filesystem>
 #include <vector>
 
+#include "gpu/buffer.h"
+#include "gpu/gl_handle.h"
 #include "gpu/raster_shader.h"
 #include "render/render_pass.h"
 
@@ -34,12 +36,11 @@ public:
      * @param fragPath Path to `gbuffer.frag`.
      */
     RasterGBufferPass(const std::filesystem::path& vertPath, const std::filesystem::path& fragPath);
-    ~RasterGBufferPass() override;
 
-    void        onSceneLoaded(const Scene&) override;
-    bool        reloadIfChanged() override;
-    void        execute(const RenderContext&, RenderTargets&) override;
-    const char* name() const override { return "Raster"; }
+    void             onSceneLoaded(const Scene&) override;
+    bool             reloadIfChanged() override;
+    void             execute(const RenderContext&, RenderTargets&) override;
+    std::string_view name() const override { return "Raster"; }
 
     /**
      * @brief One object's contiguous slice of the index buffer.
@@ -61,10 +62,10 @@ public:
 private:
     RasterShader shader;
 
-    GLuint  vao = 0;
-    GLuint  vbo = 0;
-    GLuint  ebo = 0;
-    GLsizei indexCount = 0;
+    VertexArrayHandle vao;
+    Buffer            vbo;
+    Buffer            ebo;
+    GLsizei           indexCount = 0;
 
     std::vector<DrawRange> drawRanges;
 
@@ -82,7 +83,4 @@ private:
      * @param world Geometry to upload.
      */
     void buildGeometry(const class World& world);
-
-    /// Deletes the VAO/VBO/EBO. Called before a rebuild and from the destructor.
-    void releaseGeometry();
 };

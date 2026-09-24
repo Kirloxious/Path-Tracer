@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <numbers>
 #include <vector>
 
@@ -21,13 +22,12 @@ constexpr int ENV_SAMPLE_MAX_W = 1024;
 constexpr int ENV_SAMPLE_MAX_H = 512;
 } // namespace
 
-EnvMap::EnvMap(const std::filesystem::path& hdrPath, float intensity) : intensity(intensity) {
+std::expected<EnvMap, std::string> EnvMap::load(const std::filesystem::path& hdrPath, float intensity) {
     int w = 0, h = 0, n = 0;
     // Request 3 channels — HDR files are usually RGB (RGBE decoded); we widen to RGBA below.
     float* stbPixels = stbi_loadf(hdrPath.string().c_str(), &w, &h, &n, 3);
     if (!stbPixels) {
-        Log::error("EnvMap: failed to load HDR '{}' ({})", hdrPath.string(), stbi_failure_reason());
-        return;
+        return std::unexpected(std::format("EnvMap: failed to load HDR '{}' ({})", hdrPath.string(), stbi_failure_reason()));
     }
     Log::info("EnvMap: loaded {} — {}x{} (source channels={})", hdrPath.filename().string(), w, h, n);
 
@@ -43,8 +43,11 @@ EnvMap::EnvMap(const std::filesystem::path& hdrPath, float intensity) : intensit
     }
     stbi_image_free(stbPixels);
 
-    texture = Texture(w, h, GL_RGBA32F, GL_RGBA, GL_FLOAT, rgba.data());
-    buildSamplingTable(rgba.data(), w, h);
+    EnvMap map;
+    map.intensity = intensity;
+    map.texture = Texture(w, h, GL_RGBA32F, GL_RGBA, GL_FLOAT, rgba.data());
+    map.buildSamplingTable(rgba.data(), w, h);
+    return map;
 }
 
 void EnvMap::buildSamplingTable(const float* rgba, int w, int h) {
@@ -148,5 +151,5 @@ void EnvMap::bind(int unit) const {
     if (!valid()) {
         return;
     }
-    glBindTextureUnit(static_cast<GLuint>(unit), texture.handle);
+    glBindTextureUnit(static_cast<GLuint>(unit), texture.id());
 }

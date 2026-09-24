@@ -3,163 +3,134 @@
 #include "core/log.h"
 
 #include <algorithm>
+#include <format>
 #include <fstream>
 #include <regex>
 #include <sstream>
 
-ShaderProgram::~ShaderProgram() {
-    if (ID) {
-        glDeleteProgram(ID);
-    }
+namespace {
+std::string infoLog(GLuint object, bool isProgram) {
+    GLint length = 0;
+    isProgram ? glGetProgramiv(object, GL_INFO_LOG_LENGTH, &length) : glGetShaderiv(object, GL_INFO_LOG_LENGTH, &length);
+    std::string log(static_cast<std::size_t>(std::max(length, 1)), '\0');
+    GLsizei     written = 0;
+    isProgram ? glGetProgramInfoLog(object, length, &written, log.data()) : glGetShaderInfoLog(object, length, &written, log.data());
+    log.resize(static_cast<std::size_t>(written));
+    return log;
 }
+} // namespace
 
-ShaderProgram::ShaderProgram(ShaderProgram&& o) noexcept
-    : ID(o.ID), m_sources(std::move(o.m_sources)), m_includes(std::move(o.m_includes)), m_locationCache(std::move(o.m_locationCache)) {
-    o.ID = 0;
-}
-
-ShaderProgram& ShaderProgram::operator=(ShaderProgram&& o) noexcept {
-    if (this != &o) {
-        if (ID) {
-            glDeleteProgram(ID);
-        }
-        ID = o.ID;
-        m_sources = std::move(o.m_sources);
-        m_includes = std::move(o.m_includes);
-        m_locationCache = std::move(o.m_locationCache);
-        o.ID = 0;
+ShaderProgram::ShaderProgram(std::vector<Stage> stages) : m_stages(std::move(stages)) {
+    for (const Stage& stage : m_stages) {
+        watch(stage.path);
     }
-    return *this;
+    if (auto program = build()) {
+        m_program = std::move(*program);
+    } else {
+        Log::error("Shader build failed ({}):\n{}", label(), program.error());
+    }
 }
 
 void ShaderProgram::use() const {
-    glUseProgram(ID);
+    glUseProgram(id());
 }
 
-void ShaderProgram::setBool(const std::string& name, bool v) const {
+void ShaderProgram::setBool(std::string_view name, bool v) const {
     glUniform1i(getLocation(name), static_cast<int>(v));
 }
 
-void ShaderProgram::setInt(const std::string& name, int v) const {
+void ShaderProgram::setInt(std::string_view name, int v) const {
     glUniform1i(getLocation(name), v);
 }
 
-void ShaderProgram::setUInt(const std::string& name, unsigned int v) const {
+void ShaderProgram::setUInt(std::string_view name, unsigned int v) const {
     glUniform1ui(getLocation(name), v);
 }
 
-void ShaderProgram::setFloat(const std::string& name, float v) const {
+void ShaderProgram::setFloat(std::string_view name, float v) const {
     glUniform1f(getLocation(name), v);
 }
 
-void ShaderProgram::setVec2(const std::string& name, const glm::vec2& v) const {
+void ShaderProgram::setVec2(std::string_view name, const glm::vec2& v) const {
     glUniform2fv(getLocation(name), 1, &v[0]);
 }
 
-void ShaderProgram::setIVec2(const std::string& name, int x, int y) const {
+void ShaderProgram::setIVec2(std::string_view name, int x, int y) const {
     glUniform2i(getLocation(name), x, y);
 }
 
-void ShaderProgram::setVec3(const std::string& name, const glm::vec3& v) const {
+void ShaderProgram::setVec3(std::string_view name, const glm::vec3& v) const {
     glUniform3fv(getLocation(name), 1, &v[0]);
 }
 
-void ShaderProgram::setMat4(const std::string& name, const glm::mat4& m) const {
+void ShaderProgram::setMat4(std::string_view name, const glm::mat4& m) const {
     glUniformMatrix4fv(getLocation(name), 1, GL_FALSE, &m[0][0]);
 }
 
 bool ShaderProgram::reloadIfChanged() {
-    if (m_sources.empty()) {
-        return false;
-    }
-
     bool anyChanged = false;
-    for (std::vector<Source>* list : {&m_sources, &m_includes}) {
-        for (Source& src : *list) {
-            std::error_code ec;
-            const auto      t = std::filesystem::last_write_time(src.path, ec);
-            if (!ec && t != src.writeTime) {
-                src.writeTime = t; // advance even on failure so we don't spam errors
-                anyChanged = true;
-            }
+    for (WatchedFile& file : m_watched) {
+        std::error_code ec;
+        const auto      t = std::filesystem::last_write_time(file.path, ec);
+        if (!ec && t != file.writeTime) {
+            file.writeTime = t; // advance even on failure so we don't spam errors
+            anyChanged = true;
         }
     }
-
-    if (!anyChanged) {
+    if (!anyChanged || m_stages.empty()) {
         return false;
     }
 
-    Log::info("Reloading shader: {}", sourcesLabel());
-    GLuint newProgram = buildProgram();
-    if (newProgram == 0) {
+    Log::info("Reloading shader: {}", label());
+    auto program = build();
+    if (!program) {
+        Log::error("Shader reload failed ({}), keeping the previous program:\n{}", label(), program.error());
         return false;
     }
-
-    if (ID) {
-        glDeleteProgram(ID);
-    }
-    ID = newProgram;
-    m_locationCache.clear(); // uniforms may have been added, removed, or relocated by the new program
+    m_program = std::move(*program);
+    m_locationCache.clear();
     Log::info("Shader reloaded successfully");
     return true;
 }
 
-void ShaderProgram::trackSource(const std::filesystem::path& path) {
-    std::error_code ec;
-    m_sources.push_back({path, std::filesystem::last_write_time(path, ec)});
-}
-
-void ShaderProgram::recordIncludes(const std::unordered_set<std::string>& seen) {
-    // `seen` holds weakly_canonical paths and also contains the entry point itself, while
-    // m_sources holds the path exactly as the subclass passed it ("shader/foo.comp").
-    // Compare canonicalized on both sides, or every entry point gets re-registered as one
-    // of its own includes.
-    auto alreadyTracked = [this](const std::filesystem::path& canonical) {
-        auto same = [&canonical](const Source& s) {
-            return std::filesystem::weakly_canonical(s.path) == canonical;
-        };
-        return std::any_of(m_sources.begin(), m_sources.end(), same) || std::any_of(m_includes.begin(), m_includes.end(), same);
-    };
-
-    for (const std::string& entry : seen) {
-        const std::filesystem::path path(entry);
-        if (alreadyTracked(path)) {
-            continue;
-        }
-        std::error_code ec;
-        m_includes.push_back({path, std::filesystem::last_write_time(path, ec)});
+void ShaderProgram::watch(const std::filesystem::path& path) {
+    std::string canonical = std::filesystem::weakly_canonical(path).string();
+    if (std::ranges::any_of(m_watched, [&](const WatchedFile& f) { return f.canonical == canonical; })) {
+        return;
     }
+    std::error_code ec;
+    m_watched.push_back({path, std::move(canonical), std::filesystem::last_write_time(path, ec)});
 }
 
-std::string ShaderProgram::sourcesLabel() const {
+std::string ShaderProgram::label() const {
     std::string out;
-    for (size_t i = 0; i < m_sources.size(); ++i) {
-        if (i) {
+    for (const Stage& stage : m_stages) {
+        if (!out.empty()) {
             out += " + ";
         }
-        out += m_sources[i].path.filename().string();
+        out += stage.path.filename().string();
     }
     return out;
 }
 
-GLint ShaderProgram::getLocation(const std::string& name) const {
+GLint ShaderProgram::getLocation(std::string_view name) const {
     if (auto it = m_locationCache.find(name); it != m_locationCache.end()) {
         return it->second;
     }
-    GLint loc = glGetUniformLocation(ID, name.c_str());
-    m_locationCache.emplace(name, loc); // -1 caches the miss too; we only warn once per program-lifetime via the set below
+    const std::string key(name);
+    const GLint       loc = glGetUniformLocation(id(), key.c_str());
+    m_locationCache.emplace(key, loc); // -1 caches the miss too
     if (loc == -1) {
         static thread_local std::unordered_set<std::string> warned;
-        if (warned.insert(sourcesLabel() + ":" + name).second) {
-            Log::warn("Uniform '{}' not found in {} (unused or typo)", name, sourcesLabel());
+        if (warned.insert(label() + ":" + key).second) {
+            Log::warn("Uniform '{}' not found in {} (unused or typo)", key, label());
         }
     }
     return loc;
 }
 
 std::string ShaderProgram::preprocessIncludes(const std::filesystem::path& path, std::unordered_set<std::string>& seen) {
-    const auto canonical = std::filesystem::weakly_canonical(path).string();
-    if (!seen.insert(canonical).second) { // include guard
+    if (!seen.insert(std::filesystem::weakly_canonical(path).string()).second) { // include guard
         return {};
     }
 
@@ -172,20 +143,19 @@ std::string ShaderProgram::preprocessIncludes(const std::filesystem::path& path,
     std::string       line;
     int               lineno = 0;
 
+    static const std::regex inc(R"(^\s*#include\s+\"([^\"]+)\")");
     while (std::getline(f, line)) {
         if (!line.empty() && line.back() == '\r') {
             line.pop_back();
         }
         ++lineno;
-        // Match: #include "relative/path.glsl"
-        static const std::regex inc(R"(^\s*#include\s+\"([^\"]+)\")");
-        std::smatch             m;
+        std::smatch m;
         if (std::regex_search(line, m, inc)) {
             const auto child = path.parent_path() / m[1].str();
             out << "// >>> " << child.string() << "\n";
             out << preprocessIncludes(child, seen);
             out << "// <<< " << child.string() << "\n";
-            // emit a #line so compile errors point at the right file:line
+            // Compile errors then point at the right line of this file.
             out << "#line " << (lineno + 1) << "\n";
         } else {
             out << line << "\n";
@@ -195,64 +165,61 @@ std::string ShaderProgram::preprocessIncludes(const std::filesystem::path& path,
     return out.str();
 }
 
-GLuint ShaderProgram::compileStage(GLenum stage, const std::filesystem::path& path) {
+std::expected<ShaderHandle, std::string> ShaderProgram::compileStage(const Stage& stage) {
     std::unordered_set<std::string> seen;
-    std::string                     source = preprocessIncludes(path, seen);
-    // Register the headers we just walked even if the compile below fails — the whole point
-    // is to notice the *next* edit to the header that broke it.
-    recordIncludes(seen);
+    const std::string               source = preprocessIncludes(stage.path, seen);
+    // Watch the headers even if the compile below fails — the point is to notice the *next*
+    // edit to the header that broke it.
+    for (const std::string& file : seen) {
+        watch(file);
+    }
     if (source.empty()) {
-        return 0;
+        return std::unexpected(std::format("{}: could not read source", stage.path.string()));
     }
     if (source.find("#version") == std::string::npos) {
-        Log::error("Shader has no #version directive: {}", path.string());
-        return 0;
+        return std::unexpected(std::format("{}: no #version directive", stage.path.string()));
     }
 
+    ShaderHandle  shader(glCreateShader(stage.type));
     const GLchar* src = source.c_str();
-    GLuint        shader = glCreateShader(stage);
-    glShaderSource(shader, 1, &src, nullptr);
-    glCompileShader(shader);
+    glShaderSource(shader.get(), 1, &src, nullptr);
+    glCompileShader(shader.get());
 
-    GLint isCompiled = 0;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &isCompiled);
-    if (isCompiled == GL_FALSE) {
-        GLint maxLength = 0;
-        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &maxLength);
-        std::vector<GLchar> infoLog(static_cast<std::size_t>(maxLength));
-        glGetShaderInfoLog(shader, maxLength, &maxLength, infoLog.data());
-        Log::error("Shader compile error ({}):\n{}", path.string(), infoLog.data());
-        glDeleteShader(shader);
-        return 0;
+    GLint compiled = GL_FALSE;
+    glGetShaderiv(shader.get(), GL_COMPILE_STATUS, &compiled);
+    if (compiled == GL_FALSE) {
+        return std::unexpected(std::format("{}: compile error\n{}", stage.path.string(), infoLog(shader.get(), false)));
     }
     return shader;
 }
 
-GLuint ShaderProgram::linkProgram(const std::vector<GLuint>& stages) {
-    GLuint program = glCreateProgram();
-    for (GLuint s : stages) {
-        glAttachShader(program, s);
+std::expected<ProgramHandle, std::string> ShaderProgram::link(std::span<const ShaderHandle> stages) {
+    ProgramHandle program(glCreateProgram());
+    for (const ShaderHandle& s : stages) {
+        glAttachShader(program.get(), s.get());
     }
-    glLinkProgram(program);
+    glLinkProgram(program.get());
 
-    GLint isLinked = 0;
-    glGetProgramiv(program, GL_LINK_STATUS, &isLinked);
-    if (isLinked == GL_FALSE) {
-        GLint maxLength = 0;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &maxLength);
-        std::vector<GLchar> infoLog(static_cast<std::size_t>(maxLength));
-        glGetProgramInfoLog(program, maxLength, &maxLength, infoLog.data());
-        Log::error("Program link error:\n{}", infoLog.data());
-        glDeleteProgram(program);
-        for (GLuint s : stages) {
-            glDeleteShader(s);
-        }
-        return 0;
+    GLint linked = GL_FALSE;
+    glGetProgramiv(program.get(), GL_LINK_STATUS, &linked);
+    if (linked == GL_FALSE) {
+        return std::unexpected(std::format("link error\n{}", infoLog(program.get(), true)));
     }
-
-    for (GLuint s : stages) {
-        glDetachShader(program, s);
-        glDeleteShader(s);
+    for (const ShaderHandle& s : stages) {
+        glDetachShader(program.get(), s.get());
     }
     return program;
+}
+
+std::expected<ProgramHandle, std::string> ShaderProgram::build() {
+    std::vector<ShaderHandle> compiled;
+    compiled.reserve(m_stages.size());
+    for (const Stage& stage : m_stages) {
+        auto shader = compileStage(stage);
+        if (!shader) {
+            return std::unexpected(std::move(shader.error()));
+        }
+        compiled.push_back(std::move(*shader));
+    }
+    return link(compiled);
 }

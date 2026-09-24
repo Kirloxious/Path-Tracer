@@ -90,9 +90,9 @@ public:
      */
     bool reloadIfChanged() override;
 
-    void        resize(int width, int height) override;
-    void        execute(const RenderContext&, RenderTargets&) override;
-    const char* name() const override { return "ReSTIR"; }
+    void             resize(int width, int height) override;
+    void             execute(const RenderContext&, RenderTargets&) override;
+    std::string_view name() const override { return "ReSTIR"; }
 
 private:
     /// Allocates and zeroes all four per-pixel buffers.

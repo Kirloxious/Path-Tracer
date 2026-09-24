@@ -32,10 +32,10 @@ public:
      */
     explicit AutoExposurePass(const RenderSettings& settings);
 
-    bool        reloadIfChanged() override;
-    void        resize(int width, int height) override;
-    void        execute(const RenderContext&, RenderTargets&) override;
-    const char* name() const override { return "AutoExpose"; }
+    bool             reloadIfChanged() override;
+    void             resize(int width, int height) override;
+    void             execute(const RenderContext&, RenderTargets&) override;
+    std::string_view name() const override { return "AutoExpose"; }
 
 private:
     const RenderSettings& settings;

@@ -6,6 +6,8 @@
  */
 
 #include <cstdint>
+#include <expected>
+#include <string>
 #include <filesystem>
 #include <vector>
 
@@ -39,15 +41,11 @@ static_assert(sizeof(EnvSampleCell) == 16, "EnvSampleCell size must match std430
 /**
  * @brief An equirectangular HDR environment map, owned as an rgba32f GL texture.
  *
- * Missed rays sample it as a distant light — primary sky in `generate.comp`, secondary miss
- * in `trace.comp`. There is no NEE toward the environment, so convergence depends heavily on
- * the map: an overcast or soft HDR converges much faster than a sunny one with a small bright
- * sun disc.
+ * Missed rays read it as a distant light (primary sky in `generate.comp`, secondary miss in
+ * `trace.comp`), and shade_surface's NEE importance-samples it through the alias table built
+ * in buildSamplingTable().
  *
- * Load failures are logged and leave the object invalid (valid() == false) rather than
- * throwing, so a scene with a missing HDR still renders — just with a black sky.
- *
- * Non-copyable, movable (mirrors the Texture wrapper).
+ * Move-only.
  */
 class EnvMap
 {
@@ -62,11 +60,12 @@ public:
      *
      * @param hdrPath   Path to an equirectangular radiance-HDR file.
      * @param intensity Multiplier applied to the sampled radiance by the shaders.
+     * @return The loaded map, or a description of why the file could not be read.
      */
-    EnvMap(const std::filesystem::path& hdrPath, float intensity);
+    static std::expected<EnvMap, std::string> load(const std::filesystem::path& hdrPath, float intensity);
 
     /// @return true when a texture was successfully loaded and can be bound.
-    bool valid() const { return texture.handle != 0; }
+    bool valid() const { return texture.id() != 0; }
 
     /**
      * @brief Binds the map to a sampler texture unit. No-op when !valid().
@@ -84,15 +83,9 @@ public:
     /// @return Dimensions of the sampling grid, which is a downsampled copy of the source.
     glm::ivec2 samplingSize() const { return sampleSize; }
 
-    // Non-copyable, movable (mirrors Texture wrapper).
-    EnvMap(const EnvMap&) = delete;
-    EnvMap& operator=(const EnvMap&) = delete;
-    EnvMap(EnvMap&&) noexcept = default;
-    EnvMap& operator=(EnvMap&&) noexcept = default;
-
 private:
     /// Box-averages the source into the sampling grid and builds the alias table over it.
-    void buildSamplingTable(const float* rgb, int width, int height);
+    void buildSamplingTable(const float* rgba, int width, int height);
 
     Texture                    texture;
     std::vector<EnvSampleCell> cells;
