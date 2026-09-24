@@ -62,6 +62,19 @@ void Texture::bindForAccumulation() const {
     glBindImageTexture(0, id(), 0, GL_FALSE, 0, GL_READ_WRITE, internalFormat);
 }
 
+void Texture::bindSampler(int unit) const {
+    glBindTextureUnit(static_cast<GLuint>(unit), id());
+}
+
+void Texture::setFilter(GLenum filter) const {
+    glTextureParameteri(id(), GL_TEXTURE_MIN_FILTER, static_cast<GLint>(filter));
+    glTextureParameteri(id(), GL_TEXTURE_MAG_FILTER, static_cast<GLint>(filter));
+}
+
+void Texture::copyTo(const Texture& dst) const {
+    glCopyImageSubData(id(), GL_TEXTURE_2D, 0, 0, 0, 0, dst.id(), GL_TEXTURE_2D, 0, 0, 0, 0, width, height, 1);
+}
+
 void Texture::bind(int unit, GLenum access) const {
     glBindImageTexture(unit, id(), 0, GL_FALSE, 0, access, internalFormat);
 }

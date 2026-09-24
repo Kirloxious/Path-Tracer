@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "core/log.h"
+#include "gpu/gl.h"
 
 namespace {
 constexpr int MIP_COUNT = 5;
@@ -30,8 +31,7 @@ void BloomPass::buildMips(int w, int h) {
         mips.emplace_back(mw, mh, GL_RGBA16F);
         // Bilinear so the 13-tap downsample and 3x3 tent upsample can sample
         // between texels without hand-rolling weights per corner.
-        glTextureParameteri(mips.back().id(), GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTextureParameteri(mips.back().id(), GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        mips.back().setFilter(GL_LINEAR);
     }
     Log::info("BloomPass: mip chain {}x{} → {}x{}", mips.front().width, mips.front().height, mips.back().width, mips.back().height);
 }
@@ -53,7 +53,7 @@ void BloomPass::execute(const RenderContext& ctx, RenderTargets& targets) {
         return;
     }
 
-    constexpr GLbitfield IMG_BARRIER = GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT;
+    constexpr GL::Barrier IMG_BARRIER = GL::Barrier::ImageAccess | GL::Barrier::TextureFetch;
 
     // -------- Downsample chain: hdr → mip[0] → mip[1] → ... → mip[n-1] --------
     downsampleShader.use();
@@ -63,8 +63,8 @@ void BloomPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     for (int i = 0; i < static_cast<int>(mips.size()); ++i) {
         // First pass reads the HDR image and applies the soft-knee prefilter;
         // subsequent passes chain mip[i-1] → mip[i] with the raw downsample.
-        GLuint srcHandle = (i == 0) ? targets.hdr.id() : mips[i - 1].id();
-        glBindTextureUnit(0, srcHandle);
+        const Texture& src = (i == 0) ? targets.hdr : mips[i - 1];
+        src.bindSampler(0);
         mips[i].bind(1, GL_WRITE_ONLY);
 
         downsampleShader.setIVec2("dst_size", mips[i].width, mips[i].height);
@@ -72,8 +72,8 @@ void BloomPass::execute(const RenderContext& ctx, RenderTargets& targets) {
 
         const int gx = (mips[i].width + 7) / 8;
         const int gy = (mips[i].height + 7) / 8;
-        glDispatchCompute(gx, gy, 1);
-        glMemoryBarrier(IMG_BARRIER);
+        GL::dispatch(gx, gy);
+        GL::memoryBarrier(IMG_BARRIER);
     }
 
     // -------- Upsample chain: mip[n-1] additively → mip[n-2] → ... → mip[0] --------
@@ -81,7 +81,7 @@ void BloomPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     upsampleShader.setFloat("radius", settings.bloomFilterRadius);
 
     for (int i = static_cast<int>(mips.size()) - 1; i > 0; --i) {
-        glBindTextureUnit(0, mips[i].id());
+        mips[i].bindSampler(0);
         // The upsample shader does an in-place additive blend, so bind rw.
         mips[i - 1].bind(1, GL_READ_WRITE);
         upsampleShader.setIVec2("dst_size", mips[i - 1].width, mips[i - 1].height);
@@ -89,15 +89,15 @@ void BloomPass::execute(const RenderContext& ctx, RenderTargets& targets) {
 
         const int gx = (mips[i - 1].width + 7) / 8;
         const int gy = (mips[i - 1].height + 7) / 8;
-        glDispatchCompute(gx, gy, 1);
-        glMemoryBarrier(IMG_BARRIER);
+        GL::dispatch(gx, gy);
+        GL::memoryBarrier(IMG_BARRIER);
     }
 
     // -------- Final composite: mip[0] additively blended into hdr with `strength` --------
-    glBindTextureUnit(0, mips[0].id());
+    mips[0].bindSampler(0);
     targets.hdr.bind(1, GL_READ_WRITE);
     upsampleShader.setIVec2("dst_size", targets.hdr.width, targets.hdr.height);
     upsampleShader.setFloat("strength", settings.bloomStrength);
-    glDispatchCompute(targets.numGroupsX, targets.numGroupsY, 1);
-    glMemoryBarrier(IMG_BARRIER);
+    GL::dispatch(targets.numGroupsX, targets.numGroupsY);
+    GL::memoryBarrier(IMG_BARRIER);
 }

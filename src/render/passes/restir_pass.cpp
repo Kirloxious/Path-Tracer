@@ -5,6 +5,7 @@
 
 #include "core/log.h"
 #include "core/shader_shared.h"
+#include "gpu/gl.h"
 
 namespace {
 constexpr int M_INITIAL_DEFAULT = 32;
@@ -73,13 +74,13 @@ void RestirPass::execute(const RenderContext&, RenderTargets& targets) {
 
     initial.use();
     initial.setInt("m_initial", M_INITIAL_DEFAULT);
-    glDispatchCompute(targets.numGroupsX, targets.numGroupsY, 1);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    GL::dispatch(targets.numGroupsX, targets.numGroupsY);
+    GL::memoryBarrier(GL::Barrier::Storage);
 
     temporal.use();
     temporal.setInt("m_cap", M_CAP_DEFAULT);
-    glDispatchCompute(targets.numGroupsX, targets.numGroupsY, 1);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    GL::dispatch(targets.numGroupsX, targets.numGroupsY);
+    GL::memoryBarrier(GL::Barrier::Storage);
 
     // Spatial reuse: two ping-ponged passes with shrinking radius. The shader reads
     // `spatial_input` (binding 20) and writes `reservoirs` (binding 18). The prev buffer is
@@ -94,16 +95,16 @@ void RestirPass::execute(const RenderContext&, RenderTargets& targets) {
     spatial.setInt("pass_index", 0);
     // Pass 2 re-validates whatever sample survives, so this pass skips its shadow ray.
     spatial.setInt("test_visibility", 0);
-    glDispatchCompute(targets.numGroupsX, targets.numGroupsY, 1);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    GL::dispatch(targets.numGroupsX, targets.numGroupsY);
+    GL::memoryBarrier(GL::Barrier::Storage);
 
     current.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_RESERVOIRS_CURRENT);
     prev.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_RESERVOIRS_SPATIAL_INPUT);
     spatial.setFloat("radius_pixels", SPATIAL_RADIUS_PASS_2);
     spatial.setInt("pass_index", 1);
     spatial.setInt("test_visibility", 1);
-    glDispatchCompute(targets.numGroupsX, targets.numGroupsY, 1);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    GL::dispatch(targets.numGroupsX, targets.numGroupsY);
+    GL::memoryBarrier(GL::Barrier::Storage);
 
     useAAsCurrent = !useAAsCurrent;
 }

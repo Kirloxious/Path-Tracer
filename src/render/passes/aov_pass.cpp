@@ -2,10 +2,9 @@
 
 #include <utility>
 
-#include <glad/glad.h>
-
 #include "core/log.h"
 #include "core/shader_shared.h"
+#include "gpu/gl.h"
 
 AovPass::AovPass() : shader("shader/aov.comp") {}
 
@@ -29,6 +28,6 @@ void AovPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     shader.setFloat("depth_max", settings.aovDepthMax);
     shader.setFloat("bvh_cost_max", settings.aovBvhCostMax);
 
-    glDispatchCompute(targets.numGroupsX, targets.numGroupsY, 1);
-    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+    GL::dispatch(targets.numGroupsX, targets.numGroupsY);
+    GL::memoryBarrier(GL::Barrier::ImageAccess);
 }

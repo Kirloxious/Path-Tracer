@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "gpu/buffer.h"
-#include "gpu/gl_handle.h"
 #include "gpu/raster_shader.h"
+#include "gpu/vertex_array.h"
 #include "render/render_pass.h"
 
 /**
@@ -58,10 +58,10 @@ public:
 private:
     RasterShader shader;
 
-    VertexArrayHandle vao;
-    Buffer            vbo;
-    Buffer            ebo;
-    GLsizei           indexCount = 0;
+    VertexArray vao;
+    Buffer      vbo;
+    Buffer      ebo;
+    GLsizei     indexCount = 0;
 
     std::vector<DrawRange> drawRanges;
 

@@ -65,6 +65,22 @@ public:
      */
     void blitAttachment(int attachmentIndex, int dstWidth, int dstHeight) const;
 
+    /// Makes this the draw and read framebuffer.
+    void bind() const;
+
+    /// Makes the window's default framebuffer current again.
+    static void bindDefault();
+
+    /**
+     * @brief Clears one colour attachment to @p rgba.
+     * @param attachmentIndex Index into the colour attachments (0-based).
+     * @param rgba            Four floats.
+     */
+    void clearColor(int attachmentIndex, const float* rgba) const;
+
+    /// Clears the depth attachment to @p depth.
+    void clearDepth(float depth) const;
+
     [[nodiscard]] GLuint id() const { return m_handle.get(); }
 
 private:

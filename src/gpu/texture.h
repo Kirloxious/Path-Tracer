@@ -66,6 +66,18 @@ public:
      */
     void bind(int unit, GLenum access) const;
 
+    /**
+     * @brief Binds this texture to a sampler texture unit.
+     * @param unit Texture unit index, matching the shader's `layout(binding = ...)` on a sampler.
+     */
+    void bindSampler(int unit) const;
+
+    /// Sets both the minification and magnification filter, e.g. GL_LINEAR or GL_NEAREST.
+    void setFilter(GLenum filter) const;
+
+    /// Copies mip 0 into @p dst, which must have the same size and a compatible format.
+    void copyTo(const Texture& dst) const;
+
     [[nodiscard]] GLuint id() const { return m_handle.get(); }
 
 private:

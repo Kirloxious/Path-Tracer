@@ -5,6 +5,7 @@
 
 #include "core/log.h"
 #include "gpu/buffer.h"
+#include "gpu/gl.h"
 
 namespace {
 // SSBO binding of each queue's index buffer, indexed by Q_*.
@@ -77,52 +78,52 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
 
     // Every barrier below combines storage + indirect visibility so the next
     // glDispatchComputeIndirect can read the freshly-written args.
-    constexpr GLbitfield BARRIER = GL_SHADER_STORAGE_BARRIER_BIT | GL_COMMAND_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT;
+    constexpr GL::Barrier BARRIER = GL::Barrier::Storage | GL::Barrier::Command | GL::Barrier::BufferUpdate;
 
     queueCounters.clear();
 
     // ---- generate: gbuffer → hit_X queues ----
     generate.use();
-    glDispatchCompute(targets.numGroupsX, targets.numGroupsY, 1);
-    glMemoryBarrier(BARRIER);
+    GL::dispatch(targets.numGroupsX, targets.numGroupsY);
+    GL::memoryBarrier(BARRIER);
 
     for (int b = 0; b < maxBounces; ++b) {
         // Rebuild the hit_* indirect args from the counters that generate (bounce 0) or the
         // previous iteration's trace just filled.
         prepareIndirect.use();
         prepareIndirect.setUInt("clear_mask", CLEAR_MASK_PRE_SHADE);
-        glDispatchCompute(1, 1, 1);
-        glMemoryBarrier(BARRIER);
+        GL::dispatch(1);
+        GL::memoryBarrier(BARRIER);
 
         // The shade kernels read disjoint hit_* queues and only append to ray/shadow, so they
         // are issued back-to-back behind one barrier.
         shadeOpaque.use();
         shadeOpaque.setInt("bounce_index", b);
-        glDispatchComputeIndirect(Q_OPAQUE * DISPATCH_ARG_STRIDE);
+        GL::dispatchIndirect(Q_OPAQUE * DISPATCH_ARG_STRIDE);
 
         shadeTransmissive.use();
         shadeTransmissive.setInt("bounce_index", b);
-        glDispatchComputeIndirect(Q_TRANSMISSIVE * DISPATCH_ARG_STRIDE);
+        GL::dispatchIndirect(Q_TRANSMISSIVE * DISPATCH_ARG_STRIDE);
 
         shadeEmissive.use();
-        glDispatchComputeIndirect(Q_EMISSIVE * DISPATCH_ARG_STRIDE);
+        GL::dispatchIndirect(Q_EMISSIVE * DISPATCH_ARG_STRIDE);
 
-        glMemoryBarrier(BARRIER);
+        GL::memoryBarrier(BARRIER);
 
         prepareIndirect.use();
         prepareIndirect.setUInt("clear_mask", CLEAR_MASK_POST_SHADE);
-        glDispatchCompute(1, 1, 1);
-        glMemoryBarrier(BARRIER);
+        GL::dispatch(1);
+        GL::memoryBarrier(BARRIER);
 
         traceShadow.use();
-        glDispatchComputeIndirect(Q_SHADOW * DISPATCH_ARG_STRIDE);
-        glMemoryBarrier(BARRIER);
+        GL::dispatchIndirect(Q_SHADOW * DISPATCH_ARG_STRIDE);
+        GL::memoryBarrier(BARRIER);
 
         // The last bounce has no next hit to route continuation rays into.
         if (b + 1 < maxBounces) {
             trace.use();
-            glDispatchComputeIndirect(Q_RAY * DISPATCH_ARG_STRIDE);
-            glMemoryBarrier(BARRIER);
+            GL::dispatchIndirect(Q_RAY * DISPATCH_ARG_STRIDE);
+            GL::memoryBarrier(BARRIER);
         }
     }
 
@@ -132,6 +133,6 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     targets.moments.bind(3, GL_READ_WRITE);
 
     resolve.use();
-    glDispatchCompute(targets.numGroupsX, targets.numGroupsY, 1);
-    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+    GL::dispatch(targets.numGroupsX, targets.numGroupsY);
+    GL::memoryBarrier(GL::Barrier::ImageAccess);
 }

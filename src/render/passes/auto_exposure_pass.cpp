@@ -5,6 +5,7 @@
 
 #include "core/log.h"
 #include "core/shader_shared.h"
+#include "gpu/gl.h"
 
 namespace {
 constexpr int HIST_BINS = 256;
@@ -68,8 +69,8 @@ void AutoExposurePass::execute(const RenderContext& ctx, RenderTargets& targets)
     constexpr int HIST_ROWS_PER_GROUP = 16 * HIST_ROWS_PER_THREAD;
     const int     gx = (targets.width + 15) / 16;
     const int     gy = (targets.height + HIST_ROWS_PER_GROUP - 1) / HIST_ROWS_PER_GROUP;
-    glDispatchCompute(gx, gy, 1);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    GL::dispatch(gx, gy);
+    GL::memoryBarrier(GL::Barrier::Storage);
 
     // ---- Reduce + EMA + zero-histogram ----
     reduceShader.use();
@@ -85,6 +86,6 @@ void AutoExposurePass::execute(const RenderContext& ctx, RenderTargets& targets)
     reduceShader.setInt("reset_exposure", primed ? 0 : 1);
     primed = true;
 
-    glDispatchCompute(1, 1, 1);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    GL::dispatch(1);
+    GL::memoryBarrier(GL::Barrier::Storage);
 }

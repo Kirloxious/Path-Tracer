@@ -10,7 +10,7 @@
 #include "render/passes/denoiser_pass.h"
 #include "render/passes/taa_pass.h"
 #include "render/passes/tonemap_pass.h"
-#include "core/gl_debug.h"
+#include "gpu/gl_debug.h"
 #include "render/gui.h"
 #include "core/log.h"
 #include "render/passes/path_tracer_pass.h"
@@ -27,7 +27,6 @@ Application::Application(Scene initialScene)
     : scene(std::move(initialScene)), camera(this->scene.cameraSettings), window(camera.image_width, camera.image_height, this->scene.name.c_str()),
       sceneEntries(sceneRegistry()), renderer(camera.image_width, camera.image_height),
       timeSeed(static_cast<uint32_t>(std::chrono::steady_clock::now().time_since_epoch().count())), runSeed(timeSeed) {
-    Log::info("OpenGL version: {}", reinterpret_cast<const char*>(glGetString(GL_VERSION)));
     Log::info("Image dimensions: {} x {}", camera.image_width, camera.image_height);
 
     // GLDebug::enable();
