@@ -65,8 +65,8 @@ public:
     void updateCameraUbo(const Camera& cam);
 
     /**
-     * @brief Uploads FrameConstants, binds the scene-wide resources, then executes every
-     *        registered pass in order, bracketing each with a GPU timer.
+     * @brief Uploads FrameConstants, rotates the G-buffer, binds the shared resources, then
+     *        executes every registered pass in order, bracketing each with a GPU timer.
      * @param ctx Per-frame state forwarded to each pass.
      */
     void render(const RenderContext& ctx);
@@ -108,9 +108,10 @@ public:
     const PassTimings& getPassTimings() const { return passTimings; }
 
 private:
-    /// Binds everything scene-wide — scene SSBOs, the camera/frame/scene UBOs and the env map —
-    /// at the BIND_* / UBO_* / TEX_* points the shaders declare. Passes bind only their own.
-    void bindSceneResources() const;
+    /// Binds everything scene- and frame-wide — scene SSBOs, the camera/frame/scene UBOs, the
+    /// env map and the current G-buffer textures — at the BIND_* / UBO_* / TEX_* points the
+    /// shaders declare. Passes bind only their own.
+    void bindSharedResources() const;
 
     RenderTargets targets;
     Buffer        lightGroupsSSBO, matsSSBO, bvhNodesSSBO, trianglesSSBO, verticesSSBO, triRefsSSBO, envSamplingSSBO;

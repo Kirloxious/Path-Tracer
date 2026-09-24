@@ -4,6 +4,8 @@
 #include "core/log.h"
 #include "gpu/texture.h"
 
+#include <utility>
+
 RenderTargets::RenderTargets(int w, int h) {
     allocate(w, h);
     Log::info("Render targets: {}x{} — dispatch {}x{} groups of {}x{}", w, h, numGroupsX, numGroupsY, WORK_GROUP_SIZE, WORK_GROUP_SIZE);
@@ -15,6 +17,16 @@ void RenderTargets::resize(int w, int h) {
     }
     allocate(w, h);
     Log::info("Render targets resized: {}x{} — dispatch {}x{} groups of {}x{}", w, h, numGroupsX, numGroupsY, WORK_GROUP_SIZE, WORK_GROUP_SIZE);
+}
+
+void RenderTargets::beginFrame() {
+    std::swap(gbuf, gbuf_prev);
+}
+
+void RenderTargets::endFrame() {
+    // Both TAA textures use LINEAR filtering (see allocate()), so the swap keeps bilinear
+    // reprojection working without re-setting sampler state.
+    std::swap(taa_output, taa_history);
 }
 
 void RenderTargets::allocate(int w, int h) {

@@ -31,13 +31,9 @@ struct RenderTargets
     Texture taa_history;   ///< Previous frame's TAA-resolved LDR image (sampled bilinear for reprojection).
     Texture taa_output;    ///< Scratch target for this frame's TAA write; copied into `display` and swapped into `taa_history`.
 
-    /// Current frame's primary-visibility data.
-    ///
-    /// `gbuf_prev` holds the previous frame's, used for temporal reprojection (ReSTIR temporal
-    /// reuse, motion-vector validation). RasterGBufferPass swaps the pair every frame so
-    /// downstream code can always read `gbuf` as "current" and `gbuf_prev` as "last frame".
+    /// Current frame's primary-visibility data, written by RasterGBufferPass.
     GBuffer gbuf;
-    /// Previous frame's primary-visibility data. See gbuf.
+    /// Previous frame's. Nothing reads it today; it is kept rotated for temporal consumers.
     GBuffer gbuf_prev;
 
     FrameBuffer fb; ///< Wraps `display`, used for the final swap-chain blit.
@@ -65,6 +61,13 @@ struct RenderTargets
      * @param h New height in pixels.
      */
     void resize(int w, int h);
+
+    /// Rotates the G-buffer pair so this frame draws over frame N-2 and frame N-1 survives in
+    /// `gbuf_prev`. Called by Renderer before the first pass.
+    void beginFrame();
+
+    /// Makes this frame's TAA result next frame's history. Called by Renderer after the last pass.
+    void endFrame();
 
 private:
     /// Single allocation path shared by the constructor and resize().

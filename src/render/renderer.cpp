@@ -82,7 +82,7 @@ void Renderer::updateCameraUbo(const Camera& cam) {
     camUBO.update(cam.data);
 }
 
-void Renderer::bindSceneResources() const {
+void Renderer::bindSharedResources() const {
     lightGroupsSSBO.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_LIGHT_GROUPS);
     matsSSBO.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_MATERIALS);
     bvhNodesSSBO.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_BVH_NODES);
@@ -96,6 +96,11 @@ void Renderer::bindSceneResources() const {
     sceneUBO.bindBase(GL_UNIFORM_BUFFER, UBO_SCENE);
 
     envMap.bind(TEX_ENV_MAP);
+
+    // Bound while RasterGBufferPass renders into them. That is not a feedback loop, since the
+    // raster shaders never sample these units.
+    glBindTextureUnit(TEX_GBUF_NORMAL, targets.gbuf.normal.id());
+    glBindTextureUnit(TEX_GBUF_DEPTH, targets.gbuf.depth.id());
 }
 
 void Renderer::render(const RenderContext& ctx) {
@@ -107,7 +112,8 @@ void Renderer::render(const RenderContext& ctx) {
         .run_seed = ctx.runSeed,
     };
     frameUBO.update(frame);
-    bindSceneResources();
+    targets.beginFrame();
+    bindSharedResources();
 
     // Pull in previous frame's per-pass timestamps before we overwrite them.
     passTimings.beginFrame();
@@ -117,6 +123,7 @@ void Renderer::render(const RenderContext& ctx) {
         passTimings.endPass(static_cast<int>(i));
     }
     passTimings.endFrame();
+    targets.endFrame();
 }
 
 bool Renderer::reloadShadersIfChanged() {

@@ -26,8 +26,7 @@ enum class AovMode : int
 /**
  * @brief Runtime-tunable rendering knobs shared between the GUI and the passes that consume them.
  *
- * Shared by reference from Application → GuiPass and to any pass that needs a value (see
- * denoiser_pass.h for the pattern).
+ * Owned by Application, edited by the GUI, and handed to passes through RenderContext::settings.
  *
  * Anything added here must be safely mutable *without* resetting `frameIndex`, which would
  * invalidate progressive accumulation. Values that affect the integrand belong in Scene or

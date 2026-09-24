@@ -40,7 +40,6 @@ void DenoiserPass::execute(const RenderContext&, RenderTargets& targets) {
     // ~0.3 world units at depth 10, so the allowance has to stay well under that to keep a
     // wall out of the floor's filter.
     shader.setFloat("sigma_plane", 0.01f);
-    glBindTextureUnit(TEX_GBUF_DEPTH, targets.gbuf.depth.id());
     // Variance inputs. Both describe the frame, not the ping-pong stage, so they are bound
     // once: `accum` carries the per-pixel history length in its alpha.
     glBindTextureUnit(3, targets.moments.id());

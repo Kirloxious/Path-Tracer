@@ -12,7 +12,6 @@
 #include "render/passes/tonemap_pass.h"
 #include "core/gl_debug.h"
 #include "render/gui.h"
-#include "render/passes/gui_pass.h"
 #include "core/log.h"
 #include "render/passes/path_tracer_pass.h"
 #include "render/passes/raster_gbuffer_pass.h"
@@ -47,14 +46,11 @@ Application::Application(Scene initialScene)
     renderer.addRenderPass(std::make_unique<RestirPass>(camera.image_width, camera.image_height));
     renderer.addRenderPass(std::make_unique<PathTracerPass>(camera.image_width, camera.image_height));
     renderer.addRenderPass(std::make_unique<DenoiserPass>(denoiserShaderPath));
-    renderer.addRenderPass(std::make_unique<BloomPass>(camera.image_width, camera.image_height, settings));
-    renderer.addRenderPass(std::make_unique<AutoExposurePass>(settings));
+    renderer.addRenderPass(std::make_unique<BloomPass>(camera.image_width, camera.image_height));
+    renderer.addRenderPass(std::make_unique<AutoExposurePass>(settings.exposure));
     renderer.addRenderPass(std::make_unique<TonemapPass>());
     renderer.addRenderPass(std::make_unique<TaaPass>());
-    renderer.addRenderPass(std::make_unique<AovPass>(settings));
-
-    renderer.addRenderPass(
-        std::make_unique<GuiPass>(fpsTimer, gpuTimer, renderer.getPassTimings(), sceneEntries, sceneSwitch, settings)); // keep last
+    renderer.addRenderPass(std::make_unique<AovPass>());
 
     renderer.loadScene(scene, camera);
 }
@@ -83,7 +79,16 @@ int Application::run() {
             camera.moving = false;
         }
 
-        RenderContext ctx{scene, camera, ++frameIndex, timeSeed++, static_cast<float>(fpsTimer.deltaTime), samplerSeed(), ++historyFrames};
+        RenderContext ctx{
+            .scene = scene,
+            .camera = camera,
+            .settings = settings,
+            .frameIndex = ++frameIndex,
+            .timeSeed = timeSeed++,
+            .dt = static_cast<float>(fpsTimer.deltaTime),
+            .runSeed = samplerSeed(),
+            .historyFrames = ++historyFrames,
+        };
 
         // Keyed on the never-reset counter: frameIndex sits at 1 for as long as the camera
         // moves, which would pin the jitter and leave TAA nothing new to resolve.
@@ -99,6 +104,8 @@ int Application::run() {
         gpuTimer.start();
         renderer.render(ctx);
         gpuTimer.end();
+
+        Gui::drawStats(fpsTimer, gpuTimer, renderer.getPassTimings(), scene, camera, sceneEntries, sceneSwitch, settings);
 
         window.getFrameBufferSize();
         if (input.debugGBufferNormal) {

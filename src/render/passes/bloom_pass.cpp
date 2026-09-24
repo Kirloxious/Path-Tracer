@@ -9,23 +9,16 @@ constexpr int MIP_COUNT = 5;
 constexpr int MIN_MIP_DIM = 4; // stop halving when smaller than this to avoid degenerate filters
 } // namespace
 
-BloomPass::BloomPass(int w, int h, const RenderSettings& s) : settings(s) {
-    Log::info("BloomPass: loading downsample/upsample shaders");
-    downsampleShader = ComputeShader("shader/bloom_downsample.comp");
-    upsampleShader = ComputeShader("shader/bloom_upsample.comp");
+BloomPass::BloomPass(int w, int h) : downsampleShader("shader/bloom_downsample.comp"), upsampleShader("shader/bloom_upsample.comp") {
     buildMips(w, h);
 }
 
 void BloomPass::buildMips(int w, int h) {
     mips.clear();
-    mipWidths.clear();
-    mipHeights.clear();
 
     int mw = w;
     int mh = h;
     mips.reserve(MIP_COUNT);
-    mipWidths.reserve(MIP_COUNT);
-    mipHeights.reserve(MIP_COUNT);
     for (int i = 0; i < MIP_COUNT; ++i) {
         mw = std::max(mw / 2, MIN_MIP_DIM);
         mh = std::max(mh / 2, MIN_MIP_DIM);
@@ -39,10 +32,8 @@ void BloomPass::buildMips(int w, int h) {
         // between texels without hand-rolling weights per corner.
         glTextureParameteri(mips.back().id(), GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTextureParameteri(mips.back().id(), GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        mipWidths.push_back(mw);
-        mipHeights.push_back(mh);
     }
-    Log::info("BloomPass: mip chain {}x{} → {}x{}", mipWidths.front(), mipHeights.front(), mipWidths.back(), mipHeights.back());
+    Log::info("BloomPass: mip chain {}x{} → {}x{}", mips.front().width, mips.front().height, mips.back().width, mips.back().height);
 }
 
 void BloomPass::resize(int w, int h) {
@@ -56,7 +47,8 @@ bool BloomPass::reloadIfChanged() {
     return any;
 }
 
-void BloomPass::execute(const RenderContext&, RenderTargets& targets) {
+void BloomPass::execute(const RenderContext& ctx, RenderTargets& targets) {
+    const RenderSettings& settings = ctx.settings;
     if (!settings.bloomEnabled) {
         return;
     }
@@ -75,11 +67,11 @@ void BloomPass::execute(const RenderContext&, RenderTargets& targets) {
         glBindTextureUnit(0, srcHandle);
         mips[i].bind(1, GL_WRITE_ONLY);
 
-        downsampleShader.setIVec2("dst_size", mipWidths[i], mipHeights[i]);
+        downsampleShader.setIVec2("dst_size", mips[i].width, mips[i].height);
         downsampleShader.setInt("apply_threshold", i == 0 ? 1 : 0);
 
-        int gx = (mipWidths[i] + 7) / 8;
-        int gy = (mipHeights[i] + 7) / 8;
+        const int gx = (mips[i].width + 7) / 8;
+        const int gy = (mips[i].height + 7) / 8;
         glDispatchCompute(gx, gy, 1);
         glMemoryBarrier(IMG_BARRIER);
     }
@@ -92,11 +84,11 @@ void BloomPass::execute(const RenderContext&, RenderTargets& targets) {
         glBindTextureUnit(0, mips[i].id());
         // The upsample shader does an in-place additive blend, so bind rw.
         mips[i - 1].bind(1, GL_READ_WRITE);
-        upsampleShader.setIVec2("dst_size", mipWidths[i - 1], mipHeights[i - 1]);
+        upsampleShader.setIVec2("dst_size", mips[i - 1].width, mips[i - 1].height);
         upsampleShader.setFloat("strength", 1.0f); // intermediate mips: no attenuation
 
-        int gx = (mipWidths[i - 1] + 7) / 8;
-        int gy = (mipHeights[i - 1] + 7) / 8;
+        const int gx = (mips[i - 1].width + 7) / 8;
+        const int gy = (mips[i - 1].height + 7) / 8;
         glDispatchCompute(gx, gy, 1);
         glMemoryBarrier(IMG_BARRIER);
     }
