@@ -6,7 +6,9 @@
  */
 
 #include <cstdint>
+#include <expected>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -226,38 +228,34 @@ public:
      *
      * create() owns the ordering because the emissive sort has to follow instantiation —
      * object geometry does not exist before it — and scene factories cannot express that.
-     * If validate() rejects the world, the light groups and BVH are skipped rather than built
-     * on unusable data. Calling create() twice does not re-instantiate objects.
+     * Afterwards the world is frozen: every `add*` builder throws std::logic_error.
+     *
+     * @throws std::runtime_error if the geometry is unusable (no triangles, no materials, or
+     *         out-of-range indices).
+     * @throws std::logic_error   if called twice.
      */
     void create();
+
+    /// @return true once create() has succeeded — the precondition for Renderer::loadScene().
+    [[nodiscard]] bool isCreated() const { return created; }
+
+private:
+    /// Flattens every mesh-backed Object into world-space vertices and triangles.
+    void instantiateObjects();
 
     /**
      * @brief Stable-partitions emissive triangles to the front of `triangles`.
      *
      * Records the last emissive index in `emissiveLastIndex`, and permutes `triangleObjectId`
      * in lockstep. The shader's NEE light selection assumes a contiguous emissive prefix.
-     * create() calls this itself; it is idempotent, so an explicit call is redundant.
      */
     void sortEmissiveFirst();
 
-    /**
-     * @brief Checks that the world is usable and reports any problems through Log::.
-     *
-     * Index-range and emissive-sort problems are reported but do not fail the check — they
-     * degrade the image rather than crashing the builder.
-     *
-     * @return false when the world is unusable (no geometry or no materials) — callers must
-     *         not proceed to buildLightGroups() or bvh.build() in that case.
-     */
-    [[nodiscard]] bool validate() const;
+    /// @return Why the world cannot be rendered, if it cannot.
+    [[nodiscard]] std::expected<void, std::string> validate() const;
 
-private:
-    /**
-     * @brief Flattens every mesh-backed Object into world-space vertices and triangles.
-     *
-     * Runs once; `objectsInstantiated` guards a second create() from duplicating geometry.
-     */
-    void instantiateObjects();
+    /// Throws std::logic_error naming @p builder if the world has already been created.
+    void requireEditable(std::string_view builder) const;
 
     /**
      * @brief Registers the auto-object covering triangles appended since @p firstTriangle.
@@ -271,16 +269,16 @@ private:
      */
     uint32_t recordImmediateObject(std::string name, std::size_t firstTriangle);
 
-    bool objectsInstantiated = false;
+    bool created = false;
 
     /**
      * @brief Coalesces emissive triangles into LightGroups and bakes their sampling CDF.
      *
      * Groups consecutive emissive triangles that share a material into a single light, then
      * writes an area-weighted alias table into each emissive triangle's `alias_packed`.
-     * NEE samples a group uniformly, then draws from the alias table to pick a triangle
-     * proportional to area — making a tessellated sphere or quad behave like one uniform area
-     * light regardless of how its triangles are sized (poles vs. equator on a sphere).
+     * NEE picks a group by emitted power, then draws a triangle proportional to area — making
+     * a tessellated sphere or quad behave like one uniform area light regardless of how its
+     * triangles are sized (poles vs. equator on a sphere).
      *
      * Relies on every emissive source being added with a single material — true for
      * addSphere() and addTriQuad(). A scene wanting two distinct lights with the same

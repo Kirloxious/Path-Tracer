@@ -14,9 +14,9 @@
 /**
  * @brief Everything needed to render one scene: geometry, camera setup and environment.
  *
- * Produced entirely by the static factories below. Each factory builds a World, calls
- * World::sortEmissiveFirst() and then World::create(), and returns the finished Scene by
- * value.
+ * Produced entirely by the static factories below. Each factory builds a World, finishes it
+ * with World::create(), and returns the Scene by value. A factory throws if an asset is
+ * missing or the geometry fails validation.
  */
 struct Scene
 {

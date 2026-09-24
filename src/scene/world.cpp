@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <stdexcept>
 #include <chrono>
 #include <cmath>
 #include <format>
@@ -12,8 +13,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "core/log.h"
+#include "core/alias_table.h"
 
 uint32_t World::addMaterial(Material mat) {
+    requireEditable("addMaterial");
     // Derive the shading class on insert, before sortEmissiveFirst() or any upload can read
     // it. The static factories already do this; refreshing here covers materials assembled
     // field-by-field (which is what the scene editor will do).
@@ -23,11 +26,13 @@ uint32_t World::addMaterial(Material mat) {
 }
 
 uint32_t World::addVertex(glm::vec3 position, glm::vec3 normal, uint32_t material_index) {
+    requireEditable("addVertex");
     vertices.emplace_back(position, normal, material_index);
     return static_cast<uint32_t>(vertices.size()) - 1;
 }
 
 void World::addSphere(glm::vec3 center, float radius, uint32_t material_index, int latSegs, int lonSegs) {
+    requireEditable("addSphere");
     const std::size_t firstTriangle = triangles.size();
 
     // Two spheres of one density are two copies — addMeshAsset() + addObject() to share.
@@ -50,6 +55,7 @@ void World::addSphere(glm::vec3 center, float radius, Material mat, int latSegs,
 }
 
 void World::addTriangle(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, uint32_t material_index) {
+    requireEditable("addTriangle");
     const std::size_t firstTriangle = triangles.size();
     const glm::vec3   fn = glm::normalize(glm::cross(v1 - v0, v2 - v0));
     const uint32_t    i0 = addVertex(v0, fn, material_index);
@@ -64,6 +70,7 @@ void World::addTriangle(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, Material mat) 
 }
 
 void World::addTriQuad(glm::vec3 corner, glm::vec3 u, glm::vec3 v, uint32_t material_index) {
+    requireEditable("addTriQuad");
     const std::size_t firstTriangle = triangles.size();
     const glm::vec3   fn = glm::normalize(glm::cross(u, v));
     const uint32_t    ia = addVertex(corner, fn, material_index);
@@ -80,6 +87,7 @@ void World::addTriQuad(glm::vec3 corner, glm::vec3 u, glm::vec3 v, Material mat)
 }
 
 void World::addMesh(const Mesh& mesh, uint32_t material_index) {
+    requireEditable("addMesh");
     const std::size_t firstTriangle = triangles.size();
     const uint32_t    baseVertex = static_cast<uint32_t>(vertices.size());
     vertices.reserve(vertices.size() + mesh.vertices.size());
@@ -94,11 +102,13 @@ void World::addMesh(const Mesh& mesh, uint32_t material_index) {
 }
 
 uint32_t World::addMeshAsset(Mesh mesh) {
+    requireEditable("addMeshAsset");
     meshes.push_back(std::move(mesh));
     return static_cast<uint32_t>(meshes.size()) - 1;
 }
 
 uint32_t World::addObject(std::string name, uint32_t meshId, const glm::mat4& transform, uint32_t material_index) {
+    requireEditable("addObject");
     Object o;
     o.name = std::move(name);
     o.meshId = meshId;
@@ -127,11 +137,6 @@ uint32_t World::recordImmediateObject(std::string name, std::size_t firstTriangl
 }
 
 void World::instantiateObjects() {
-    if (objectsInstantiated) {
-        return;
-    }
-    objectsInstantiated = true;
-
     std::size_t placed = 0;
     for (std::size_t oi = 0; oi < objects.size(); ++oi) {
         Object& o = objects[oi];
@@ -183,6 +188,10 @@ void World::instantiateObjects() {
 }
 
 void World::create() {
+    if (created) {
+        throw std::logic_error("World::create() called twice");
+    }
+
     // Objects first: everything below needs their geometry to exist.
     instantiateObjects();
 
@@ -190,28 +199,38 @@ void World::create() {
     // refreshType(): Material::isEmissive() reads `emission`, not the cached `type`.
     sortEmissiveFirst();
 
-    // A failed validate() means the geometry can't produce a usable BVH — bail before
-    // bvh.build(), whose `assert(!triangles.empty())` is compiled out under NDEBUG and
-    // whose `2 * n - 1` node count underflows to SIZE_MAX for n == 0.
-    if (!validate()) {
-        Log::error("World::create() aborted — scene failed validation");
-        return;
+    if (auto valid = validate(); !valid) {
+        throw std::runtime_error(std::format("Scene failed validation: {}", valid.error()));
     }
-    // Idempotent: re-derive every cached MaterialClass so a material mutated in place since
-    // addMaterial() (scene editor, or a factory assigning fields directly) cannot ship a stale
-    // `type` to the GPU, where it decides queue routing.
+    // Re-derive every cached MaterialClass so a material mutated in place since addMaterial()
+    // cannot ship a stale `type` to the GPU, where it decides queue routing.
     for (Material& m : materials) {
         m.refreshType();
     }
     buildLightGroups();
 
-    const auto start = std::chrono::high_resolution_clock::now();
+    const auto start = std::chrono::steady_clock::now();
     bvh.build(triangles, vertices);
-    const auto end = std::chrono::high_resolution_clock::now();
-
-    const std::chrono::duration<double, std::milli> duration = end - start;
+    const std::chrono::duration<double, std::milli> duration = std::chrono::steady_clock::now() - start;
     Log::info("BVH Build time: {:.2f} ms", duration.count());
+
+    created = true;
 }
+
+void World::requireEditable(std::string_view builder) const {
+    if (created) {
+        throw std::logic_error(std::format("World::{} called after create()", builder));
+    }
+}
+
+namespace {
+/// Packs an alias entry as a unorm16 acceptance probability (bits 31..16) over a 16-bit alias
+/// target (bits 15..0) — the layout Triangle::alias_packed and LightGroup::aliasPacked share.
+uint32_t packAlias(float accept, uint32_t alias) {
+    const auto q = static_cast<uint32_t>(std::lround(std::clamp(accept, 0.0f, 1.0f) * 65535.0f));
+    return (q << 16) | (alias & 0xFFFFu);
+}
+} // namespace
 
 void World::buildLightGroups() {
     lightGroups.clear();
@@ -220,56 +239,22 @@ void World::buildLightGroups() {
     }
     const int end = emissiveLastIndex + 1;
 
-    // Vose alias-table construction over the group's triangles, weighted by area. Sampling
-    // is then: draw a uniform slot, accept it with `prob`, otherwise take its alias — O(1),
-    // one load, versus the log2(count) chain of dependent scattered loads a CDF search cost.
+    // Within a group, triangles are drawn by area, so a tessellated sphere or quad behaves like
+    // one uniform area light however unevenly its triangles are sized.
     auto closeGroup = [&](int begin, int last) {
         const int count = last - begin + 1;
         assert(count <= 0xFFFF && "light group exceeds the 16-bit alias offset in Triangle::alias_packed");
 
-        float total = 0.0f;
-        for (int i = begin; i <= last; ++i) {
-            total += triangles[i].area;
-        }
-
-        // Scaled probabilities: p[i] = count * area[i] / total, so the mean is exactly 1
-        // and each slot is either under- or over-full.
-        std::vector<float> p(static_cast<std::size_t>(count));
-        std::vector<int>   alias(static_cast<std::size_t>(count), 0);
-        std::vector<float> prob(static_cast<std::size_t>(count), 1.0f);
-        std::vector<int>   small;
-        std::vector<int>   large;
-        small.reserve(count);
-        large.reserve(count);
-
+        std::vector<float> areas(static_cast<std::size_t>(count));
+        float              total = 0.0f;
         for (int i = 0; i < count; ++i) {
-            p[i] = (total > 0.0f) ? (static_cast<float>(count) * triangles[begin + i].area / total) : 1.0f;
-            (p[i] < 1.0f ? small : large).push_back(i);
+            areas[i] = triangles[begin + i].area;
+            total += areas[i];
         }
 
-        // Pair each under-full slot with an over-full one until one list empties.
-        while (!small.empty() && !large.empty()) {
-            const int l = small.back();
-            small.pop_back();
-            const int g = large.back();
-            large.pop_back();
-
-            prob[l] = p[l];
-            alias[l] = g;
-            p[g] = (p[g] + p[l]) - 1.0f;
-            (p[g] < 1.0f ? small : large).push_back(g);
-        }
-        // Whatever remains is full to within rounding; accept it unconditionally.
-        for (const int i : large) {
-            prob[i] = 1.0f;
-        }
-        for (const int i : small) {
-            prob[i] = 1.0f;
-        }
-
+        const AliasTable table = buildAliasTable(areas);
         for (int i = 0; i < count; ++i) {
-            const uint32_t q = static_cast<uint32_t>(std::lround(std::clamp(prob[i], 0.0f, 1.0f) * 65535.0f));
-            triangles[begin + i].alias_packed = (q << 16) | (static_cast<uint32_t>(alias[i]) & 0xFFFFu);
+            triangles[begin + i].alias_packed = packAlias(table.accept[i], table.alias[i]);
         }
 
         LightGroup g;
@@ -295,24 +280,22 @@ void World::buildLightGroups() {
     }
     closeGroup(runBegin, end - 1);
 
-    // A second alias table, this time over the groups themselves, weighted by emitted power
-    // (radiance x area) rather than uniformly. Uniform selection gives a dim fill light the
-    // same sample budget as the key light, which is pure variance in any scene whose emitters
-    // differ in brightness — and every scene here does once an HDR sky is not the only source.
     buildLightGroupSelection();
 
     Log::info("Light groups: {} (total {} emissive triangles)", lightGroups.size(), end);
 }
 
 void World::buildLightGroupSelection() {
-    const int n = static_cast<int>(lightGroups.size());
+    const std::size_t n = lightGroups.size();
     if (n == 0) {
         return;
     }
 
-    std::vector<float> weight(static_cast<std::size_t>(n));
+    // Weighted by emitted power (radiance x area) rather than uniformly: uniform selection gives
+    // a dim fill light the same sample budget as the key light.
+    std::vector<float> weight(n);
     double             total = 0.0;
-    for (int i = 0; i < n; ++i) {
+    for (std::size_t i = 0; i < n; ++i) {
         const glm::vec3 e = materials[triangles[lightGroups[i].begin].material_index].emittedRadiance();
         const float     luminance = 0.2126f * e.x + 0.7152f * e.y + 0.0722f * e.z;
         weight[i] = std::max(luminance, 0.0f) * lightGroups[i].totalArea;
@@ -322,84 +305,33 @@ void World::buildLightGroupSelection() {
     // form a valid distribution, or the pdf every caller divides by is zero.
     if (!(total > 0.0)) {
         total = static_cast<double>(n);
-        std::fill(weight.begin(), weight.end(), 1.0f);
+        std::ranges::fill(weight, 1.0f);
     }
 
-    std::vector<float>    p(static_cast<std::size_t>(n));
-    std::vector<uint32_t> alias(static_cast<std::size_t>(n), 0);
-    std::vector<float>    prob(static_cast<std::size_t>(n), 1.0f);
-    std::vector<int>      small, large;
-
-    for (int i = 0; i < n; ++i) {
-        p[i] = static_cast<float>(static_cast<double>(n) * weight[i] / total);
-        (p[i] < 1.0f ? small : large).push_back(i);
-    }
-    while (!small.empty() && !large.empty()) {
-        const int l = small.back();
-        small.pop_back();
-        const int g = large.back();
-        large.pop_back();
-
-        prob[l] = p[l];
-        alias[l] = static_cast<uint32_t>(g);
-        p[g] = (p[g] + p[l]) - 1.0f;
-        (p[g] < 1.0f ? small : large).push_back(g);
-    }
-    for (const int i : large) {
-        prob[i] = 1.0f;
-    }
-    for (const int i : small) {
-        prob[i] = 1.0f;
-    }
-
-    for (int i = 0; i < n; ++i) {
-        const uint32_t q = static_cast<uint32_t>(std::lround(std::clamp(prob[i], 0.0f, 1.0f) * 65535.0f));
-        lightGroups[i].aliasPacked = (q << 16) | (alias[i] & 0xFFFFu);
+    const AliasTable table = buildAliasTable(weight);
+    for (std::size_t i = 0; i < n; ++i) {
+        lightGroups[i].aliasPacked = packAlias(table.accept[i], table.alias[i]);
         lightGroups[i].selectPdf = static_cast<float>(weight[i] / total);
     }
 }
 
-bool World::validate() const {
+std::expected<void, std::string> World::validate() const {
     if (triangles.empty()) {
-        Log::error("World::create() called with no geometry — BVH will be empty");
-        return false;
+        return std::unexpected("no geometry");
     }
     if (materials.empty()) {
-        Log::error("World has no materials — every triangle's material_index is invalid");
-        return false;
+        return std::unexpected("no materials");
     }
 
     const uint32_t numMats = static_cast<uint32_t>(materials.size());
     const uint32_t numVerts = static_cast<uint32_t>(vertices.size());
-    size_t         badTris = 0;
-    size_t         badIndices = 0;
-    for (const auto& t : triangles) {
-        if (t.material_index >= numMats) {
-            ++badTris;
-        }
-        if (t.indices.x >= numVerts || t.indices.y >= numVerts || t.indices.z >= numVerts) {
-            ++badIndices;
-        }
+    const auto     badMaterial = std::ranges::count_if(triangles, [&](const Triangle& t) { return t.material_index >= numMats; });
+    const auto     badVertex = std::ranges::count_if(
+        triangles, [&](const Triangle& t) { return t.indices.x >= numVerts || t.indices.y >= numVerts || t.indices.z >= numVerts; });
+    if (badMaterial > 0 || badVertex > 0) {
+        return std::unexpected(std::format("{} triangle(s) reference an out-of-range material, {} an out-of-range vertex", badMaterial, badVertex));
     }
-    if (badTris > 0) {
-        Log::error("{} triangle(s) reference out-of-range material_index (max = {})", badTris, numMats - 1);
-    }
-    if (badIndices > 0) {
-        Log::error("{} triangle(s) reference out-of-range vertex index (max = {})", badIndices, numVerts - 1);
-    }
-    if (badTris > 0 || badIndices > 0) {
-        return false;
-    }
-
-    const bool hasEmissive = std::any_of(triangles.begin(), triangles.end(), [&](const Triangle& t) {
-        return t.material_index < numMats && materials[t.material_index].isEmissive();
-    });
-    // create() sorts before validating, so this catches a broken sort, not a forgotten one.
-    if (hasEmissive && emissiveLastIndex < 0) {
-        Log::warn("World has emissive triangles but emissiveLastIndex={} — the emissive sort did not run", emissiveLastIndex);
-    }
-
-    return true;
+    return {};
 }
 
 void World::sortEmissiveFirst() {
