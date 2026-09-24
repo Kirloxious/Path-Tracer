@@ -31,10 +31,8 @@ Sampler path_sampler(in PathState s) {
  * @param s                    Path state, mutated in place. `throughput` must already carry
  *                             this scatter's weight; the caller owns the BSDF.
  * @param smp                  Sample stream, drawn from by Russian roulette.
- * @param new_dir              The scattered direction.
- * @param crossed_surface      true when the scatter passed *through* the surface (refraction)
- *                             rather than bouncing off it, which flips the origin offset to
- *                             the far side.
+ * @param new_dir              The scattered direction. The origin is offset to whichever side
+ *                             it leaves on, so refraction needs no flag of its own.
  * @param keep_specular_prefix true only for a perfect-mirror scatter — the one scatter
  *                             restir_initial's deterministic reflect() walk can reproduce.
  *                             Any other lobe ends the chain.
@@ -44,19 +42,11 @@ Sampler path_sampler(in PathState s) {
  *                             lights, optionally OR-ed with FLAG_PREV_ENV_NEE.
  * @return false when Russian roulette killed the path.
  */
-bool path_continue(inout PathState s, inout Sampler smp, vec3 new_dir, bool crossed_surface, bool keep_specular_prefix, uint nee_flags) {
+bool path_continue(inout PathState s, inout Sampler smp, vec3 new_dir, bool keep_specular_prefix, uint nee_flags) {
     // Pinned before the bounce is incremented, so roulette draws from the same group whether
     // or not the BSDF above happened to be a delta lobe that took no samples at all.
-    uint rr_dim = s.bounce * SAMPLER_DIMS_PER_BOUNCE + 11u;
-    // Offset along the *geometric* normal: `hit_normal` is the shading normal, which on
-    // curved surfaces near silhouettes can point past the tangent plane and shove the origin
-    // inside the primitive (the dragon's firefly noise). A gbuffer-fed primary has no
-    // triangle, so it falls back to the shading normal.
-    bool front_face   = (s.flags & FLAG_FRONT_FACE) != 0u;
-    vec3 offset_basis = (s.hit_triangle_idx != NO_TRIANGLE) ? triangle_geom_normal(s.hit_triangle_idx, front_face) : s.hit_normal;
-    //   reflected/scattered: ray stays on the side it came from → offset along +n
-    //   refracted:           ray crosses into the other side    → offset along -n
-    s.ray_origin = s.hit_point + 0.001 * (crossed_surface ? -offset_basis : offset_basis);
+    uint rr_dim  = s.bounce * SAMPLER_DIMS_PER_BOUNCE + 11u;
+    s.ray_origin = surface_ray_origin(s.hit_point, s.hit_triangle_idx, s.hit_normal, new_dir);
     s.ray_dir    = new_dir;
     s.bounce++;
 

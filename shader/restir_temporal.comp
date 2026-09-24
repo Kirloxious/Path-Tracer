@@ -30,11 +30,6 @@ layout(std430, binding = BIND_SURFACES_PREV) restrict readonly buffer RestirSurf
 
 layout(location = 0) uniform int m_cap;
 
-// Validation thresholds. These are deliberately generous for v1; tighten if
-// temporal artefacts (ghosting, light leaking through silhouettes) appear.
-const float NORMAL_DOT_THRESHOLD = 0.9;
-const float WORLD_POS_DELTA      = 0.5;
-
 void main() {
     ivec2 px = ivec2(gl_GlobalInvocationID.xy);
     if (px.x >= image_size.x || px.y >= image_size.y) return;
@@ -65,17 +60,11 @@ void main() {
     ivec2 prev_px = clamp(ivec2(prev_uv * vec2(image_size)), ivec2(0), image_size - 1);
     uint  prev_pid = uint(prev_px.y * image_size.x + prev_px.x);
 
-    // Validate against the previous frame's resampling surface: same material, similar
-    // normal, no large world-space discontinuity. This subsumes the G-buffer checks the
-    // pass used to do — a disocclusion or a foreground/background swap moves the
-    // resampling vertex too, and a mirror that stopped being a mirror invalidates it
-    // outright.
+    // Validated against the previous frame's resampling surface: a disocclusion or a
+    // foreground/background swap moves the resampling vertex too, and a mirror that stopped
+    // being a mirror invalidates it outright.
     RestirSurface prev_surf = prev_surfaces[prev_pid];
-    if (prev_surf.valid == 0u) return;
-    if (prev_surf.matid != cur_surf.matid) return;
-    if (dot(prev_surf.normal, N) < NORMAL_DOT_THRESHOLD) return;
-    vec3 dp = prev_surf.position - P;
-    if (dot(dp, dp) > WORLD_POS_DELTA * WORLD_POS_DELTA) return;
+    if (!restir_surfaces_similar(cur_surf, prev_surf)) return;
 
     Reservoir prev = prev_reservoirs[prev_pid];
     if (prev.M <= 0.0 || prev.light_tri_idx == RESTIR_INVALID_TRI) return;
@@ -114,7 +103,7 @@ void main() {
         Triangle tri = triangles[cur.light_tri_idx];
         vec3     v0  = vertices[tri.indices.x].position;
         vec3     sp  = v0 + cur.bary.x * tri.e1 + cur.bary.y * tri.e2;
-        if (!is_visible(restir_surface_offset_origin(cur_surf), sp, int(cur.light_tri_idx))) {
+        if (!is_visible(restir_surface_offset_origin(cur_surf, sp), sp, NO_SKIP_TRI, int(cur.light_tri_idx))) {
             cur.W = 0.0;
         }
     }

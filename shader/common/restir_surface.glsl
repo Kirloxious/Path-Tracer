@@ -1,6 +1,9 @@
 #ifndef RESTIR_SURFACE_GLSL
 #define RESTIR_SURFACE_GLSL
 
+#include "scene_buffers.glsl"
+#include "geom.glsl"
+
 // The surface a pixel's reservoir actually describes.
 //
 // ReSTIR DI resamples direct lighting at a diffuse surface. For a diffuse primary that is
@@ -47,12 +50,26 @@ vec3 restir_unpack_normal(uint p) {
     return normalize(n);
 }
 
-// Shadow-ray origin for the resampling vertex. Offset along the geometric normal, like
-// path_continue: the shading normal can tilt past the tangent plane on smooth-shaded meshes
-// and start the ray inside the surface. Primary vertices have no triangle and store the
-// shading normal, matching the path tracer's fallback.
-vec3 restir_surface_offset_origin(in RestirSurface s) {
-    return s.position + 0.001 * restir_unpack_normal(s.offset_n);
+// Shadow-ray origin toward `target`. `offset_n` is the geometric normal past a mirror and the
+// shading normal at a primary. Both take the primary's depth margin, since the struct does not
+// record which it is — on a shadow ray a slightly larger offset past a mirror costs nothing.
+vec3 restir_surface_offset_origin(in RestirSurface s, vec3 target) {
+    return offset_primary_origin(s.position, restir_unpack_normal(s.offset_n), target - s.position);
+}
+
+// Reuse gate between two resampling surfaces (temporal history, spatial neighbour).
+//
+// The plane distance, not the Euclidean one: neighbours across a flat wall are valid reuse
+// partners at any lateral distance, while a parallel surface behind a silhouette is not.
+// Tolerance is relative to view distance so it means the same at any scene scale.
+const float RESTIR_NORMAL_DOT_MIN  = 0.9;
+const float RESTIR_PLANE_DIST_REL  = 0.01;
+
+bool restir_surfaces_similar(in RestirSurface self_s, in RestirSurface other) {
+    if (other.valid == 0u || other.matid != self_s.matid) return false;
+    if (dot(other.normal, self_s.normal) < RESTIR_NORMAL_DOT_MIN) return false;
+    float plane_dist = abs(dot(self_s.normal, other.position - self_s.position));
+    return plane_dist <= RESTIR_PLANE_DIST_REL * distance(camera_position, self_s.position);
 }
 
 #endif

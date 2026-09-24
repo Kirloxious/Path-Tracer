@@ -2,6 +2,7 @@
 #define PATH_STATE_GLSL
 
 #include "host_shared.glsl"
+#include "geom.glsl"
 
 // Bits in PathState.flags
 const uint FLAG_FRONT_FACE         = 1u << 0; // last hit's face was front-facing
@@ -9,9 +10,6 @@ const uint FLAG_PREV_NON_SPECULAR  = 1u << 1; // previous bounce ran analytic li
 const uint FLAG_RESTIR_HANDLED     = 1u << 2; // previous bounce owned a ReSTIR reservoir — shade_emissive skips its contribution, since the reservoir already estimated that vertex's area-light integral, empty reservoirs included
 const uint FLAG_SPECULAR_PREFIX    = 1u << 3; // every vertex so far has been a perfect mirror, so this path is still tracking the chain restir_initial walked — the next diffuse vertex it reaches is that pixel's ReSTIR resampling surface
 const uint FLAG_PREV_ENV_NEE       = 1u << 4; // previous bounce ran environment NEE (whether or not its sample was usable) — trace.comp MIS-weights an escaping ray against that density. Independent of the two flags above, which describe the area-light estimator
-
-// hit_triangle_idx of a gbuffer-fed primary hit, which carries only the shading normal.
-const uint NO_TRIANGLE = 0xFFFFFFFFu;
 
 // 96 bytes. Every `vec3 + scalar` pair fits in one 16-byte std430 slot.
 // NEE fields (nee_dir/nee_dist/nee_le) intentionally live in ShadowState below —

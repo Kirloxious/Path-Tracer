@@ -147,10 +147,11 @@ void main() {
     // and the reservoir would describe the wrong surface — those fall through to the null
     // reservoir and keep using inline NEE, exactly as before.
     vec3 ray_dir = normalize(P - camera_position);
-    // Origin offset normal, tracked separately from the shading normal N because
-    // path_continue() offsets along the *geometric* normal once past the primary. N drives
-    // reflect() and ends up in the resampling surface; offset_n only nudges ray origins.
+    // Tracked separately from the shading normal N, which drives reflect() and ends up in the
+    // resampling surface. The walk must spawn every ray exactly as path_continue() does
+    // (surface_ray_origin, skipping the triangle left) or it lands on a different vertex.
     vec3 offset_n = N;
+    int  tri_prev = NO_SKIP_TRI;
 
     for (int depth = 0; depth < MAX_MIRROR_DEPTH; ++depth) {
         // Must agree exactly with bsdf_sample()'s delta branch: that is the one scatter
@@ -162,11 +163,11 @@ void main() {
 
         Ray refl;
         refl.direction = reflect(ray_dir, N);
-        refl.origin = P + 0.001 * offset_n;
+        refl.origin = (tri_prev == NO_SKIP_TRI) ? offset_primary_origin(P, offset_n, refl.direction) : offset_ray_origin(P, offset_n, refl.direction);
 
         HitRecord hit;
         int tri_index;
-        if (!world_hit_stackless(refl, 0.001, 1e30, hit, tri_index)) {
+        if (!world_hit_stackless(refl, 0.0, 1e30, tri_prev, hit, tri_index)) {
             reservoirs[pid] = r;
             surface_invalidate(pid);
             return; // mirror looking at the sky — nothing to resample
@@ -175,7 +176,8 @@ void main() {
         ray_dir = refl.direction;
         P = hit.point;
         N = hit.normal;
-        offset_n = triangle_geom_normal(uint(tri_index), hit.front_face);
+        offset_n = triangle_geom_normal(uint(tri_index));
+        tri_prev = tri_index;
         matid = hit.mat_index;
         mat = mats[matid];
     }
@@ -236,7 +238,7 @@ void main() {
         Triangle tri = triangles[r.light_tri_idx];
         vec3 v0 = vertices[tri.indices.x].position;
         vec3 sp = v0 + r.bary.x * tri.e1 + r.bary.y * tri.e2;
-        if (!is_visible(restir_surface_offset_origin(surf), sp, int(r.light_tri_idx))) {
+        if (!is_visible(restir_surface_offset_origin(surf, sp), sp, NO_SKIP_TRI, int(r.light_tri_idx))) {
             r.W = 0.0;
         }
     }

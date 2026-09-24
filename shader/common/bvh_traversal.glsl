@@ -106,14 +106,21 @@ bool intersect_aabb_entry(in vec3 mn, in vec3 mx, in vec3 inv_dir, in vec3 neg_o
     return t_near <= t_far && t_far > t_min && t_near < t_max;
 }
 
+// Pass as a `skip_tri` argument when there is no triangle to exclude.
+const int NO_SKIP_TRI = -1;
+
 // Closest-hit traversal. Returns triangle index in `out_tri_index` for callers
 // that need it (e.g. NEE light identification).
+//
+// `skip_tri` is the triangle the ray leaves from, or NO_SKIP_TRI. A planar triangle can never
+// legitimately be re-hit by a ray leaving it, so excluding it makes self-intersection on it
+// impossible whatever the float error — the origin offset only has to clear its neighbours.
 //
 // Ordered: at each interior node both children are slab-tested, the nearer is descended
 // into and the farther is pushed. That lets the near subtree shrink `closest` first, so the
 // far subtree is often rejected outright — the skip-pointer scheme this replaced always
 // walked left-first and had no way to express the ordering.
-bool world_hit_stackless(in Ray r, in float t_min, in float t_max, out HitRecord hit, out int out_tri_index) {
+bool world_hit_stackless(in Ray r, in float t_min, in float t_max, in int skip_tri, out HitRecord hit, out int out_tri_index) {
     vec3  inv_dir  = safe_inv_dir(r.direction);
     vec3  neg_ood  = -r.origin * inv_dir;
     float closest  = t_max;
@@ -146,7 +153,7 @@ bool world_hit_stackless(in Ray r, in float t_min, in float t_max, out HitRecord
                 int   tri_idx = tri_refs[first + i];
                 float t;
                 vec2  uv;
-                if (hit_triangle_uv(r, triangles[tri_idx], t_min, closest, t, uv)) {
+                if (tri_idx != skip_tri && hit_triangle_uv(r, triangles[tri_idx], t_min, closest, t, uv)) {
                     closest  = t;
                     best_uv  = uv;
                     best_tri = tri_idx;
@@ -192,8 +199,11 @@ bool world_hit_stackless(in Ray r, in float t_min, in float t_max, out HitRecord
     vec3     n2       = vertices[tri.indices.z].normal;
     vec3     n_interp = normalize((1.0 - best_uv.x - best_uv.y) * n0 + best_uv.x * n1 + best_uv.y * n2);
 
+    // From the barycentrics rather than origin + t * dir: its error then scales with the
+    // vertex magnitude, which is what offset_ray_origin()'s ULP margin is sized against, not
+    // with the length of the ray.
     hit.t              = closest;
-    hit.point          = r.origin + closest * r.direction;
+    hit.point          = vertices[tri.indices.x].position + best_uv.x * tri.e1 + best_uv.y * tri.e2;
     hit.mat_index      = tri.material_index;
     hit.triangle_index = uint(best_tri);
     set_face_normal_local(r.direction, n_interp, hit);
@@ -272,16 +282,17 @@ uint world_hit_cost(in Ray r, in float t_min, in float t_max) {
     return cost;
 }
 
-// Pass as `skip_tri` when the target is not a triangle (the environment).
-const int NO_SKIP_TRI = -1;
+// Shortens a shadow ray relative to its length, so the target's neighbours are not hit at
+// t ~ dist at any scene scale.
+const float SHADOW_T_MAX_SCALE = 1.0 - 1e-4;
 
 // Shadow visibility. Emitters occlude like any other surface — a BSDF ray stops at them, and
-// NEE has to agree or the MIS pair integrates two different things. Only the target light
-// triangle itself is exempt, against grazing hits near its own edges.
+// NEE has to agree or the MIS pair integrates two different things. The origin and target
+// triangles are exempt; either may be NO_SKIP_TRI.
 //
 // Any-hit, so there is nothing to gain from near-first ordering: the first occluder found
 // ends the walk whatever order they come in.
-bool is_visible(in vec3 origin, in vec3 target, int skip_tri) {
+bool is_visible(in vec3 origin, in vec3 target, int origin_tri, int target_tri) {
     vec3  d        = target - origin;
     float dist2    = dot(d, d);
     float inv_dist = inversesqrt(dist2);
@@ -291,8 +302,8 @@ bool is_visible(in vec3 origin, in vec3 target, int skip_tri) {
     Ray   shadow  = Ray(origin, ndir);
     vec3  inv_dir = safe_inv_dir(ndir);
     vec3  neg_ood = -shadow.origin * inv_dir;
-    float t_min   = 0.001;
-    float t_max   = dist - 0.001;
+    float t_min   = 0.0;
+    float t_max   = dist * SHADOW_T_MAX_SCALE;
 
     int stack[BVH_STACK_SIZE];
     int sp  = 0;
@@ -308,7 +319,7 @@ bool is_visible(in vec3 origin, in vec3 target, int skip_tri) {
                 int first = floatBitsToInt(amin.w);
                 for (int i = 0; i < count; ++i) {
                     int tri_idx = tri_refs[first + i];
-                    if (tri_idx != skip_tri && hit_triangle_any(shadow, triangles[tri_idx], t_min, t_max)) {
+                    if (tri_idx != origin_tri && tri_idx != target_tri && hit_triangle_any(shadow, triangles[tri_idx], t_min, t_max)) {
                         return false;
                     }
                 }

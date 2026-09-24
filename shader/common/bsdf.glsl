@@ -344,8 +344,7 @@ bool bsdf_sample(Material m, vec3 N, vec3 V, inout Sampler smp, out vec3 out_L, 
 /// the reflect/refract coin flip the kernel used before roughness meant anything here.
 ///
 /// @param eta             Relative IOR being crossed into: 1/ior entering, ior leaving.
-/// @param out_transmitted true when the ray passed through rather than bouncing off, which the
-///                        caller needs in order to offset the new origin to the far side.
+/// @param out_transmitted true when the ray passed through rather than bouncing off.
 /// @param out_pdf         solid-angle density of a *reflected* sample, for MIS against NEE on
 ///                        the same lobe. Zero when the ray refracted or the interface is
 ///                        smooth: no explicit direction sample competes for either, so an

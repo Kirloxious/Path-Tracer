@@ -19,7 +19,7 @@ void main() {
 
     HitRecord hit;
     int       tri_index;
-    if (!world_hit_stackless(r, 0.001, 1e30, hit, tri_index)) {
+    if (!world_hit_stackless(r, 0.0, 1e30, int(states[pid].hit_triangle_idx), hit, tri_index)) {
         // Miss — the ray escaped to the environment. Only continuation rays reach trace.comp
         // (generate.comp handles the primary sky), so this contribution is always indirect.
         //
