@@ -39,8 +39,9 @@ public:
      * and gets a single zeroed light group. The envmap is rebuilt from
      * `scene.envMapPath`, or cleared to an invalid EnvMap when the path is empty.
      *
-     * @throws std::runtime_error if the envmap cannot be loaded. Nothing has been replaced at
-     *         that point, so the previously loaded scene stays usable.
+     * @throws std::runtime_error if the envmap cannot be loaded, and std::logic_error if
+     *         World::create() was never called. Nothing has been replaced at that point, so
+     *         the previously loaded scene stays usable.
      *
      * @param scene  Scene to upload. Must already have had World::create() run on it.
      * @param camera Camera whose CameraData seeds the UBO.

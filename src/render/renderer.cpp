@@ -1,5 +1,6 @@
 #include "render/renderer.h"
 
+#include <format>
 #include <memory>
 #include <stdexcept>
 
@@ -18,6 +19,9 @@ Renderer::Renderer(int w, int h) : targets(w, h) {
 
 void Renderer::loadScene(const Scene& scene, const Camera& camera) {
     const World& world = scene.world;
+    if (!world.isCreated()) {
+        throw std::logic_error(std::format("Scene '{}' reached the renderer without World::create()", scene.name));
+    }
 
     // The only step that can fail, so it runs first: a throw leaves the previous scene intact.
     EnvMap nextEnvMap;

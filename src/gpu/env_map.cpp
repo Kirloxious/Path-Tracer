@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "core/log.h"
+#include "core/alias_table.h"
 
 namespace {
 /// Sampling-grid ceiling. The grid only has to resolve *where* the energy is well enough for
@@ -103,44 +104,15 @@ void EnvMap::buildSamplingTable(const float* rgba, int w, int h) {
         }
     }
 
-    // Vose alias construction, as in World::buildLightGroups: scaled probabilities have mean
-    // exactly 1, so each slot is either under- or over-full and can be paired off.
-    std::vector<float>    p(static_cast<std::size_t>(n));
-    std::vector<uint32_t> alias(static_cast<std::size_t>(n), 0);
-    std::vector<float>    accept(static_cast<std::size_t>(n), 1.0f);
-    std::vector<int>      small, large;
-    small.reserve(n);
-    large.reserve(n);
-
-    for (int i = 0; i < n; ++i) {
-        p[i] = static_cast<float>(static_cast<double>(n) * weight[i] / total);
-        (p[i] < 1.0f ? small : large).push_back(i);
-    }
-    while (!small.empty() && !large.empty()) {
-        const int l = small.back();
-        small.pop_back();
-        const int g = large.back();
-        large.pop_back();
-
-        accept[l] = p[l];
-        alias[l] = static_cast<uint32_t>(g);
-        p[g] = (p[g] + p[l]) - 1.0f;
-        (p[g] < 1.0f ? small : large).push_back(g);
-    }
-    for (const int i : large) {
-        accept[i] = 1.0f;
-    }
-    for (const int i : small) {
-        accept[i] = 1.0f;
-    }
+    const AliasTable table = buildAliasTable(weight);
 
     // p(omega) = p_cell * sw * sh / (2 pi^2 sin(theta)); everything but the sin is per-cell.
     const double pdfScale = static_cast<double>(sw) * sh / (total * 2.0 * pi * pi);
 
     cells.resize(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i) {
-        cells[i].accept = std::clamp(accept[i], 0.0f, 1.0f);
-        cells[i].alias = alias[i];
+        cells[i].accept = std::clamp(table.accept[i], 0.0f, 1.0f);
+        cells[i].alias = table.alias[i];
         cells[i].pdfNumerator = static_cast<float>(weight[i] * pdfScale);
     }
 
