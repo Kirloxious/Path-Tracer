@@ -38,8 +38,8 @@ struct KeyMappings
 /**
  * @brief Owns the GLFW window and its OpenGL 4.6 core context.
  *
- * Construction failure is reported through Log::error and leaves `window` null rather than
- * throwing — callers should check `window` before using the context.
+ * Construction throws std::runtime_error if GLFW, the window or the GL loader fails, so a
+ * constructed Window always has a current 4.6 context.
  */
 class Window
 {
@@ -79,7 +79,7 @@ public:
     Window(Window&&) = delete;
     Window& operator=(Window&&) = delete;
 
-    /// @return true once the user has closed the window or the context failed to create.
+    /// @return true once the user has closed the window.
     [[nodiscard]] bool shouldClose() const;
 
     /**

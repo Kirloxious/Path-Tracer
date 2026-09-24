@@ -19,8 +19,12 @@ void DenoiserPass::uploadUniforms(const Scene&, const Camera& camera) {
     shader.setFloat("sigma_plane", 0.01f);
 }
 
-bool DenoiserPass::reloadIfChanged(const RenderContext&) {
-    return shader.reloadIfChanged();
+bool DenoiserPass::reloadIfChanged(const RenderContext& ctx) {
+    if (!shader.reloadIfChanged()) {
+        return false;
+    }
+    uploadUniforms(ctx.scene, ctx.camera);
+    return true;
 }
 
 void DenoiserPass::resize(int w, int h) {

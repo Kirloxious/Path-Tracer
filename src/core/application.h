@@ -65,17 +65,20 @@ private:
 
     static Scene defaultScene() { return Scene::CornellBox(); };
 
-    Scene    scene;
-    Camera   camera;
-    Window   window;
-    Renderer renderer;
+    Scene  scene;
+    Camera camera;
+    Window window;
 
+    // Everything from here to `renderer` needs the GL context and is referenced by passes the
+    // renderer owns, so it must be constructed after `window` and destroyed after `renderer`.
     GPUTimer gpuTimer;
     FPSTimer fpsTimer;
 
     std::vector<SceneEntry> sceneEntries;
     Gui::SceneSwitchState   sceneSwitch;
     RenderSettings          settings;
+
+    Renderer renderer;
 
     /// Seeded from system time at construction so different runs don't share frame-1 noise.
     uint32_t timeSeed;

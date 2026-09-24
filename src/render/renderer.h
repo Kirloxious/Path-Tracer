@@ -35,8 +35,8 @@ public:
     /**
      * @brief (Re)uploads all scene buffers and re-fires uploadUniforms() on every pass.
      *
-     * Used both at startup and when the GUI requests a scene switch. An unlit scene is legal:
-     * the light-groups SSBO is simply not uploaded. The envmap is rebuilt from
+     * Used both at startup and when the GUI requests a scene switch. An unlit scene is legal
+     * and gets a single zeroed light group. The envmap is rebuilt from
      * `scene.envMapPath`, or cleared to an invalid EnvMap when the path is empty.
      *
      * @param scene  Scene to upload. Must already have had World::create() run on it.

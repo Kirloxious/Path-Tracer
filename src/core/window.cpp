@@ -2,6 +2,7 @@
 #include "core/log.h"
 #include <GLFW/glfw3.h>
 #include <cstdlib>
+#include <stdexcept>
 #include <string>
 
 static void glfwErrorCallback(int error, const char* description) {
@@ -36,8 +37,7 @@ Window::Window(int width, int height, std::string_view windowTitle) : width(widt
     glfwSetErrorCallback(glfwErrorCallback);
 
     if (!glfwInit()) {
-        Log::error("Failed to initialise GLFW");
-        return;
+        throw std::runtime_error("Failed to initialise GLFW");
     }
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
@@ -57,15 +57,16 @@ Window::Window(int width, int height, std::string_view windowTitle) : width(widt
 
     window = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
     if (!window) {
-        Log::error("Failed to create GLFW window");
-        return;
+        glfwTerminate();
+        throw std::runtime_error("Failed to create GLFW window (is OpenGL 4.6 available?)");
     }
 
     glfwMakeContextCurrent(window);
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-        Log::error("Failed to initialize GLAD");
-        return;
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        throw std::runtime_error("Failed to load OpenGL entry points (GLAD)");
     }
     glfwSwapInterval(0);
 
@@ -101,9 +102,7 @@ Window::~Window() {
 }
 
 bool Window::shouldClose() const {
-    // A null window means construction failed. Without this the main loop spins forever:
-    // glfwWindowShouldClose(nullptr) raises GLFW_INVALID_VALUE and returns 0.
-    return window == nullptr || glfwWindowShouldClose(window);
+    return glfwWindowShouldClose(window);
 }
 
 void Window::makeCurrentContext() {

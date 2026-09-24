@@ -10,13 +10,11 @@ Renderer::Renderer(int w, int h) : targets(w, h) {
 }
 
 void Renderer::loadScene(const Scene& scene, const Camera& camera) {
-    // Empty SSBOs warn loudly in Buffer::Buffer; an unlit scene is legal so we elide upload.
-    // Scene SSBOs are uploaded once and never touched again by the CPU — GL_STATIC_DRAW
-    // is the honest hint (was GL_STREAM_COPY, which suggested per-frame streaming and
-    // could push the driver to keep them in mapped host memory instead of VRAM).
-    if (!scene.world.lightGroups.empty()) {
-        lightGroupsSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 0, scene.world.lightGroups, GL_STATIC_DRAW);
-    }
+    // An unlit scene still gets one zeroed group, so binding 0 never keeps the previous
+    // scene's lights; the shaders gate every read on num_light_groups.
+    const std::vector<World::LightGroup> noLights(1);
+    const auto&                          lightGroups = scene.world.lightGroups.empty() ? noLights : scene.world.lightGroups;
+    lightGroupsSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 0, lightGroups, GL_STATIC_DRAW);
     matsSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 1, scene.world.materials, GL_STATIC_DRAW);
     camUBO = Buffer(GL_UNIFORM_BUFFER, 2, camera.data, GL_DYNAMIC_DRAW); // updated every frame
     bvhNodesSSBO = Buffer(GL_SHADER_STORAGE_BUFFER, 3, scene.world.bvh.nodes, GL_STATIC_DRAW);

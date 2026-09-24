@@ -25,7 +25,7 @@ static const std::filesystem::path gbufferFragPath = "shader/gbuffer.frag";
 
 Application::Application(Scene initialScene)
     : scene(std::move(initialScene)), camera(this->scene.cameraSettings), window(camera.image_width, camera.image_height, this->scene.name.c_str()),
-      renderer(camera.image_width, camera.image_height), sceneEntries(sceneRegistry()),
+      sceneEntries(sceneRegistry()), renderer(camera.image_width, camera.image_height),
       timeSeed(static_cast<uint32_t>(std::chrono::steady_clock::now().time_since_epoch().count())), runSeed(timeSeed) {
     Log::info("OpenGL version: {}", reinterpret_cast<const char*>(glGetString(GL_VERSION)));
     Log::info("Image dimensions: {} x {}", camera.image_width, camera.image_height);
