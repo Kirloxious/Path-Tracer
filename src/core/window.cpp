@@ -1,5 +1,6 @@
 #include "core/window.h"
 #include "core/log.h"
+#include "gpu/gl.h"
 #include <GLFW/glfw3.h>
 #include <cstdlib>
 #include <stdexcept>
@@ -77,7 +78,7 @@ Window::Window(int width, int height, std::string_view windowTitle) : width(widt
     //
     // Three things must agree or depth testing silently inverts: this call, the projection,
     // and RasterGBufferPass's GL_GREATER + 0.0 clear.
-    glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
+    GL::setClipDepthZeroToOne();
 
     // Route framebuffer resize events into pending{Width,Height,Resize} so the
     // main loop can reallocate render targets between frames.
@@ -92,8 +93,8 @@ Window::Window(int width, int height, std::string_view windowTitle) : width(widt
         self->pendingHeight = fbH;
     });
 
-    Log::info("GL vendor: {}", reinterpret_cast<const char*>(glGetString(GL_VENDOR)));
-    Log::info("GL renderer: {}", reinterpret_cast<const char*>(glGetString(GL_RENDERER)));
+    const GL::ContextInfo info = GL::contextInfo();
+    Log::info("OpenGL {} — {} ({})", info.version, info.renderer, info.vendor);
 }
 
 Window::~Window() {

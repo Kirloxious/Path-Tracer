@@ -53,12 +53,10 @@ void RenderTargets::allocate(int w, int h) {
     fb = FrameBuffer(display);
 
     // Both TAA textures get LINEAR filtering so that after each frame's swap (history
-    // ↔ output) the incoming taa_history handle keeps bilinear reprojection working
-    // without any per-frame glTextureParameteri fixup. Image writes ignore filter mode.
-    for (const Texture* t : {&taa_history, &taa_output}) {
-        glTextureParameteri(t->id(), GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTextureParameteri(t->id(), GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    }
+    // ↔ output) the incoming taa_history keeps bilinear reprojection working without any
+    // per-frame fixup. Image writes ignore filter mode.
+    taa_history.setFilter(GL_LINEAR);
+    taa_output.setFilter(GL_LINEAR);
 
     width = w;
     height = h;

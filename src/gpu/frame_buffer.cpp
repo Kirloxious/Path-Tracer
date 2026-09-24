@@ -47,6 +47,22 @@ FrameBuffer::FrameBuffer(const std::vector<const Texture*>& colorAttachments, co
     }
 }
 
+void FrameBuffer::bind() const {
+    glBindFramebuffer(GL_FRAMEBUFFER, id());
+}
+
+void FrameBuffer::bindDefault() {
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void FrameBuffer::clearColor(int attachmentIndex, const float* rgba) const {
+    glClearNamedFramebufferfv(id(), GL_COLOR, attachmentIndex, rgba);
+}
+
+void FrameBuffer::clearDepth(float depth) const {
+    glClearNamedFramebufferfv(id(), GL_DEPTH, 0, &depth);
+}
+
 void FrameBuffer::blit(int dstWidth, int dstHeight) const {
     blitAttachment(0, dstWidth, dstHeight);
 }

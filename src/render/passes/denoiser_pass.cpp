@@ -5,6 +5,7 @@
 #include "gpu/compute_shader.h"
 #include "core/log.h"
 #include "core/shader_shared.h"
+#include "gpu/gl.h"
 #include "render/render_pass.h"
 
 DenoiserPass::DenoiserPass(const std::filesystem::path& shaderPath) {
@@ -44,23 +45,23 @@ void DenoiserPass::execute(const RenderContext&, RenderTargets& targets) {
     shader.setFloat("sigma_plane", 0.01f);
     // Variance inputs. Both describe the frame, not the ping-pong stage, so they are bound
     // once: `accum` carries the per-pixel history length in its alpha.
-    glBindTextureUnit(3, targets.moments.id());
-    glBindTextureUnit(4, targets.accum.id());
+    targets.moments.bindSampler(3);
+    targets.accum.bindSampler(4);
 
     for (std::size_t pass = 0; pass < steps.size(); ++pass) {
         // Source and normals are sampled, not image-bound: pass 0 reads `accum` (rgba32f)
         // and later passes read the rgba16f ping-pong pair, which a single image format
         // qualifier could not cover. Only the destination stays an image.
-        glBindTextureUnit(0, srcs[pass]->id());
-        glBindTextureUnit(1, targets.normals.id());
+        srcs[pass]->bindSampler(0);
+        targets.normals.bindSampler(1);
         dsts[pass]->bind(2, GL_WRITE_ONLY);
         shader.setInt("step_size", steps[pass]);
         // Pass 0's source is `accum`, whose alpha is the history length; from pass 1 on the
         // alpha is the variance the previous pass filtered, which is what this selects between.
         shader.setInt("first_pass", pass == 0 ? 1 : 0);
-        glDispatchCompute(targets.numGroupsX, targets.numGroupsY, 1);
+        GL::dispatch(targets.numGroupsX, targets.numGroupsY);
         // Written as an image, read back as a sampler — the fetch barrier is the one that
         // orders that, not the image-access bit alone.
-        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+        GL::memoryBarrier(GL::Barrier::ImageAccess | GL::Barrier::TextureFetch);
     }
 }

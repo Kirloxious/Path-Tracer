@@ -123,5 +123,5 @@ void EnvMap::bind(int unit) const {
     if (!valid()) {
         return;
     }
-    glBindTextureUnit(static_cast<GLuint>(unit), texture.id());
+    texture.bindSampler(unit);
 }

@@ -3,13 +3,14 @@
 #include <vector>
 
 #include "core/log.h"
+#include "gpu/gl.h"
 #include "scene/primitive.h"
 #include "scene/world.h"
 
 RasterGBufferPass::RasterGBufferPass(const std::filesystem::path& vertPath, const std::filesystem::path& fragPath) : shader(vertPath, fragPath) {}
 
 void RasterGBufferPass::buildGeometry(const World& world) {
-    vao.reset();
+    vao = VertexArray();
     vbo = Buffer();
     ebo = Buffer();
     indexCount = 0;
@@ -68,25 +69,13 @@ void RasterGBufferPass::buildGeometry(const World& world) {
     vbo = Buffer(world.vertices, GL_STATIC_DRAW);
     ebo = Buffer(indices, GL_STATIC_DRAW);
 
-    GLuint vaoId = 0;
-    glCreateVertexArrays(1, &vaoId);
-    vao.reset(vaoId);
-
-    constexpr GLuint bindingIndex = 0;
-    glVertexArrayVertexBuffer(vaoId, bindingIndex, vbo.id(), 0, sizeof(Vertex));
-    glVertexArrayElementBuffer(vaoId, ebo.id());
-
-    glEnableVertexArrayAttrib(vaoId, 0);
-    glVertexArrayAttribFormat(vaoId, 0, 3, GL_FLOAT, GL_FALSE, offsetof(Vertex, position));
-    glVertexArrayAttribBinding(vaoId, 0, bindingIndex);
-
-    glEnableVertexArrayAttrib(vaoId, 1);
-    glVertexArrayAttribFormat(vaoId, 1, 3, GL_FLOAT, GL_FALSE, offsetof(Vertex, normal));
-    glVertexArrayAttribBinding(vaoId, 1, bindingIndex);
-
-    glEnableVertexArrayAttrib(vaoId, 2);
-    glVertexArrayAttribIFormat(vaoId, 2, 1, GL_UNSIGNED_INT, offsetof(Vertex, material_index));
-    glVertexArrayAttribBinding(vaoId, 2, bindingIndex);
+    constexpr GLuint binding = 0;
+    vao = VertexArray::create();
+    vao.setVertexBuffer(binding, vbo, sizeof(Vertex));
+    vao.setElementBuffer(ebo);
+    vao.setFloatAttribute(0, binding, 3, offsetof(Vertex, position));
+    vao.setFloatAttribute(1, binding, 3, offsetof(Vertex, normal));
+    vao.setUIntAttribute(2, binding, 1, offsetof(Vertex, material_index));
 
     Log::info("RasterGBufferPass: {} vertices, {} indices ({} triangles) across {} object run(s)",
               world.vertices.size(),
@@ -108,34 +97,32 @@ void RasterGBufferPass::execute(const RenderContext&, RenderTargets& targets) {
         return;
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, targets.gbuf.fb.id());
-    glViewport(0, 0, targets.gbuf.width, targets.gbuf.height);
+    const FrameBuffer& fb = targets.gbuf.fb;
+    fb.bind();
+    GL::setViewport(targets.gbuf.width, targets.gbuf.height);
 
-    glEnable(GL_DEPTH_TEST);
-    // Reversed-Z: the projection maps far to 0 and near to 1, so "closer" is now "greater".
-    // Must stay in lockstep with makeReversedZProjection() and the 0.0 depth clear below.
-    glDepthFunc(GL_GREATER);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
-    // Scenes here don't enforce a consistent winding (e.g. Cornell-box lids wind inward), so
-    // we draw both sides and let the fragment shader flip normals against the view direction —
-    // mirroring the path tracer's own set_face_normal convention.
-    glDisable(GL_CULL_FACE);
+    GL::applyRasterState({
+        .depthTest = true,
+        // Reversed-Z: the projection maps far to 0 and near to 1, so "closer" is now "greater".
+        // Must stay in lockstep with makeReversedZProjection() and the 0.0 depth clear below.
+        .depthFunc = GL_GREATER,
+        .depthWrite = true,
+        .blend = false,
+        // Scenes here don't enforce a consistent winding (e.g. Cornell-box lids wind inward), so
+        // both sides are drawn and the fragment shader flips normals against the view direction —
+        // mirroring the path tracer's own set_face_normal convention.
+        .cullFace = false,
+    });
 
-    const float zeroNormal[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    const float clearDepth = 0.0f; // reversed-Z: 0 is the far plane
-    glClearNamedFramebufferfv(targets.gbuf.fb.id(), GL_COLOR, GBuffer::ATTACH_NORMAL, zeroNormal);
-    glClearNamedFramebufferfv(targets.gbuf.fb.id(), GL_DEPTH, 0, &clearDepth);
+    constexpr float zeroNormal[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    fb.clearColor(GBuffer::ATTACH_NORMAL, zeroNormal);
+    fb.clearDepth(0.0f); // reversed-Z: 0 is the far plane
 
     shader.use();
-
-    glBindVertexArray(vao.get());
     // `drawRanges` tiles the buffer exactly, so a draw per object would submit the same
     // triangles at N times the CPU cost.
-    glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, nullptr);
-    glBindVertexArray(0);
+    vao.drawTriangles(indexCount);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
+    FrameBuffer::bindDefault();
+    GL::applyRasterState({});
 }

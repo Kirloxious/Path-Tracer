@@ -103,8 +103,8 @@ void Renderer::bindSharedResources() const {
 
     // Bound while RasterGBufferPass renders into them. That is not a feedback loop, since the
     // raster shaders never sample these units.
-    glBindTextureUnit(TEX_GBUF_NORMAL, targets.gbuf.normal.id());
-    glBindTextureUnit(TEX_GBUF_DEPTH, targets.gbuf.depth.id());
+    targets.gbuf.normal.bindSampler(TEX_GBUF_NORMAL);
+    targets.gbuf.depth.bindSampler(TEX_GBUF_DEPTH);
 }
 
 void Renderer::render(const RenderContext& ctx) {
