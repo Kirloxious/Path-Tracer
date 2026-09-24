@@ -55,8 +55,8 @@ public:
     Application& operator=(const Application&) = delete;
 
 private:
-    /// Rebuilds the GPU buffers and re-fires uploadUniforms() when the GUI has requested a
-    /// different scene. No-op when `sceneSwitch.requested` is -1.
+    /// Loads the scene the GUI requested, if any. A scene that fails to build or upload is
+    /// logged and the current one keeps running.
     void applyPendingSceneSwitch();
     /// Restarts progressive accumulation and moves the sampler onto a fresh scramble.
     void resetAccumulation();

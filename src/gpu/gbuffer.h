@@ -9,13 +9,13 @@
 #include "gpu/texture.h"
 
 /**
- * @brief Three MRT targets plus their FBO, holding one frame of primary visibility.
+ * @brief A normal target, a depth target and their FBO, holding one frame of primary visibility.
  *
- * RasterGBufferPass fills these each frame; the path tracer samples them in place of casting
- * primary rays, and ReSTIR's temporal kernel samples the *previous* frame's pair for
- * reprojection. RenderTargets keeps two GBuffers and swaps them every frame.
+ * RasterGBufferPass fills these each frame and the path tracer, ReSTIR, the denoiser, TAA and
+ * the AOV views sample them in place of casting primary rays. RenderTargets keeps two and
+ * rotates them every frame.
  *
- * Non-copyable, movable (the attachments are Textures, which are themselves move-only).
+ * Move-only.
  */
 class GBuffer
 {

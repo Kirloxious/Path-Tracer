@@ -65,12 +65,8 @@ struct alignas(16) Triangle
     ///   bits 31..16  acceptance probability, as a unorm16
     ///   bits 15..0   alias target, as an offset from LightGroup::begin
     ///
-    /// This replaced a cumulative-area CDF that NEE binary-searched. That search was a
-    /// chain of dependent scattered loads — log2(count) of them per candidate, each
-    /// pulling a whole 48-byte Triangle to read one float — and restir_initial draws 32
-    /// candidates per pixel. An alias table samples the same distribution in O(1) from a
-    /// single load. It reuses the CDF's slot so Triangle stays 48 bytes and needs no new
-    /// SSBO binding; shade_lambertian is already at 15 of NVIDIA's 16.
+    /// Stored inline rather than in a separate table so Triangle stays 48 bytes and NEE
+    /// needs no extra SSBO binding under NVIDIA's 16-block limit.
     ///
     /// The 16-bit alias offset caps a light group at 65535 triangles;
     /// World::buildLightGroups() splits longer runs so that stays true.

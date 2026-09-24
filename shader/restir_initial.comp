@@ -84,7 +84,7 @@ bool sample_candidate(vec3 P,
     if (cos_theta <= 0.0) return false;
 
     // Solid-angle pdf, treating the whole group as one uniform area light —
-    // identical to the formula in shade_lambertian.comp's NEE.
+    // identical to the formula in nee.glsl.
     float source_pdf_omega = grp.select_pdf * -2.0 * tri.area * dist2 / (cross_dot * grp.total_area);
     if (source_pdf_omega <= 0.0) return false;
 
@@ -140,17 +140,15 @@ void main() {
 
     // Follow the specular chain to the first diffuse surface, and resample there.
     //
-    // Only perfect mirrors (metal, fuzz == 0) are followed. shade_metal's scatter is
-    // `reflect(ray_dir, N) + fuzz * random_unit_vector(rng)`, which is bit-identical to
-    // plain reflect() when fuzz is 0 — so this walk and the path tracer provably land on
-    // the same vertex, which is what lets shade_lambertian consume a reservoir that was
-    // built by a completely separate traversal. With a non-delta roughness, or through a transmissive surface
+    // Only perfect mirrors are followed. A delta BSDF scatters by plain reflect(), so this
+    // walk and the path tracer provably land on the same vertex, which is what lets
+    // shade_opaque consume a reservoir that was built by a completely separate traversal. With a non-delta roughness, or through a transmissive surface
     // (whose reflect/refract branch is a coin flip on its own RNG), the two would diverge
     // and the reservoir would describe the wrong surface — those fall through to the null
     // reservoir and keep using inline NEE, exactly as before.
     vec3 ray_dir = normalize(P - camera_position);
     // Origin offset normal, tracked separately from the shading normal N because
-    // shade_metal offsets along the *geometric* normal once past the primary. N drives
+    // path_continue() offsets along the *geometric* normal once past the primary. N drives
     // reflect() and ends up in the resampling surface; offset_n only nudges ray origins.
     vec3 offset_n = N;
 
