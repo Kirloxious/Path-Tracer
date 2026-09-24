@@ -13,9 +13,8 @@
 //
 // This is only accurate because the projection is reversed-Z (see makeReversedZProjection
 // in camera.cpp). With the conventional mapping the reconstruction was measured at 2.2e-2
-// world units of error on Cornell Box — twenty times the 0.001 offset the tracer relies on
-// to escape self-intersection. Reversed-Z brings it to 2.9e-4 worst case, with no pixel on
-// any scene exceeding 1e-3.
+// world units of error on Cornell Box, far past any usable self-intersection offset.
+// Reversed-Z brings it to 2.9e-4 worst case; offset_primary_origin() sizes its margin on that.
 layout(binding = TEX_GBUF_NORMAL) uniform sampler2D gbuf_normal_tex;
 layout(binding = TEX_GBUF_DEPTH) uniform sampler2D gbuf_depth_tex;
 

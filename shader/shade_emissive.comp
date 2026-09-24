@@ -61,6 +61,17 @@ void main() {
         return;
     }
 
+    // Emitters are one-sided, by the same winding test NEE and ReSTIR use to reject a
+    // back-facing light sample; emitting here too would light the scene from a side neither
+    // of them can sample. A gbuffer primary has no triangle and is always the visible side.
+    if (s.hit_triangle_idx != NO_TRIANGLE) {
+        Triangle tri = triangles[s.hit_triangle_idx];
+        if (dot(cross(tri.e1, tri.e2), s.ray_dir) >= 0.0) {
+            states[pid] = s;
+            return;
+        }
+    }
+
     // MIS weight for the BSDF estimator. Primary hits and specular continuations have no
     // competing NEE estimator (delta pdfs / camera ray), so weight = 1. For non-specular
     // continuations, the previous bounce's NEE could have sampled this light too; weight

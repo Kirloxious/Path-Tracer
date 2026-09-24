@@ -13,27 +13,26 @@ void main() {
     if (qid >= shadow_queue_count) return;
     uint pid = shadow_queue_idx[qid];
 
-    uint  flags       = states[pid].flags;
-    vec3  hit_point   = states[pid].hit_point;
-    uint  tri_idx     = states[pid].hit_triangle_idx;
-    bool  front_face  = (flags & FLAG_FRONT_FACE) != 0u;
+    vec3 hit_point = states[pid].hit_point;
+    vec3 hit_n     = states[pid].hit_normal;
+    uint tri_idx   = states[pid].hit_triangle_idx;
 
     ShadowState ss = shadow_states[pid];
 
-    // Primary hits do queue shadow rays (environment NEE, glass seen directly) and carry no
-    // triangle, only the view-facing shading normal.
-    vec3 offset_n = (tri_idx != NO_TRIANGLE) ? triangle_geom_normal(tri_idx, front_face) : states[pid].hit_normal;
-    vec3 origin   = hit_point + 0.001 * offset_n;
-
     vec3 add = vec3(0.0);
-    if (ss.nee_valid != 0.0 && is_visible(origin, hit_point + ss.nee_dir * ss.nee_dist, int(ss.nee_tri))) {
-        add += ss.nee_le;
+    if (ss.nee_valid != 0.0) {
+        vec3 origin = surface_ray_origin(hit_point, tri_idx, hit_n, ss.nee_dir);
+        if (is_visible(origin, hit_point + ss.nee_dir * ss.nee_dist, int(tri_idx), int(ss.nee_tri))) {
+            add += ss.nee_le;
+        }
     }
-    // The environment sits at infinity, so anything the ray meets occludes it. The distance
-    // only has to clear the scene bounds; is_visible shortens t_max by an epsilon, which at
-    // this magnitude would round away, hence a value well short of what a float can hold.
-    if (ss.env_valid != 0.0 && is_visible(origin, origin + ss.env_dir * 1e6, NO_SKIP_TRI)) {
-        add += ss.env_le;
+    // The environment sits at infinity, so anything the ray meets occludes it; the distance
+    // only has to clear the scene bounds.
+    if (ss.env_valid != 0.0) {
+        vec3 origin = surface_ray_origin(hit_point, tri_idx, hit_n, ss.env_dir);
+        if (is_visible(origin, origin + ss.env_dir * 1e6, int(tri_idx), NO_SKIP_TRI)) {
+            add += ss.env_le;
+        }
     }
 
     if (dot(add, add) > 0.0) {

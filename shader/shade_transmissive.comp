@@ -75,7 +75,7 @@ void main() {
         // flip on this kernel's samples, which restir_initial's deterministic walk cannot
         // follow. A refracted sample carries pdf 0, so dropping the flags there leaves the
         // next emissive hit at full weight even though NEE fired for the reflection lobe.
-        alive = path_continue(s, smp, dir, transmitted, false, transmitted ? 0u : nee_flags);
+        alive = path_continue(s, smp, dir, false, transmitted ? 0u : nee_flags);
     }
 
     path_commit(pid, s, alive);

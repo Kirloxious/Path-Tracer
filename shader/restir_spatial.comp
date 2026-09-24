@@ -32,9 +32,6 @@ layout(location = 2) uniform int   pass_index;
 // screen's worth of BVH shadow traversals.
 layout(location = 3) uniform int   test_visibility;
 
-const float NORMAL_DOT_THRESHOLD = 0.9;
-const float WORLD_POS_DELTA      = 0.5;
-
 // Upper bound on k_neighbors, fixing the size of the arrays the Z pass below needs. Sized
 // past the k=5 the host dispatches so the uniform can be raised without editing the shader.
 const int MAX_NEIGHBORS = 8;
@@ -92,14 +89,8 @@ void main() {
         if (npx.x < 0 || npx.y < 0 || npx.x >= image_size.x || npx.y >= image_size.y) continue;
         uint npid = uint(npx.y * image_size.x + npx.x);
 
-        // Validate the neighbour's resampling surface against ours: same material,
-        // similar normal, no large world-space gap. Same thresholds as temporal.
         RestirSurface nb = surfaces[npid];
-        if (nb.valid == 0u) continue;
-        if (nb.matid != self_surf.matid) continue;
-        if (dot(nb.normal, N) < NORMAL_DOT_THRESHOLD) continue;
-        vec3 dp = nb.position - P;
-        if (dot(dp, dp) > WORLD_POS_DELTA * WORLD_POS_DELTA) continue;
+        if (!restir_surfaces_similar(self_surf, nb)) continue;
 
         Reservoir other = spatial_input[npid];
         if (other.M <= 0.0 || other.light_tri_idx == RESTIR_INVALID_TRI) continue;
@@ -140,7 +131,7 @@ void main() {
         Triangle tri = triangles[cur.light_tri_idx];
         vec3     v0  = vertices[tri.indices.x].position;
         vec3     sp  = v0 + cur.bary.x * tri.e1 + cur.bary.y * tri.e2;
-        if (!is_visible(restir_surface_offset_origin(self_surf), sp, int(cur.light_tri_idx))) {
+        if (!is_visible(restir_surface_offset_origin(self_surf, sp), sp, NO_SKIP_TRI, int(cur.light_tri_idx))) {
             cur.W = 0.0;
         }
     }

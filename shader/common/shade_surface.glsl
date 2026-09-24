@@ -119,7 +119,7 @@ void shade_surface(uint pid) {
         // on a delta lobe, so whatever that scatter finds is its own and takes full weight. Only
         // a pure mirror keeps the specular prefix — a smooth dielectric's coat was a coin flip.
         uint cont_flags = sampled_delta ? 0u : (nee_flags | (at_restir_anchor ? FLAG_RESTIR_HANDLED : 0u));
-        alive = path_continue(s, smp, scatter_dir, false, sampled_delta && bsdf_is_mirror(mat), cont_flags);
+        alive = path_continue(s, smp, scatter_dir, sampled_delta && bsdf_is_mirror(mat), cont_flags);
     }
 
     path_commit(pid, s, alive);

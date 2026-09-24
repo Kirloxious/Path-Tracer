@@ -100,7 +100,7 @@ void main() {
             Ray  probe;
             probe.origin    = camera_position;
             probe.direction = dir;
-            uint cost       = world_hit_cost(probe, 0.001, 1e30);
+            uint cost       = world_hit_cost(probe, 0.0, 1e30);
             rgb = heatmap(float(cost) / max(bvh_cost_max, 1.0));
             break;
         }
