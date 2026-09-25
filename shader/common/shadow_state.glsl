@@ -3,11 +3,8 @@
 
 #include "host_shared.glsl"
 
-// NEE plumbing from the shade kernels (writers) to trace_shadow (reader). Its own header, out
-// of PathState, so only those kernels declare the SSBO — NVIDIA caps a compute shader at 16.
-//
-// Two independent slots, area light and environment: each technique's directions end where the
-// other's cannot, so both can fire at one vertex without double counting.
+// Separate from PathState so only its writers and trace_shadow declare it (16-block limit). The light and
+// environment slots are independent: both can fire at one vertex without double counting.
 struct ShadowState {
     vec3  nee_dir;
     float nee_dist;
@@ -16,7 +13,7 @@ struct ShadowState {
     vec3  env_dir;
     float env_valid;
     vec3  env_le;
-    uint  nee_tri; // sampled light triangle, exempt from its own shadow test
+    uint  nee_tri; // exempt from its own shadow test
 };
 
 layout(std430, binding = BIND_SHADOW_STATE) restrict buffer ShadowStateBuffer {

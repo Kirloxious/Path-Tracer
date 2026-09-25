@@ -7,22 +7,8 @@
 #include "core/log.h"
 
 namespace {
-// Reversed-Z projection.
-//
-// A conventional projection maps the near plane to depth 0 and far to 1, spending almost
-// all of float32's precision in the first fraction of a unit. With near = 0.1 and
-// far = 1000 that left the reconstruction of world position from depth accurate to only
-// ~2e-2 on Cornell Box (scene scale 55) — twenty times the 0.001 offset the tracer uses to
-// escape self-intersection, and enough to seed shadow acne.
-//
-// Swapping near and far inverts the mapping so the far plane sits at depth 0. Float32 has
-// enormous relative precision near zero, and that is exactly where distant geometry now
-// lands, which very nearly cancels the 1/z distribution of perspective depth. Paired with
-// glClipControl(GL_ZERO_TO_ONE) it turns depth into a well-conditioned quantity across the
-// whole range instead of only near the camera.
-//
-// Requires, in lockstep: glClipControl ZERO_TO_ONE, GL_GREATER depth testing, and clearing
-// depth to 0 rather than 1. See Renderer's init and RasterGBufferPass::execute.
+// Reversed-Z puts distant geometry near depth 0, where float32 is densest, making depth-based
+// position reconstruction usable. Requires ZERO_TO_ONE clip control, GL_GREATER and a 0.0 clear.
 glm::mat4 makeReversedZProjection(const CameraSettings& settings) {
     constexpr float nearPlane = 0.1f;
     constexpr float farPlane = 1000.0f;
@@ -41,7 +27,7 @@ Camera::Camera(const CameraSettings& settings)
 
     forward = glm::normalize(settings.lookat - settings.lookfrom);
     right = glm::normalize(glm::cross(forward, settings.vup));
-    up = glm::cross(right, forward); // ensures orthonormal basis
+    up = glm::cross(right, forward);
 
     pitch = glm::degrees(std::asin(forward.y));
     yaw = glm::degrees(std::atan2(forward.z, forward.x));
@@ -55,7 +41,7 @@ Camera::Camera(const CameraSettings& settings)
 }
 
 namespace {
-// Standard Halton low-discrepancy sequence. Index 0 returns 0, so callers should pass frameIndex+1.
+// Index 0 returns 0, so callers should pass frameIndex + 1.
 float halton(int index, int base) {
     float f = 1.0f;
     float result = 0.0f;
@@ -69,29 +55,21 @@ float halton(int index, int base) {
 } // namespace
 
 void Camera::applyJitter(int frameIndex) {
-    // Halton(2, 3) ∈ [0, 1)² → centered on the pixel ∈ [-0.5, 0.5)². The 0.5 scale
-    // keeps samples in the inner half of each pixel, which halves silhouette wobble
-    // between frames at the cost of ~2× less peak AA coverage. TAA fills the gap.
+    // Scaled to the inner half of the pixel to halve silhouette wobble; TAA covers the lost AA reach.
     constexpr float jitterScale = 0.5f;
     const float     jx_pix = (halton(frameIndex + 1, 2) - 0.5f) * jitterScale;
     const float     jy_pix = (halton(frameIndex + 1, 3) - 0.5f) * jitterScale;
 
-    // Convert pixel offset to NDC. NDC spans [-1, 1] = 2 units across `image_width` pixels.
     const float jx = jx_pix * 2.0f / static_cast<float>(image_width);
     const float jy = jy_pix * 2.0f / static_cast<float>(image_height);
 
-    // Pre-multiplying by translate(jx, jy, 0) shifts post-projection clip-space by
-    // (jx*w, jy*w, 0), which after w-divide is exactly an NDC offset of (jx, jy).
     const glm::mat4 jitterMat = glm::translate(glm::mat4(1.0f), glm::vec3(jx, jy, 0.0f));
     data.projection = jitterMat * baseProjection;
     data.inv_projection = glm::inverse(data.projection);
 }
 
 void Camera::update(const InputState& input, float dt) {
-    // Snapshot last frame's un-jittered view*projection for temporal reprojection.
-    // baseProjection is intentional: applyJitter overwrites data.projection per frame,
-    // and we want motion vectors to ignore sub-pixel jitter so they describe surface
-    // motion only.
+    // Un-jittered, so motion vectors describe surface motion only.
     data.prev_view_proj = baseProjection * data.view;
 
     moving = false;
@@ -160,9 +138,7 @@ void Camera::resize(int w, int h) {
     baseProjection = makeReversedZProjection(settings);
     data.projection = baseProjection;
     data.inv_projection = glm::inverse(data.projection);
-    // Match the constructor: seed prev_view_proj with the current view*projection
-    // so the very next frame's temporal reprojection can't sample against a stale
-    // aspect ratio.
+    // Reseeded so the next frame's reprojection can't use a stale aspect ratio.
     data.prev_view_proj = data.projection * data.view;
 }
 

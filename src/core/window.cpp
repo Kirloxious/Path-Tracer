@@ -12,10 +12,8 @@ static void glfwErrorCallback(int error, const char* description) {
 
 static constexpr const char* appId = "main";
 
-// Hyprland (and most tiling Wayland compositors) will tile any toplevel by default,
-// overriding the size requested at creation. If we're inside a Hyprland session,
-// push a runtime windowrule that floats this app_id at the requested size. The rule
-// lives only for the current session — nothing is written to hyprland.conf.
+// Hyprland tiles every toplevel, overriding the requested size; push a session-only rule
+// that floats this app_id at that size instead.
 static void requestFloatingOnHyprland(int width, int height) {
 #ifdef __linux__
     if (!std::getenv("HYPRLAND_INSTANCE_SIGNATURE")) {
@@ -47,7 +45,7 @@ Window::Window(int width, int height, std::string_view windowTitle) : width(widt
     glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 #endif
 
-    // Cross-platform: these hints are no-ops on platforms where the backend doesn't match.
+    // No-ops on backends that don't match.
     glfwWindowHintString(GLFW_X11_CLASS_NAME, appId);
     glfwWindowHintString(GLFW_X11_INSTANCE_NAME, appId);
 #ifdef GLFW_WAYLAND_APP_ID
@@ -71,17 +69,10 @@ Window::Window(int width, int height, std::string_view windowTitle) : width(widt
     }
     glfwSwapInterval(0);
 
-    // Reversed-Z depth. GL's default clip range maps NDC z to [-1, 1] and then to [0, 1] in
-    // the depth buffer, which wastes half the mantissa before the depth format even sees it.
-    // ZERO_TO_ONE plus the near/far swap in makeReversedZProjection() puts distant geometry
-    // near depth 0, where float32 is densest. GL 4.5+; this context is 4.6.
-    //
-    // Three things must agree or depth testing silently inverts: this call, the projection,
-    // and RasterGBufferPass's GL_GREATER + 0.0 clear.
+    // Reversed-Z: must agree with makeReversedZProjection() and RasterGBufferPass's GL_GREATER
+    // + 0.0 clear, or depth testing silently inverts.
     GL::setClipDepthZeroToOne();
 
-    // Route framebuffer resize events into pending{Width,Height,Resize} so the
-    // main loop can reallocate render targets between frames.
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, [](GLFWwindow* w, int fbW, int fbH) {
         auto* self = static_cast<Window*>(glfwGetWindowUserPointer(w));

@@ -8,21 +8,13 @@
 #include "gpu/gl.h"
 
 namespace {
-// SSBO binding of each queue's index buffer, indexed by Q_*.
 constexpr std::array<GLuint, NUM_QUEUES> QUEUE_BINDINGS = {
     BIND_RAY_QUEUE, BIND_HIT_OPAQUE_QUEUE, BIND_HIT_TRANSMISSIVE_QUEUE, BIND_HIT_EMISSIVE_QUEUE, BIND_SHADOW_QUEUE};
 
-// prepare_indirect writes a uvec4 per queue; glDispatchComputeIndirect reads the first three.
 constexpr GLintptr DISPATCH_ARG_STRIDE = 16;
 
-// Counter slots each prepare_indirect dispatch zeroes once it has written their args.
-// A slot can only be cleared after every kernel that reads it as a loop bound has run.
-//
-//   pass A runs before the shade kernels. ray and shadow were drained last iteration
-//          (by trace and trace_shadow), so they are free to reset here; hit_* must
-//          survive, because the shade kernels are about to read them as bounds.
-//   pass B runs after the shade kernels. hit_* are now drained, while ray and shadow
-//          have just been filled and are read by trace/trace_shadow below.
+// Counter slots each prepare_indirect pass zeroes; a slot clears only once its readers have run.
+// Pass A (before shade) resets ray/shadow and keeps hit_*; pass B (after shade) does the reverse.
 constexpr GLuint CLEAR_MASK_PRE_SHADE = (1u << Q_RAY) | (1u << Q_SHADOW);
 constexpr GLuint CLEAR_MASK_POST_SHADE = (1u << Q_OPAQUE) | (1u << Q_TRANSMISSIVE) | (1u << Q_EMISSIVE);
 } // namespace
@@ -52,8 +44,7 @@ void PathTracerPass::resize(int w, int h) {
 }
 
 bool PathTracerPass::reloadIfChanged() {
-    // Every kernel must be polled — `|=` on separate lines silently drifts when a new
-    // stage is added, so enumerate them once here instead.
+    // Enumerated once: `|=` on separate lines silently drifts when a stage is added.
     const std::initializer_list<std::reference_wrapper<ComputeShader>> kernels = {
         generate, trace, shadeOpaque, shadeTransmissive, shadeEmissive, traceShadow, resolve, prepareIndirect};
 
@@ -76,27 +67,21 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     dispatchArgsSSBO.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_DISPATCH_ARGS);
     dispatchArgsSSBO.bind(GL_DISPATCH_INDIRECT_BUFFER);
 
-    // Every barrier below combines storage + indirect visibility so the next
-    // glDispatchComputeIndirect can read the freshly-written args.
     constexpr GL::Barrier BARRIER = GL::Barrier::Storage | GL::Barrier::Command | GL::Barrier::BufferUpdate;
 
     queueCounters.clear();
 
-    // ---- generate: gbuffer → hit_X queues ----
     generate.use();
     GL::dispatch(targets.numGroupsX, targets.numGroupsY);
     GL::memoryBarrier(BARRIER);
 
     for (int b = 0; b < maxBounces; ++b) {
-        // Rebuild the hit_* indirect args from the counters that generate (bounce 0) or the
-        // previous iteration's trace just filled.
         prepareIndirect.use();
         prepareIndirect.setUInt("clear_mask", CLEAR_MASK_PRE_SHADE);
         GL::dispatch(1);
         GL::memoryBarrier(BARRIER);
 
-        // The shade kernels read disjoint hit_* queues and only append to ray/shadow, so they
-        // are issued back-to-back behind one barrier.
+        // Shade kernels read disjoint hit_* queues and only append to ray/shadow, so one barrier covers all.
         shadeOpaque.use();
         shadeOpaque.setInt("bounce_index", b);
         GL::dispatchIndirect(Q_OPAQUE * DISPATCH_ARG_STRIDE);
@@ -127,7 +112,6 @@ void PathTracerPass::execute(const RenderContext& ctx, RenderTargets& targets) {
         }
     }
 
-    // ---- resolve: states[].radiance → accum, gbuffer normal → normals ----
     targets.accum.bindForAccumulation();
     targets.normals.bind(2, GL_WRITE_ONLY);
     targets.moments.bind(3, GL_READ_WRITE);

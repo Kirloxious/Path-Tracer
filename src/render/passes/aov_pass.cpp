@@ -19,8 +19,6 @@ void AovPass::execute(const RenderContext& ctx, RenderTargets& targets) {
     }
 
     shader.use();
-    // display is bound as image so we overwrite the tonemapped denoiser output.
-    // accum is bound read-only for the variance AOV.
     targets.display.bind(0, GL_WRITE_ONLY);
     targets.accum.bind(1, GL_READ_ONLY);
 

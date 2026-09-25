@@ -16,9 +16,8 @@ Texture::Texture(int width, int height, GLenum internalFormat) : width(width), h
     glTextureParameteri(handle, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTextureParameteri(handle, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    // Zero-initialise. Without this, imageLoad on the accumulation target in the first frame
-    // can return NaN/Inf (driver-dependent), and the shader's `prev_color * 0` term on frame 1
-    // propagates that into every subsequent frame.
+    // Without this, frame-1 imageLoad on the accumulation target can return NaN/Inf on some
+    // drivers, which the running average then propagates forever.
     const float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     GLenum      format = GL_RGBA;
     switch (internalFormat) {

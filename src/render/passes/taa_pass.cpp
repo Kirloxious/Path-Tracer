@@ -21,9 +21,7 @@ void TaaPass::execute(const RenderContext&, RenderTargets& targets) {
     targets.taa_output.bind(2, GL_WRITE_ONLY);
     targets.taa_history.bindSampler(TEX_TAA_HISTORY);
 
-    // High history weight so per-frame jitter mostly cancels out. Catmull-Rom
-    // resampling keeps this from turning into visible blur (which pure bilinear at
-    // this weight would).
+    // High history weight so jitter cancels; Catmull-Rom resampling keeps it from blurring.
     shader.setFloat("blend_alpha", 0.90f);
 
     GL::dispatch(targets.numGroupsX, targets.numGroupsY);

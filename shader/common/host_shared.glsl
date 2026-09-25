@@ -1,8 +1,8 @@
 #ifndef HOST_SHARED_GLSL
 #define HOST_SHARED_GLSL
 
-// Every number the C++ host and the shaders must agree on. src/core/shader_shared.h includes
-// this file verbatim, so it may hold only preprocessor directives and // comments.
+// Numbers the host and shaders must agree on. shader_shared.h includes this verbatim, so it may hold
+// only preprocessor directives and // comments.
 
 // ---- SSBO bindings (GL_SHADER_STORAGE_BUFFER namespace) ----
 #define BIND_LIGHT_GROUPS             0

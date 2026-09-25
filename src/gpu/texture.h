@@ -1,23 +1,10 @@
 #pragma once
 
-/**
- * @file texture.h
- * @brief RAII wrapper around an immutable-storage GL 2D texture.
- */
-
 #include <glad/glad.h>
 
 #include "gpu/gl_handle.h"
 
-/**
- * @brief Owns one immutable-storage `GL_TEXTURE_2D`, usable as a sampler or a compute image.
- *
- * Single mip level, `GL_CLAMP_TO_EDGE` on both axes. Construction failure (non-positive
- * dimensions, or a null pixel pointer on the upload overload) is reported through Log::error
- * and leaves `id()` at 0 rather than throwing.
- *
- * Move-only; a moved-from Texture has `id() == 0`.
- */
+/// Single mip, CLAMP_TO_EDGE. Construction failure is logged and leaves id() at 0.
 class Texture
 {
 public:
@@ -27,55 +14,21 @@ public:
 
     Texture() = default;
 
-    /**
-     * @brief Allocates storage and clears it to zero.
-     *
-     * Uses `GL_NEAREST` filtering — the intended use is `imageLoad`/`imageStore` from compute.
-     * The zero-clear matters: without it an `imageLoad` on the accumulation target in frame 1
-     * can return NaN/Inf on some drivers, and the running average propagates that forever.
-     *
-     * @param width          Texture width in texels; must be > 0.
-     * @param height         Texture height in texels; must be > 0.
-     * @param internalFormat Sized GL internal format (rgba32f by default).
-     */
+    /// Zero-initialised, GL_NEAREST filtering.
     Texture(int width, int height, GLenum internalFormat = GL_RGBA32F);
 
-    /**
-     * @brief Allocates storage and uploads a client-side pixel buffer into it.
-     *
-     * Uses `GL_LINEAR` filtering instead of `GL_NEAREST` — the caller for this overload is
-     * the env-map loader, whose lookups want bilinear filtering.
-     *
-     * @param width          Texture width in texels; must be > 0.
-     * @param height         Texture height in texels; must be > 0.
-     * @param internalFormat Sized GL internal format for the storage.
-     * @param pixelFormat    Client-data channel layout, per glTextureSubImage2D (e.g. GL_RGBA).
-     * @param pixelType      Client-data component type, per glTextureSubImage2D (e.g. GL_FLOAT).
-     * @param pixels         Row-major source pixels; must not be null.
-     */
+    /// GL_LINEAR filtering, for the env map's bilinear lookups.
     Texture(int width, int height, GLenum internalFormat, GLenum pixelFormat, GLenum pixelType, const void* pixels);
 
-    /// Binds this texture as image unit 0 with `GL_READ_WRITE` — the convention for the
-    /// progressive-accumulation target.
     void bindForAccumulation() const;
 
-    /**
-     * @brief Binds this texture as a compute image unit.
-     * @param unit   Image unit index, matching the shader's `layout(binding = ...)`.
-     * @param access One of GL_READ_ONLY, GL_WRITE_ONLY, GL_READ_WRITE.
-     */
     void bind(int unit, GLenum access) const;
 
-    /**
-     * @brief Binds this texture to a sampler texture unit.
-     * @param unit Texture unit index, matching the shader's `layout(binding = ...)` on a sampler.
-     */
     void bindSampler(int unit) const;
 
-    /// Sets both the minification and magnification filter, e.g. GL_LINEAR or GL_NEAREST.
     void setFilter(GLenum filter) const;
 
-    /// Copies mip 0 into @p dst, which must have the same size and a compatible format.
+    /// @p dst must have the same size and a compatible format.
     void copyTo(const Texture& dst) const;
 
     [[nodiscard]] GLuint id() const { return m_handle.get(); }

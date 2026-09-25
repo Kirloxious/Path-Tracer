@@ -14,19 +14,15 @@ constexpr int HIST_BINS = 256;
 AutoExposurePass::AutoExposurePass(float initialExposure)
     : histogramShader("shader/luminance_histogram.comp"), reduceShader("shader/auto_exposure.comp") {
 
-    // ExposureBuffer: { float exposure; float pad[3]; }. Seed with the user's
-    // exposure so the first frame doesn't display a random gain.
+    // Seeded with the user's exposure so the first frame doesn't display a random gain.
     const std::array<float, 4> init = {initialExposure, 0.0f, 0.0f, 0.0f};
     exposureSSBO = Buffer(init, GL_DYNAMIC_COPY);
 
-    // HistogramBuffer: 256 uint bins, zero-initialised.
     const std::array<GLuint, HIST_BINS> zeros{};
     histogramSSBO = Buffer(zeros, GL_DYNAMIC_COPY);
 }
 
 void AutoExposurePass::resize(int, int) {
-    // Re-seed EMA on the new pixel count so the first post-resize frame doesn't
-    // blend a stale exposure derived from a histogram of a different image size.
     primed = false;
 }
 
@@ -43,10 +39,9 @@ void AutoExposurePass::execute(const RenderContext& ctx, RenderTargets& targets)
     histogramSSBO.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_HISTOGRAM);
 
     if (!settings.autoExposureEnabled) {
-        // Manual exposure: just write the slider value into the SSBO so tonemap
-        // sees the same field either way.
+        // Written anyway so tonemap reads one field either way.
         exposureSSBO.update(settings.exposure);
-        primed = false; // re-seed EMA next time auto-exposure is re-enabled
+        primed = false; // re-seed the EMA on re-enable
         return;
     }
 
@@ -55,16 +50,13 @@ void AutoExposurePass::execute(const RenderContext& ctx, RenderTargets& targets)
     const float logLumaRange = logLumaMax - logLumaMin;
     const float invLogLumaRange = (logLumaRange > 1e-4f) ? 1.0f / logLumaRange : 1.0f;
 
-    // ---- Histogram pass ----
     histogramShader.use();
     targets.hdr.bind(0, GL_READ_ONLY);
     histogramShader.setFloat("log_luma_min", logLumaMin);
     histogramShader.setFloat("inv_log_luma_range", invLogLumaRange);
 
-    // Each workgroup is 16x16 threads and each thread walks ROWS_PER_THREAD rows, so a
-    // group covers 16 columns x (16 * ROWS_PER_THREAD) rows. Must match the constant in
-    // luminance_histogram.comp — too few groups silently drops the bottom of the image
-    // from the histogram, which shows up as exposure drifting on dark floors.
+    // Each group covers 16 columns x (16 * ROWS_PER_THREAD) rows; must match luminance_histogram.comp,
+    // or the bottom of the image silently drops out of the histogram.
     constexpr int HIST_ROWS_PER_THREAD = 8;
     constexpr int HIST_ROWS_PER_GROUP = 16 * HIST_ROWS_PER_THREAD;
     const int     gx = (targets.width + 15) / 16;
@@ -72,7 +64,6 @@ void AutoExposurePass::execute(const RenderContext& ctx, RenderTargets& targets)
     GL::dispatch(gx, gy);
     GL::memoryBarrier(GL::Barrier::Storage);
 
-    // ---- Reduce + EMA + zero-histogram ----
     reduceShader.use();
     reduceShader.setFloat("log_luma_min", logLumaMin);
     reduceShader.setFloat("log_luma_range", logLumaRange);

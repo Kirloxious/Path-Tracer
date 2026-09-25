@@ -14,13 +14,9 @@
 #include "nee.glsl"
 #include "path_continue.glsl"
 
-// The final per-pixel reservoirs RestirPass leaves at binding 18.
 layout(std430, binding = BIND_RESERVOIRS_CURRENT) restrict readonly buffer RestirReservoirsCurrent {
     Reservoir reservoirs[];
 };
-
-// The shading step for one Diffuse or Specular vertex: direct lighting (ReSTIR at the anchor,
-// analytic NEE elsewhere) and the BSDF continuation.
 
 void shade_surface(uint pid) {
     PathState s   = states[pid];
@@ -32,10 +28,8 @@ void shade_surface(uint pid) {
     vec3     N   = s.hit_normal;
     vec3     V   = normalize(-s.ray_dir);
 
-    // This vertex owns the pixel's reservoir only if every vertex behind it was a perfect mirror
-    // *and* restir_initial would have stopped here — its walk passes through mirrors, so on one
-    // the reservoir describes a vertex further down the chain. M == 0 means the walk gave up
-    // (sky, no lights, past MAX_MIRROR_DEPTH), and the vertex falls back to analytic NEE.
+    // Owns the reservoir only behind an all-mirror prefix where restir_initial also stopped (its walk
+    // passes through mirrors). M == 0 means the walk gave up; fall back to analytic NEE.
     bool at_restir_anchor = (s.flags & FLAG_SPECULAR_PREFIX) != 0u && restir_can_anchor(mat) && res.M > 0.0;
     bool use_restir       = at_restir_anchor && (res.light_tri_idx != RESTIR_INVALID_TRI) && (res.W > 0.0);
 
@@ -50,13 +44,11 @@ void shade_surface(uint pid) {
         float ignored_pdf;
         vec3  f = bsdf_eval(mat, N, V, L, ignored_pdf);
 
-        // Visibility is already folded into res.W, so no shadow ray. Unclamped: behind this
-        // vertex are only mirrors, so it is direct lighting as seen from the camera.
+        // Visibility is folded into res.W. Unclamped: behind this vertex are only mirrors, so it is direct lighting.
         s.radiance += s.throughput * f * material_emission(lmat) * cos_theta * res.W;
     }
 
-    // No analytic light NEE at an anchor: the reservoir is its whole area-light estimator, and an
-    // empty one is a correct zero, not a case to fall back from. Environment NEE runs either way.
+    // The reservoir is the anchor's whole area-light estimator; an empty one is a correct zero.
     NeeSurface surf;
     surf.P          = P;
     surf.N          = N;
@@ -73,9 +65,7 @@ void shade_surface(uint pid) {
         shadow_queue_push(pid);
     }
 
-    // ---- BSDF continuation ----
-    // Pinned past the NEE budget, so the continuation draws the same dimensions whichever
-    // direct-lighting branch ran — a pixel switching branch between frames keeps its sequence.
+    // Pinned past the NEE budget so the continuation draws the same dimensions whichever branch ran.
     sampler_set_dim(smp, s.bounce * SAMPLER_DIMS_PER_BOUNCE + 6u);
 
     vec3  scatter_dir;
@@ -88,9 +78,8 @@ void shade_surface(uint pid) {
         s.pdf_bsdf = sampled_delta ? 0.0 : pdf;
         s.throughput *= weight;
 
-        // A delta sample carries no flags: no NEE technique can produce its direction, so what it
-        // finds takes full weight. Only a pure mirror keeps the specular prefix — a smooth
-        // dielectric's coat was a coin flip restir_initial cannot follow.
+        // A delta sample carries no NEE flags and takes full weight. Only a pure mirror keeps the specular
+        // prefix: a smooth dielectric's coat was a coin flip restir_initial can't follow.
         uint cont_flags = sampled_delta ? 0u : (nee_flags | (at_restir_anchor ? FLAG_RESTIR_HANDLED : 0u));
         alive = path_continue(s, smp, scatter_dir, sampled_delta && bsdf_is_mirror(mat), cont_flags);
     }

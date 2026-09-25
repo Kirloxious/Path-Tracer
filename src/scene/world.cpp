@@ -17,9 +17,7 @@
 
 uint32_t World::addMaterial(Material mat) {
     requireEditable("addMaterial");
-    // Derive the shading class on insert, before sortEmissiveFirst() or any upload can read
-    // it. The static factories already do this; refreshing here covers materials assembled
-    // field-by-field (which is what the scene editor will do).
+    // Derived on insert so sortEmissiveFirst() and upload never see a stale class.
     mat.refreshType();
     materials.push_back(std::move(mat));
     return static_cast<uint32_t>(materials.size()) - 1;
@@ -35,7 +33,7 @@ void World::addSphere(glm::vec3 center, float radius, uint32_t material_index, i
     requireEditable("addSphere");
     const std::size_t firstTriangle = triangles.size();
 
-    // Two spheres of one density are two copies — addMeshAsset() + addObject() to share.
+    // Two spheres of one density are two copies; use addMeshAsset() + addObject() to share.
     const Mesh     mesh = makeUnitSphereMesh(latSegs, lonSegs);
     const uint32_t baseVertex = static_cast<uint32_t>(vertices.size());
     vertices.reserve(vertices.size() + mesh.vertices.size());
@@ -154,14 +152,12 @@ void World::instantiateObjects() {
         }
 
         const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(o.transform));
-        // A mirroring transform reverses triangle orientation; swapping two indices restores
-        // CCW-about-the-outward-normal, which NEE's light pdf and ReSTIR's target pdf need.
+        // A mirroring transform reverses orientation; swapping two indices restores CCW about the outward normal.
         const bool flipWinding = glm::determinant(glm::mat3(o.transform)) < 0.0f;
 
         const uint32_t baseVertex = static_cast<uint32_t>(vertices.size());
         vertices.reserve(vertices.size() + mesh.vertices.size());
-        // Stamping the material per vertex is what lets two placements of one asset use two
-        // materials without breaking the raster pass's flat material varying.
+        // Per-vertex stamping lets two placements of one asset use two materials under the flat varying.
         for (const Vertex& v : mesh.vertices) {
             vertices.emplace_back(glm::vec3(o.transform * glm::vec4(v.position, 1.0f)), glm::normalize(normalMatrix * v.normal), o.material_index);
         }
@@ -192,18 +188,16 @@ void World::create() {
         throw std::logic_error("World::create() called twice");
     }
 
-    // Objects first: everything below needs their geometry to exist.
     instantiateObjects();
 
-    // Then sort, so validate() checks the ordering the GPU will actually get. Safe before
-    // refreshType(): Material::isEmissive() reads `emission`, not the cached `type`.
+    // Sort before validate() so it checks the order the GPU gets. Safe before refreshType(): isEmissive()
+    // reads `emission`, not `type`.
     sortEmissiveFirst();
 
     if (auto valid = validate(); !valid) {
         throw std::runtime_error(std::format("Scene failed validation: {}", valid.error()));
     }
-    // Re-derive every cached MaterialClass so a material mutated in place since addMaterial()
-    // cannot ship a stale `type` to the GPU, where it decides queue routing.
+    // Catches materials mutated in place since addMaterial(); `type` decides queue routing.
     for (Material& m : materials) {
         m.refreshType();
     }
@@ -224,8 +218,7 @@ void World::requireEditable(std::string_view builder) const {
 }
 
 namespace {
-/// Packs an alias entry as a unorm16 acceptance probability (bits 31..16) over a 16-bit alias
-/// target (bits 15..0) — the layout Triangle::alias_packed and LightGroup::aliasPacked share.
+/// Layout shared by Triangle::alias_packed and LightGroup::aliasPacked.
 uint32_t packAlias(float accept, uint32_t alias) {
     const auto q = static_cast<uint32_t>(std::lround(std::clamp(accept, 0.0f, 1.0f) * 65535.0f));
     return (q << 16) | (alias & 0xFFFFu);
@@ -239,8 +232,6 @@ void World::buildLightGroups() {
     }
     const int end = emissiveLastIndex + 1;
 
-    // Within a group, triangles are drawn by area, so a tessellated sphere or quad behaves like
-    // one uniform area light however unevenly its triangles are sized.
     auto closeGroup = [&](int begin, int last) {
         const int count = last - begin + 1;
         assert(count <= 0xFFFF && "light group exceeds the 16-bit alias offset in Triangle::alias_packed");
@@ -264,9 +255,8 @@ void World::buildLightGroups() {
         lightGroups.push_back(g);
     };
 
-    // Triangle::alias_packed stores the alias target as a 16-bit offset from LightGroup::begin,
-    // so a run longer than this has to become several groups. Splitting is sound: the group is
-    // chosen against a stored pdf, so more groups shifts variance, never the mean.
+    // The alias target is a 16-bit offset from LightGroup::begin, so longer runs split into several groups.
+    // Sound: groups are chosen against a stored pdf, so this shifts variance, never the mean.
     constexpr int MAX_GROUP_TRIANGLES = 0xFFFF;
 
     int      runBegin = 0;
@@ -291,8 +281,7 @@ void World::buildLightGroupSelection() {
         return;
     }
 
-    // Weighted by emitted power (radiance x area) rather than uniformly: uniform selection gives
-    // a dim fill light the same sample budget as the key light.
+    // Power-weighted: uniform selection would give a dim fill light the key light's sample budget.
     std::vector<float> weight(n);
     double             total = 0.0;
     for (std::size_t i = 0; i < n; ++i) {
@@ -301,8 +290,7 @@ void World::buildLightGroupSelection() {
         weight[i] = std::max(luminance, 0.0f) * lightGroups[i].totalArea;
         total += weight[i];
     }
-    // Degenerate emitters (zero area, or emission that rounds to no luminance) still have to
-    // form a valid distribution, or the pdf every caller divides by is zero.
+    // Degenerate emitters must still form a valid distribution, or the pdf callers divide by is zero.
     if (!(total > 0.0)) {
         total = static_cast<double>(n);
         std::ranges::fill(weight, 1.0f);
@@ -336,16 +324,14 @@ std::expected<void, std::string> World::validate() const {
 
 void World::sortEmissiveFirst() {
     const std::size_t n = triangles.size();
-    // Triangles pushed in without a builder have no owner; the array must still be parallel
-    // or the permutation below reads past its end.
+    // Triangles pushed without a builder have no owner, but the array must stay parallel.
     triangleObjectId.resize(n, NO_OBJECT);
 
     auto isEmissive = [&](const Triangle& t) {
         return t.material_index < materials.size() && materials[t.material_index].isEmissive();
     };
 
-    // Explicit permutation rather than stable_partition on `triangles`: partitioning one
-    // array cannot carry `triangleObjectId` along. Index order keeps it stable.
+    // Explicit permutation: stable_partition on `triangles` alone can't carry `triangleObjectId` along.
     std::vector<uint32_t> order;
     order.reserve(n);
     for (uint32_t i = 0; i < n; ++i) {
@@ -371,7 +357,6 @@ void World::sortEmissiveFirst() {
     triangles = std::move(sortedTriangles);
     triangleObjectId = std::move(sortedOwners);
 
-    // -1 when there are no emissive triangles at all.
     emissiveLastIndex = static_cast<int>(emissiveCount) - 1;
     Log::info("Emissive last index: {}", emissiveLastIndex);
 }

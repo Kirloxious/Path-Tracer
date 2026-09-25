@@ -6,9 +6,8 @@
 
 layout(binding = TEX_ENV_MAP) uniform sampler2D env_map_tex;
 
-// Importance-sampling grid: an alias table over a downsample of the map, weighted by radiance
-// times the equirect Jacobian (EnvMap::buildSamplingTable). The density envmap_sample() draws
-// with must agree exactly with envmap_pdf(), since MIS weights every contribution by their ratio.
+// Alias table over a downsample weighted by radiance x equirect Jacobian. envmap_sample() and
+// envmap_pdf() must agree exactly, since MIS weights by their ratio.
 struct EnvSampleCell {
     float accept;
     uint  alias;
@@ -21,9 +20,8 @@ layout(std430, binding = BIND_ENV_SAMPLES) readonly buffer EnvSampleBuffer { Env
 // sin(theta) floor for the poles, where the pdf's 1/sin would otherwise diverge.
 const float ENV_MIN_SIN_THETA = 1e-4;
 
-// Equirectangular, Y up: phi in [-pi, pi] -> u, theta in [0, pi] -> v, phi = 0 at +X. Input
-// must be unit length. These two must stay exact inverses — the sampler draws a uv and its pdf
-// is looked up by converting the direction back.
+// Equirect, Y up, phi = 0 at +X. These two must stay exact inverses: the pdf is looked up by converting
+// the sampled direction back.
 vec2 envmap_dir_to_uv(vec3 dir) {
     float phi   = atan(dir.z, dir.x);
     float theta = acos(clamp(dir.y, -1.0, 1.0));
@@ -46,7 +44,6 @@ float envmap_sin_theta(vec3 dir) {
     return max(sqrt(max(0.0, 1.0 - dir.y * dir.y)), ENV_MIN_SIN_THETA);
 }
 
-/// Solid-angle density envmap_sample() would have drawn `dir` with, for the BSDF side of MIS.
 float envmap_pdf(vec3 dir) {
     if (env_map_valid == 0) return 0.0;
     vec2  uv = envmap_dir_to_uv(dir);
@@ -54,9 +51,7 @@ float envmap_pdf(vec3 dir) {
     return env_cells[c.y * env_sample_size.x + c.x].pdf_num / envmap_sin_theta(dir);
 }
 
-/// Draws a direction proportional to radiance times the Jacobian. `u_cell` picks the grid cell
-/// (x selects, y runs the alias test); `u_jitter` places the sample inside it.
-/// @return the direction; `out_pdf` is 0 when there is nothing to sample.
+/// `u_cell`.x picks the cell, .y runs the alias test; `u_jitter` places the sample inside it.
 vec3 envmap_sample(vec2 u_cell, vec2 u_jitter, out vec3 out_radiance, out float out_pdf) {
     out_radiance = vec3(0.0);
     out_pdf      = 0.0;

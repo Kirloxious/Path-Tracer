@@ -1,40 +1,18 @@
 #pragma once
 
-/**
- * @file gbuffer.h
- * @brief Primary-visibility G-buffer written by the raster pass.
- */
-
 #include "gpu/frame_buffer.h"
 #include "gpu/texture.h"
 
-/**
- * @brief A normal target, a depth target and their FBO, holding one frame of primary visibility.
- *
- * RasterGBufferPass fills these each frame and the path tracer, ReSTIR, the denoiser, TAA and
- * the AOV views sample them in place of casting primary rays. RenderTargets keeps two and
- * rotates them every frame.
- *
- * Move-only.
- */
 class GBuffer
 {
 public:
-    /// Attachment-index constants kept in one place so the raster shader,
-    /// the debug blit, and the consumer (path tracer) can't drift.
+    /// Shared by the raster shader and the debug blit.
     static constexpr int ATTACH_NORMAL = 0;
 
-    /// rgba16f — xyz = world-space surface normal (normalized), w = material index.
-    ///
-    /// The material index rides in .w because a half float stores integers exactly up to
-    /// 2048, far more material slots than any scene here uses. It used to live in the .w of
-    /// a separate rgba32f world-position target, which is gone: world position is now
-    /// reconstructed from `depth` (see common/gbuffer.glsl).
+    /// xyz = world normal, w = material index (exact in a half float up to 2048).
     Texture normal;
 
-    /// Hardware depth — depth testing during the raster pass, and the source world position
-    /// is reconstructed from. Reversed-Z, so the far plane is 0 and the near plane is 1;
-    /// see makeReversedZProjection() in camera.cpp for why.
+    /// Reversed-Z: far = 0, near = 1. Also the source world position is reconstructed from.
     Texture depth;
 
     FrameBuffer fb;
@@ -44,11 +22,6 @@ public:
 
     GBuffer() = default;
 
-    /**
-     * @brief Allocates both attachments at @p w x @p h and builds the framebuffer.
-     * @param w Width in pixels.
-     * @param h Height in pixels.
-     */
     GBuffer(int w, int h);
 
     GBuffer(const GBuffer&) = delete;
@@ -56,11 +29,5 @@ public:
     GBuffer(GBuffer&&) noexcept = default;
     GBuffer& operator=(GBuffer&&) noexcept = default;
 
-    /**
-     * @brief Blits one attachment to the default framebuffer for debug visualization.
-     * @param attachmentIndex ATTACH_NORMAL (the only colour attachment).
-     * @param dstWidth        Destination width in pixels.
-     * @param dstHeight       Destination height in pixels.
-     */
     void blitAttachmentToSwapChain(int attachmentIndex, int dstWidth, int dstHeight) const;
 };

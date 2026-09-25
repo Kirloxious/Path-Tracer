@@ -14,9 +14,8 @@ layout(std430, binding = BIND_DISPATCH_ARGS) restrict writeonly buffer DispatchA
 // Keep in sync with the queue kernels' local_size_x.
 const uint LOCAL_SIZE = 64u;
 
-// Counter slots to zero once their args are written. A slot may be cleared only after every
-// kernel bounded by it has run, so the two dispatches per bounce clear different halves (see
-// PathTracerPass::execute).
+// A slot may be cleared only after every kernel bounded by it has run, so the two dispatches per bounce
+// clear different halves.
 layout(location = 0) uniform uint clear_mask;
 
 void main() {

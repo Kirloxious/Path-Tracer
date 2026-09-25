@@ -39,9 +39,8 @@ Mesh makeUnitSphereMesh(int latSegs, int lonSegs) {
             const uint32_t c = vIdx(lat + 1, lon + 1);
             const uint32_t d = vIdx(lat, lon + 1);
 
-            // NEE's light pdf and ReSTIR's target pdf both gate on
-            // `dot(cross(e1, e2), light_dir) < 0`, so CW winding here silently rejects every
-            // sphere-light sample and leaves only BSDF-hits-emissive to light the scene.
+            // CCW is load-bearing: NEE and ReSTIR reject samples with `dot(cross(e1, e2), light_dir) >= 0`,
+            // so CW winding would silently drop every sphere-light sample.
             if (lat != 0) {
                 mesh.indices.emplace_back(a, d, c);
             }

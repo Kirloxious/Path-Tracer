@@ -9,9 +9,7 @@
 
 namespace {
 constexpr int M_INITIAL_DEFAULT = 32;
-// Cap on prev.M during temporal combine. ~20× M_initial is the standard
-// Bitterli/Wyman recommendation: enough history to converge on static frames,
-// short enough that lighting changes don't stick around for many frames.
+// ~20x M_initial (Bitterli/Wyman): enough history to converge, short enough that lighting changes don't linger.
 constexpr int   M_CAP_DEFAULT = 20 * M_INITIAL_DEFAULT;
 constexpr int   SPATIAL_K = 5;
 constexpr float SPATIAL_RADIUS_PASS_1 = 30.0f;
@@ -67,8 +65,6 @@ void RestirPass::execute(const RenderContext&, RenderTargets& targets) {
     current.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_RESERVOIRS_CURRENT);
     prev.bindBase(GL_SHADER_STORAGE_BUFFER, BIND_RESERVOIRS_PREV);
 
-    // Unlike the reservoirs, the spatial passes never repurpose the prev surfaces as scratch,
-    // so these two bindings stay put for the whole pass.
     (useAAsCurrent ? surfacesA : surfacesB).bindBase(GL_SHADER_STORAGE_BUFFER, BIND_SURFACES_CURRENT);
     (useAAsCurrent ? surfacesB : surfacesA).bindBase(GL_SHADER_STORAGE_BUFFER, BIND_SURFACES_PREV);
 
@@ -82,10 +78,8 @@ void RestirPass::execute(const RenderContext&, RenderTargets& targets) {
     GL::dispatch(targets.numGroupsX, targets.numGroupsY);
     GL::memoryBarrier(GL::Barrier::Storage);
 
-    // Spatial reuse: two ping-ponged passes with shrinking radius. The shader reads
-    // `spatial_input` (binding 20) and writes `reservoirs` (binding 18). The prev buffer is
-    // scratch for pass 1 — next frame's initial pass overwrites it anyway — and pass 2
-    // lands the final result back in `current` for shade_opaque to consume.
+    // The prev buffer is scratch for pass 1 (next frame's initial pass overwrites it); pass 2 lands
+    // the final result back in `current`.
     spatial.use();
     spatial.setInt("k_neighbors", SPATIAL_K);
 

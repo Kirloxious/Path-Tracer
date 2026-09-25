@@ -1,7 +1,6 @@
 #include "gpu/env_map.h"
 
-// stb_image is header-only. IMPLEMENTATION goes exactly here — mirrors the
-// tinyobjloader convention documented in CLAUDE.md.
+// Exactly one TU may define the stb_image implementation.
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
@@ -15,26 +14,20 @@
 #include "core/alias_table.h"
 
 namespace {
-/// Sampling-grid ceiling. The grid only has to resolve *where* the energy is well enough for
-/// the alias draw to find it; the radiance itself is still fetched from the full-resolution
-/// texture at the jittered direction, so a coarse grid costs accuracy in the pdf, not detail
-/// in the light. 1024x512 is 8 MB of table, against 64 MB for a 4K source at full resolution.
+/// Only has to locate the energy for the alias draw; radiance is still fetched from the
+/// full-resolution texture, so a coarse grid costs pdf accuracy, not detail.
 constexpr int ENV_SAMPLE_MAX_W = 1024;
 constexpr int ENV_SAMPLE_MAX_H = 512;
 } // namespace
 
 std::expected<EnvMap, std::string> EnvMap::load(const std::filesystem::path& hdrPath, float intensity) {
-    int w = 0, h = 0, n = 0;
-    // Request 3 channels — HDR files are usually RGB (RGBE decoded); we widen to RGBA below.
+    int    w = 0, h = 0, n = 0;
     float* stbPixels = stbi_loadf(hdrPath.string().c_str(), &w, &h, &n, 3);
     if (!stbPixels) {
         return std::unexpected(std::format("EnvMap: failed to load HDR '{}' ({})", hdrPath.string(), stbi_failure_reason()));
     }
     Log::info("EnvMap: loaded {} — {}x{} (source channels={})", hdrPath.filename().string(), w, h, n);
 
-    // GL's texture upload with GL_RGB / GL_FLOAT works for RGBA32F storage, so we could
-    // skip the widen. But a strided fetch in the shader is fine either way, and RGBA is
-    // less alignment-fragile across drivers — do the widen once here.
     std::vector<float> rgba(static_cast<size_t>(w) * h * 4);
     for (int i = 0; i < w * h; ++i) {
         rgba[4 * i + 0] = stbPixels[3 * i + 0];
@@ -66,18 +59,16 @@ void EnvMap::buildSamplingTable(const float* rgba, int w, int h) {
     for (int y = 0; y < sh; ++y) {
         const int y0 = y * h / sh;
         const int y1 = std::max(y0 + 1, (y + 1) * h / sh);
-        // The equirect Jacobian. Without it the poles — which cover almost no solid angle —
-        // attract as many samples as the horizon, and a bright sky gradient reads as noise
-        // concentrated overhead.
+        // Equirect Jacobian: without it the poles, which cover almost no solid angle, attract as
+        // many samples as the horizon.
         const float sinTheta = std::sin((static_cast<float>(y) + 0.5f) / static_cast<float>(sh) * pi);
 
         for (int x = 0; x < sw; ++x) {
             const int x0 = x * w / sw;
             const int x1 = std::max(x0 + 1, (x + 1) * w / sw);
 
-            // Box-average, not a point sample: a sun smaller than one grid cell still has to
-            // put its energy into that cell, or the sampler never finds it and the exact case
-            // this table exists for stays noisy.
+            // Box-average, not a point sample: a sun smaller than one cell must still put its energy
+            // into that cell or the sampler never finds it.
             double sum = 0.0;
             for (int yy = y0; yy < y1; ++yy) {
                 for (int xx = x0; xx < x1; ++xx) {
@@ -91,8 +82,7 @@ void EnvMap::buildSamplingTable(const float* rgba, int w, int h) {
         }
     }
 
-    // An all-black map still needs a valid distribution: fall back to uniform over the sphere,
-    // which is what weighting by the Jacobian alone gives.
+    // All-black map: the Jacobian weight alone gives a uniform distribution over the sphere.
     if (!(total > 0.0)) {
         total = 0.0;
         for (int y = 0; y < sh; ++y) {

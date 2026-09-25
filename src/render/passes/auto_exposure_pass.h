@@ -1,33 +1,14 @@
 #pragma once
 
-/**
- * @file auto_exposure_pass.h
- * @brief Histogram-based automatic exposure, feeding the tonemap pass.
- */
-
 #include "gpu/buffer.h"
 #include "gpu/compute_shader.h"
 #include "render/render_pass.h"
 
-/**
- * @brief Two-step luminance-based auto exposure.
- *
- *   1. `luminance_histogram.comp` builds a 256-bin log-luminance histogram over the HDR image.
- *   2. `auto_exposure.comp` reduces it and EMA-smooths the resulting exposure.
- *
- * The result lives in a persistent ExposureBuffer that TonemapPass reads, so the two passes
- * never exchange data on the CPU.
- *
- * When `settings.autoExposureEnabled` is false the SSBO is overwritten each frame with
- * `settings.exposure`, so TonemapPass doesn't have to branch.
- */
+/// Writes the exposure SSBO TonemapPass reads; when disabled it writes `settings.exposure` instead,
+/// so tonemap never branches.
 class AutoExposurePass : public RenderPass
 {
 public:
-    /**
-     * @brief Loads both kernels and allocates the exposure and histogram SSBOs.
-     * @param initialExposure Seeds the exposure buffer so the first frame is not black.
-     */
     explicit AutoExposurePass(float initialExposure);
 
     bool             reloadIfChanged() override;
@@ -39,14 +20,12 @@ private:
     ComputeShader histogramShader;
     ComputeShader reduceShader;
 
-    /// ExposureBuffer at binding 30 — first float is the current exposure; the rest is std430
-    /// padding for the vec4-aligned struct.
+    /// std430 vec4: first float is the exposure, the rest padding.
     Buffer exposureSSBO;
-    /// 256 uint bins at binding 31 — cleared inside the reduce shader.
+    /// Cleared inside the reduce shader.
     Buffer histogramSSBO;
 
-    /// false until the first execute(), which writes the measured exposure directly rather than
-    /// easing into it — otherwise every scene load fades in from the previous exposure. Reset
-    /// on scene load and whenever auto-exposure is disabled, so the EMA re-seeds on re-enable.
+    /// False until the first execute(), which snaps to the measured exposure instead of fading in
+    /// from the previous scene's.
     bool primed = false;
 };

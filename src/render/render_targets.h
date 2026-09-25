@@ -1,76 +1,47 @@
 #pragma once
 
-/**
- * @file render_targets.h
- * @brief Every intermediate image the pass chain shares, plus dispatch tiling constants.
- */
-
 #include <gpu/frame_buffer.h>
 #include <gpu/texture.h>
 
 #include "gpu/gbuffer.h"
 
-/**
- * @brief Shared ownership of all intermediate render targets, passed to every pass's execute().
- *
- * Passes communicate through these textures rather than through direct references to each
- * other, so reordering the chain is a matter of who reads and writes what. Owned by Renderer
- * and reallocated wholesale on resize.
- */
 struct RenderTargets
 {
-    /// Compute dispatch tile size; `numGroupsX/Y` are derived from it.
     static constexpr int WORK_GROUP_SIZE = 8;
 
-    Texture accum;         ///< Path tracer output — the running-average radiance image; `.a` is the accumulated sample count.
-    Texture moments;       ///< Running luminance moments (E[l], E[l^2]); the denoiser's per-pixel variance estimate.
-    Texture normals;       ///< Primary normals + material type, consumed by the denoiser.
-    Texture denoised_ping; ///< A-Trous ping-pong scratch target.
-    Texture hdr;           ///< HDR pre-tonemap image — output of the denoiser, modified by bloom, read by auto-exposure + tonemap.
-    Texture tonemapped;    ///< TonemapPass output, TaaPass input. Separate from `display` so TAA can read neighbours while writing.
-    Texture display;       ///< Final LDR image blitted to the swap chain.
-    Texture taa_history;   ///< Previous frame's TAA-resolved image (sampled bilinear for reprojection).
-    Texture taa_output;    ///< This frame's TAA result at history precision; swapped into `taa_history`.
+    Texture accum;   ///< Running-average radiance; `.a` is the sample count.
+    Texture moments; ///< Running luminance moments (E[l], E[l^2]).
+    Texture normals;
+    Texture denoised_ping;
+    Texture hdr;
+    Texture tonemapped; ///< Separate from `display` so TAA can read neighbours while writing.
+    Texture display;
+    Texture taa_history;
+    Texture taa_output;
 
-    /// Current frame's primary-visibility data, written by RasterGBufferPass.
     GBuffer gbuf;
-    /// Previous frame's. Nothing reads it today; it is kept rotated for temporal consumers.
+    /// Nothing reads it today; kept rotated for future temporal consumers.
     GBuffer gbuf_prev;
 
-    FrameBuffer fb; ///< Wraps `display`, used for the final swap-chain blit.
+    FrameBuffer fb; ///< Wraps `display` for the swap-chain blit.
 
     int width = 0;
     int height = 0;
 
-    GLuint numGroupsX = 0; ///< ceil(width  / WORK_GROUP_SIZE), for 8x8 per-pixel dispatches.
-    GLuint numGroupsY = 0; ///< ceil(height / WORK_GROUP_SIZE).
+    GLuint numGroupsX = 0;
+    GLuint numGroupsY = 0;
 
-    /**
-     * @brief Allocates every target at @p w x @p h.
-     * @param w Width in pixels.
-     * @param h Height in pixels.
-     */
     RenderTargets(int w, int h);
 
-    /**
-     * @brief Reallocates every target for a new framebuffer size.
-     *
-     * All contents are lost, including accumulated radiance and both G-buffers — the caller
-     * must reset `frameIndex` so accumulation restarts.
-     *
-     * @param w New width in pixels.
-     * @param h New height in pixels.
-     */
+    /// All contents are lost; the caller must reset `frameIndex`.
     void resize(int w, int h);
 
-    /// Rotates the G-buffer pair so this frame draws over frame N-2 and frame N-1 survives in
-    /// `gbuf_prev`. Called by Renderer before the first pass.
+    /// Called by Renderer before the first pass.
     void beginFrame();
 
-    /// Makes this frame's TAA result next frame's history. Called by Renderer after the last pass.
+    /// Called by Renderer after the last pass.
     void endFrame();
 
 private:
-    /// Single allocation path shared by the constructor and resize().
     void allocate(int w, int h);
 };

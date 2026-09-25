@@ -4,10 +4,8 @@
 #include "scene_buffers.glsl"
 #include "host_shared.glsl"
 
-// Primary-visibility reads. The G-buffer holds only a normal and a depth; position is
-// reconstructed from depth, which is accurate only because the projection is reversed-Z
-// (makeReversedZProjection in camera.cpp): 2.9e-4 worst case on Cornell Box against 2.2e-2
-// conventionally. offset_primary_origin() sizes its margin on that.
+// Position is reconstructed from depth, accurate only because of reversed-Z (2.9e-4 worst case vs 2.2e-2
+// conventionally); offset_primary_origin() sizes its margin on that.
 layout(binding = TEX_GBUF_NORMAL) uniform sampler2D gbuf_normal_tex;
 layout(binding = TEX_GBUF_DEPTH) uniform sampler2D gbuf_depth_tex;
 
@@ -24,10 +22,8 @@ uint gbuffer_matid(in ivec2 px) {
     return uint(texelFetch(gbuf_normal_tex, px, 0).w);
 }
 
-// View-space position of the primary hit. With GL_ZERO_TO_ONE clip control the stored depth is
-// NDC z as is. `inv_proj_matrix` is the jittered projection the raster used, so this lands on
-// the sub-pixel sample it shaded. Exposed separately for the denoiser, whose plane distances
-// are the same in view space and skip the second matmul.
+// `inv_proj_matrix` is the jittered projection the raster used, so this lands on the shaded sub-pixel
+// sample. Exposed for the denoiser, whose plane distances need only view space.
 vec3 gbuffer_view_pos(in ivec2 px, in ivec2 image_size) {
     vec2 uv  = (vec2(px) + 0.5) / vec2(image_size);
     vec3 ndc = vec3(uv * 2.0 - 1.0, texelFetch(gbuf_depth_tex, px, 0).r);

@@ -10,7 +10,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 layout(rgb10_a2, binding = 0) writeonly uniform image2D dst_image;
 layout(rgba32f, binding = 1) readonly  uniform image2D accum_image;
 
-layout(location = 0) uniform int   aov_mode; // AOV_* in host_shared.glsl
+layout(location = 0) uniform int   aov_mode;
 layout(location = 1) uniform float depth_max;
 layout(location = 2) uniform float bvh_cost_max;
 

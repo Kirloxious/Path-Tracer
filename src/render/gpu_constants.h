@@ -1,16 +1,11 @@
 #pragma once
 
-/**
- * @file gpu_constants.h
- * @brief CPU mirrors of the frame- and scene-wide uniform blocks in shader/common/constants.glsl.
- */
-
 #include <cstddef>
 #include <cstdint>
 
 #include <glm/glm.hpp>
 
-/// Mirrors `FrameConstants` (std140). Rewritten by Renderer::render() before the first pass.
+/// Mirrors `FrameConstants` (std140).
 struct alignas(16) FrameConstants
 {
     glm::ivec2 image_size{0};
@@ -25,7 +20,7 @@ static_assert(offsetof(FrameConstants, frame_index) == 8);
 static_assert(offsetof(FrameConstants, time_seed) == 16);
 static_assert(offsetof(FrameConstants, run_seed) == 20);
 
-/// Mirrors `SceneConstants` (std140). Written by Renderer::loadScene().
+/// Mirrors `SceneConstants` (std140).
 struct alignas(16) SceneConstants
 {
     int32_t    bvh_root_index = 0;

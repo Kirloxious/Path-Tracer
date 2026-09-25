@@ -6,7 +6,7 @@
 #include "scene/camera.h"
 #include "render/render_settings.h"
 #include "scene/scene.h"
-#include "gpu/timer.h" // for PassTimings + GPUTimer/FPSTimer
+#include "gpu/timer.h"
 #include "scene/world.h"
 
 namespace Gui {
@@ -15,11 +15,10 @@ void init(Window& window) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 
-    // Setup Platform/Renderer backends
-    ImGui_ImplGlfw_InitForOpenGL(window.window, true); // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
+    ImGui_ImplGlfw_InitForOpenGL(window.window, true);
     ImGui_ImplOpenGL3_Init();
 }
 
@@ -108,7 +107,6 @@ void drawCamera(const Camera& camera) {
 }
 
 void drawSettings(RenderSettings& settings) {
-    // Post-process only — mutating anything below does NOT reset frameIndex.
     ImGui::Checkbox("Auto exposure", &settings.autoExposureEnabled);
     if (settings.autoExposureEnabled) {
         ImGui::SetNextItemWidth(180.0f);
@@ -132,7 +130,6 @@ void drawSettings(RenderSettings& settings) {
         ImGui::SliderFloat("Bloom threshold", &settings.bloomThreshold, 0.0f, 5.0f, "%.2f");
     }
 
-    // AOV overlay. Also post-process — swapping mode doesn't invalidate accumulation.
     static const char* aovNames[] = {"Off", "World Normal", "Linear Depth", "Albedo", "Material ID", "BVH Cost", "Variance"};
     int                aovIdx = std::to_underlying(settings.aovMode);
     ImGui::SetNextItemWidth(180.0f);

@@ -41,17 +41,15 @@ Scene Scene::CornellBox() {
     uint32_t red = w.addMaterial(Material::Lambertian(glm::vec3(0.65f, 0.05f, 0.05f)));
     uint32_t green = w.addMaterial(Material::Lambertian(glm::vec3(0.12f, 0.45f, 0.15f)));
 
-    // Ceiling light
     w.addSphere(glm::vec3(S * 0.5f, S * 0.93f, S * 0.5f), S * 0.06f, Material::Emissive(glm::vec3(1.0f), glm::vec3(8.0f)), 16, 32);
 
-    // Walls — open front at z=0
+    // Open front at z = 0.
     w.addTriQuad(glm::vec3(S, 0, 0), glm::vec3(0, 0, S), glm::vec3(0, S, 0), red);   // Left (red)
     w.addTriQuad(glm::vec3(0, 0, 0), glm::vec3(0, S, 0), glm::vec3(0, 0, S), green); // Right (green)
     w.addTriQuad(glm::vec3(0, 0, 0), glm::vec3(0, 0, S), glm::vec3(S, 0, 0), white); // Floor
     w.addTriQuad(glm::vec3(0, S, 0), glm::vec3(S, 0, 0), glm::vec3(0, 0, S), white); // Ceiling
     w.addTriQuad(glm::vec3(0, 0, S), glm::vec3(0, S, 0), glm::vec3(S, 0, 0), white); // Back wall
 
-    // Tall box — rotated ~15 degrees
     float     angle = glm::radians(15.0f);
     float     cs = cos(angle), sn = sin(angle);
     float     tallW = S * 0.297f, tallH = S * 0.595f;
@@ -72,7 +70,6 @@ Scene Scene::CornellBox() {
     w.addTriQuad(p3, -dz, dy, white);
     w.addTriQuad(p0 + dy, dx, dz, white);
 
-    // Short box — rotated ~-18 degrees
     float     angle2 = glm::radians(-18.0f);
     float     cs2 = cos(angle2), sn2 = sin(angle2);
     float     shortW = S * 0.297f, shortH = S * 0.297f;
@@ -93,7 +90,7 @@ Scene Scene::CornellBox() {
     w.addTriQuad(q3, -dz2, dy2, white);
     w.addTriQuad(q0 + dy2, dx2, dz2, white);
 
-    // Small models — rotated 180 to face the camera
+    // Models rotated 180° to face the camera.
     constexpr float PI = 3.14159265f;
 
     uint32_t bunnyMat = w.addMaterial(Material::Principled(glm::vec3(0.9f, 0.7f, 0.3f), 1.0f, 0.224f));
@@ -224,30 +221,20 @@ Scene Scene::MirrorFloor() {
 
     World& w = scene.world;
 
-    // Layout: three subjects in a line at z=0, backsplash wall parallel behind at z=-2.5,
-    // area light centred on x=0 directly above. Camera looks down the +z axis so the wall
-    // frames all three subjects.
     constexpr float subjectsZ = 0.0f;
     constexpr float wallZ = -2.5f;
-    constexpr float wallSpanX = 8.0f; // wall extends from -wallSpanX to +wallSpanX
+    constexpr float wallSpanX = 8.0f;
     constexpr float wallH = 6.0f;
     constexpr float lightY = 8.0f;
     constexpr float floorY = 0.0f;
-    constexpr float floorSpan = 25.0f; // floor extends from -floorSpan to +floorSpan in x
-    constexpr float floorFwd = 25.0f;  // ... and from z = wallZ at the back to z = floorFwd in front of the camera
+    constexpr float floorSpan = 25.0f;
+    constexpr float floorFwd = 25.0f;
 
-    // Sphere tessellation. Triangles per sphere = 2 * lat * lon (minus the degenerate
-    // pole row). 32 × 64 = ~4k tris per sphere — silhouette is smooth at the radius-1
-    // subject sphere's screen size; bump higher if you push the camera in closer.
-    // The light sphere uses the same density: visible mostly as a soft disc, but the
-    // silhouette still benefits from extra subdivision and the cost is irrelevant
-    // (one sphere, no BVH hot path).
+    // ~4k triangles per sphere; the light shares the density since it's one sphere off the BVH hot path.
     constexpr int sphereLat = 32;
     constexpr int sphereLon = 64;
 
-    // Load an OBJ at (x, z) and shift it vertically so its lowest vertex sits exactly at floorY —
-    // each mesh's authoring origin differs (Suzanne is centred, the dragon's pivot is its underside),
-    // so hand-tuning y per-mesh is fragile. This stays correct under any scale or Y-rotation.
+    // Rests each mesh on the floor by its lowest vertex, since authoring origins differ per mesh.
     auto loadStanding = [&](const std::filesystem::path& path, float scale, float x, float z, float rotateY = 0.0f) -> Mesh {
         Mesh  m = requireOBJ(path, scale, glm::vec3(x, 0.0f, z), rotateY);
         float yMin = std::numeric_limits<float>::infinity();
@@ -261,31 +248,22 @@ Scene Scene::MirrorFloor() {
         return m;
     };
 
-    // Mirror floor: a single flat quad. addTriQuad winds CCW around cross(u, v), so picking
-    // u = +x and v pointing back toward the wall (negative z) makes the front face point at +y.
-    // fuzz=0 keeps reflections sharp; near-white albedo preserves the reflected colours.
+    // v points toward the wall (-z) so cross(u, v) faces +y.
     uint32_t floorMat = w.addMaterial(Material::Principled(glm::vec3(0.95f, 0.95f, 0.95f), 1.0f, 0.0f));
     w.addTriQuad(glm::vec3(-floorSpan, floorY, floorFwd), glm::vec3(2.0f * floorSpan, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, wallZ - floorFwd), floorMat);
 
-    // Backsplash wall: a single quad behind the subjects, normal facing the camera (+z).
-    // u=+x, v=+y so cross(u, v) = +z. Cool-grey lambertian gives a neutral frame against the warm subjects.
     uint32_t wallMat = w.addMaterial(Material::Lambertian(glm::vec3(0.55f, 0.6f, 0.65f)));
     w.addTriQuad(glm::vec3(-wallSpanX, floorY, wallZ), glm::vec3(2.0f * wallSpanX, 0.0f, 0.0f), glm::vec3(0.0f, wallH, 0.0f), wallMat);
 
-    // Overhead area light, centred above the row of subjects. Radius 3 (large enough that
-    // ReSTIR/NEE have a soft target — small lights give harder shadows + more variance);
-    // emission 6 matches the previous brightness given the closer placement.
+    // Large radius gives ReSTIR/NEE a soft target; small lights mean harder shadows and more variance.
     w.addSphere(glm::vec3(0.0f, lightY, subjectsZ), 3.0f, Material::Emissive(glm::vec3(1.0f), glm::vec3(6.0f)), sphereLat, sphereLon);
 
-    // Lambertian Suzanne on the left — lifted so her chin sits on the mirror.
     uint32_t suzanneMat = w.addMaterial(Material::Lambertian(glm::vec3(0.85f, 0.35f, 0.25f)));
     w.addMesh(loadStanding("assets/suzanne.obj", 1.0f, -0.5f, -5.0f), suzanneMat);
 
-    // Metal gold dragon in the middle — fuzz softens the highlights without going full mirror.
     uint32_t dragonMat = w.addMaterial(Material::Principled(glm::vec3(0.9f, 0.75f, 0.4f), 1.0f, 0.224f));
     w.addMesh(loadStanding("assets/xyzrgb_dragon.obj", 0.02f, 0.0f, subjectsZ), dragonMat);
 
-    // Lambertian sphere on the right — radius 1, centre at y = floorY + 1, so its bottom sits exactly on the floor.
     w.addSphere(glm::vec3(3.5f, floorY + 1.0f, subjectsZ), 1.0f, Material::Lambertian(glm::vec3(0.25f, 0.55f, 0.8f)), sphereLat, sphereLon);
 
     w.create();
@@ -316,7 +294,6 @@ Scene Scene::SphereWorldEnvLit() {
     constexpr float groundSpan = 50.0f;
     w.addTriQuad(
         glm::vec3(-groundSpan, 0.0f, groundSpan), glm::vec3(2.0f * groundSpan, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -2.0f * groundSpan), ground);
-    // No overhead sun sphere and no red emissives — env lights everything.
 
     constexpr int tinyLat = 16;
     constexpr int tinyLon = 32;
@@ -367,7 +344,6 @@ Scene Scene::ShowcaseEnvLit() {
     constexpr float groundSpan = 50.0f;
     w.addTriQuad(
         glm::vec3(-groundSpan, 0.0f, groundSpan), glm::vec3(2.0f * groundSpan, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -2.0f * groundSpan), groundMat);
-    // Overhead emissive sun removed — env carries the lighting.
 
     uint32_t bunnyMat = w.addMaterial(Material::Lambertian(glm::vec3(0.9f, 0.7f, 0.2f)));
     w.addMesh(requireOBJ("assets/standford-bunny.obj", 10.0f, glm::vec3(0.0f, -0.33f, 0.0f)), bunnyMat);
@@ -400,10 +376,8 @@ Scene Scene::MaterialGallery() {
     scene.cameraSettings.lookfrom = glm::vec3(0.0f, 4.6f, 11.5f);
     scene.cameraSettings.lookat = glm::vec3(0.0f, 0.5f, 0.0f);
 
-    // Environment plus two emissive lights on purpose. The envmap gives the wide, soft
-    // reflections that make a roughness sweep readable at a glance; the emitters give crisp
-    // highlights and real shadows, and they are what put light groups in the scene at all —
-    // without them there is no NEE and no ReSTIR to exercise.
+    // Envmap plus emitters on purpose: the env gives soft reflections for the roughness sweep, and the
+    // emitters give crisp highlights and are the only thing that exercises NEE and ReSTIR.
     scene.envMapPath = DEFAULT_ENV_MAP;
     scene.envIntensity = 0.45f;
 
@@ -416,16 +390,13 @@ Scene Scene::MaterialGallery() {
     constexpr float spacingX = 1.35f;
     constexpr float spacingZ = 1.6f;
 
-    // Ground is a mildly glossy dielectric rather than a matte one, so the dielectric
-    // specular lobe shows up somewhere other than the spheres and every row sits in a
-    // reflection that reveals its silhouette.
+    // Glossy dielectric ground so every row sits in a reflection that reveals its silhouette.
     constexpr float groundSpan = 40.0f;
     w.addTriQuad(glm::vec3(-groundSpan, 0.0f, groundSpan),
                  glm::vec3(2.0f * groundSpan, 0.0f, 0.0f),
                  glm::vec3(0.0f, 0.0f, -2.0f * groundSpan),
                  Material::Principled(glm::vec3(0.32f, 0.32f, 0.34f), 0.0f, 0.4f));
 
-    // One row of `columns` spheres, with the sweep parameter t running 0 -> 1 left to right.
     auto sweepRow = [&](float z, auto&& materialAt) {
         for (int i = 0; i < columns; ++i) {
             const float t = static_cast<float>(i) / static_cast<float>(columns - 1);
@@ -434,33 +405,22 @@ Scene Scene::MaterialGallery() {
         }
     };
 
-    // Back row: conductor roughness. Mirror on the left through blurred on the right — the
-    // sweep the old fuzz parameter approximated and GGX now models properly.
     sweepRow(-2.0f * spacingZ, [](float t) { return Material::Principled(glm::vec3(0.95f, 0.78f, 0.35f), 1.0f, t); });
 
-    // Dielectric roughness. Same sweep with metallic = 0: the base colour stays put while the
-    // highlight spreads, because a dielectric's F0 comes from ior (0.04) and not from albedo.
+    // Base colour stays put while the highlight spreads: a dielectric's F0 comes from ior, not albedo.
     sweepRow(-1.0f * spacingZ, [](float t) { return Material::Principled(glm::vec3(0.16f, 0.34f, 0.78f), 0.0f, t); });
 
-    // Metallic sweep at fixed roughness. Deliberately a neutral base colour, so the
-    // dielectric-to-conductor transition reads as the diffuse lobe giving way to a tinted
-    // specular one rather than as a colour change.
+    // Neutral base colour so the transition reads as diffuse giving way to tinted specular, not a colour change.
     sweepRow(0.0f, [](float t) { return Material::Principled(glm::vec3(0.85f, 0.85f, 0.88f), t, 0.25f); });
 
-    // Transmission roughness: clear glass through frosted.
     sweepRow(1.0f * spacingZ, [](float t) { return Material::RoughGlass(1.5f, 0.45f * t); });
 
-    // Index of refraction on smooth glass, water (1.33) through diamond (2.4).
     sweepRow(2.0f * spacingZ, [](float t) { return Material::Glass(1.05f + t * 1.35f); });
 
-    // Foreground pair, larger and more tessellated: tinted transmission, which the smooth
-    // reflect/refract path could not express at all.
     w.addSphere(glm::vec3(-3.7f, 0.95f, 4.3f), 0.95f, Material::RoughGlass(1.5f, 0.05f, glm::vec3(0.95f, 0.55f, 0.20f)), 24, 48);
     w.addSphere(glm::vec3(3.7f, 0.95f, 4.3f), 0.95f, Material::RoughGlass(1.5f, 0.22f, glm::vec3(0.25f, 0.85f, 0.45f)), 24, 48);
 
-    // Key light, warm and high to the left; fill, cool and lower to the right. Two lights so
-    // the conductors carry two distinguishable highlights and the roughness sweep is legible
-    // from the way those highlights smear rather than only from overall brightness.
+    // Two lights so conductors carry two distinguishable highlights whose smear shows roughness.
     w.addSphere(glm::vec3(-6.5f, 7.5f, 4.0f), 1.2f, Material::Emissive(glm::vec3(1.0f), glm::vec3(11.0f, 10.0f, 8.5f)), 16, 32);
     w.addSphere(glm::vec3(7.0f, 4.5f, 6.0f), 0.8f, Material::Emissive(glm::vec3(1.0f), glm::vec3(3.0f, 4.2f, 6.5f)), 16, 32);
 

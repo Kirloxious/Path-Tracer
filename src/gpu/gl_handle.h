@@ -1,22 +1,10 @@
 #pragma once
 
-/**
- * @file gl_handle.h
- * @brief Move-only ownership of a single OpenGL object name.
- */
-
 #include <glad/glad.h>
 
 #include <utility>
 
-/**
- * @brief Owns one GL object name and releases it with @p Delete.
- *
- * Every GL wrapper holds its objects through one of these, so none of them needs a
- * destructor or hand-written move operations.
- *
- * @tparam Delete Releases a non-zero name; never called with 0.
- */
+/// @tparam Delete Releases a non-zero name; never called with 0.
 template<void (*Delete)(GLuint)> class GLHandle
 {
 public:
@@ -35,7 +23,6 @@ public:
     GLHandle(const GLHandle&) = delete;
     GLHandle& operator=(const GLHandle&) = delete;
 
-    /// Releases the current name, if any, and takes ownership of @p id.
     void reset(GLuint id = 0) noexcept {
         if (m_id) {
             Delete(m_id);

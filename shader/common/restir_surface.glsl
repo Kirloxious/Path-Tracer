@@ -4,19 +4,15 @@
 #include "scene_buffers.glsl"
 #include "geom.glsl"
 
-// The surface a pixel's reservoir describes. Past a mirror chain that is not the rasterized
-// surface — a mirror floor's reservoir describes the sphere reflected in it — so reuse
-// validation reads this, while reprojection still uses the G-buffer (which pixel saw it).
-//
-// 48 bytes, std430; read k times per spatial pass, so the Material is refetched through
-// `matid` rather than cached here.
+// Past a mirror chain the reservoir's surface isn't the rasterized one, so reuse validation reads this
+// while reprojection still uses the G-buffer. Material is refetched via `matid` to keep this 48 B.
 struct RestirSurface {
-    vec3 position;  // world-space resampling vertex
-    uint valid;     // 0 = no resampling vertex: sky, or a chain ending where restir_can_anchor() fails
-    vec3 normal;    // shading normal there, already normalized and front-facing
-    uint matid;     // material at the resampling vertex, for reuse validation
-    vec3 view_dir;  // unit, toward the previous path vertex
-    uint offset_n;  // octahedral-packed ray-origin offset normal; see restir_surface_offset_origin
+    vec3 position;
+    uint valid; // 0: sky, or the chain ended where restir_can_anchor() fails
+    vec3 normal; // normalized, front-facing
+    uint matid;
+    vec3 view_dir; // toward the previous path vertex
+    uint offset_n; // octahedral-packed
 };
 
 vec2 restir_oct_wrap(vec2 v) {
@@ -38,15 +34,14 @@ vec3 restir_unpack_normal(uint p) {
     return normalize(n);
 }
 
-// Shadow-ray origin toward `target`. The struct does not record whether `offset_n` is a primary's
-// shading normal or a traced hit's geometric one, so both take the primary's depth margin.
+// The struct doesn't record whether `offset_n` is a shading or geometric normal, so both take the
+// primary's depth margin.
 vec3 restir_surface_offset_origin(in RestirSurface s, vec3 target) {
     return offset_primary_origin(s.position, restir_unpack_normal(s.offset_n), target - s.position);
 }
 
-// Reuse gate between two resampling surfaces. Plane distance, not Euclidean: neighbours across a
-// flat wall are valid partners at any lateral distance. Relative to view distance, so it holds
-// at any scene scale.
+// Plane distance, not Euclidean, so neighbours across a flat wall stay valid at any lateral distance;
+// relative to view distance for scale independence.
 const float RESTIR_NORMAL_DOT_MIN  = 0.9;
 const float RESTIR_PLANE_DIST_REL  = 0.01;
 

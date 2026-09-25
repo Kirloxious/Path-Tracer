@@ -16,11 +16,9 @@ layout(std430, binding = BIND_HIT_TRANSMISSIVE_QUEUE) restrict buffer HitTransmi
 layout(std430, binding = BIND_HIT_EMISSIVE_QUEUE) restrict buffer HitEmissiveIndices      { uint hit_emissive_idx[]; };
 layout(std430, binding = BIND_SHADOW_QUEUE) restrict buffer ShadowQueueIndices      { uint shadow_queue_idx[]; };
 
-// GL guarantees only 65535 workgroups per dispatch dimension, which a full-screen queue
-// passes above ~4.2M pixels (4K is 8.3M), so prepare_indirect spills the count into Y.
+// GL guarantees only 65535 groups per dimension (~4.2M pixels here), so prepare_indirect spills into Y.
 const uint QUEUE_MAX_GROUPS_X = 65535u;
 
-// Flattened thread index for a kernel dispatched over a queue by prepare_indirect.
 uint queue_thread_index() {
     return gl_GlobalInvocationID.y * (gl_NumWorkGroups.x * gl_WorkGroupSize.x) + gl_GlobalInvocationID.x;
 }
@@ -31,9 +29,8 @@ uint queue_thread_index() {
 #define hit_emissive_count     q_count[Q_EMISSIVE]
 #define shadow_queue_count     q_count[Q_SHADOW]
 
-// Queue append, aggregated per subgroup: nearly every lane of a subgroup pushes to the same
-// counter, so one atomicAdd per subgroup replaces up to 32. Safe inside divergent control flow —
-// the ballot and readFirstInvocation both see exactly the lanes that are pushing.
+// One atomicAdd per subgroup instead of per lane. Safe under divergence: the ballot and
+// readFirstInvocation see exactly the pushing lanes.
 #if defined(GL_ARB_shader_ballot) && defined(GL_ARB_gpu_shader_int64)
 
 uint ballot_bit_count(uint64_t mask) {

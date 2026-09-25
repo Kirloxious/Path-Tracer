@@ -11,10 +11,7 @@
 #include <span>
 
 namespace {
-// Minimum primitive count at which buildR parallelizes its two recursive calls.
-// Above this, left subtree is spawned on std::async, right runs on the current thread.
-// Chosen so only the top few levels parallelize; deeper levels stay serial to amortize
-// thread creation cost.
+// Above this primitive count buildR spawns its left subtree on std::async; only the top few levels do.
 constexpr int PAR_THRESHOLD = 16384;
 } // namespace
 
@@ -46,9 +43,7 @@ int BVH::buildR(std::vector<Node>& tree, std::atomic<int>& nextSlot, std::span<c
 
     const size_t n = range.size();
 
-    // Leaf. `range` is a contiguous slice of the shared index array, and buildR only ever
-    // permutes within its own slice, so the offset of that slice is a stable run of
-    // triangle references the flattened leaf can point at.
+    // buildR only permutes within its own slice, so the slice offset is a stable run for the leaf.
     if (n <= static_cast<size_t>(MAX_LEAF_TRIANGLES)) {
         node.firstRef = static_cast<int>(range.data() - refsBase);
         node.refCount = static_cast<int>(n);
@@ -58,8 +53,6 @@ int BVH::buildR(std::vector<Node>& tree, std::atomic<int>& nextSlot, std::span<c
         return slot;
     }
 
-    // Claim a slot for `node` after recursing into both halves, wiring up the child links
-    // and subtree size. Shared by all three split strategies below.
     auto emitInterior = [&](int leftIdx, int rightIdx) {
         node.left = leftIdx;
         node.right = rightIdx;
@@ -75,7 +68,6 @@ int BVH::buildR(std::vector<Node>& tree, std::atomic<int>& nextSlot, std::span<c
         return emitInterior(leftIdx, rightIdx);
     };
 
-    // Binned SAH
     float bestCost = std::numeric_limits<float>::infinity();
     int   bestAxis = 0;
     int   bestBinSplit = 1;
@@ -91,8 +83,7 @@ int BVH::buildR(std::vector<Node>& tree, std::atomic<int>& nextSlot, std::span<c
 
     const glm::vec3 centroidExtent = centroidBounds.max - centroidBounds.min;
 
-    // All centroids coincide — no axis carries spatial information. Split the range
-    // in its current order to keep recursion bounded.
+    // All centroids coincide: split in current order to keep recursion bounded.
     if (centroidExtent.x < 1e-6f && centroidExtent.y < 1e-6f && centroidExtent.z < 1e-6f) {
         return buildSerial(n / 2);
     }
@@ -196,13 +187,10 @@ void BVH::build(std::span<const Triangle> triangles, std::span<const Vertex> ver
 
     Log::info("Building BVH over {} triangles", n);
 
-    // buildR permutes this in place; a leaf's `primitiveIndex` is already the triangle
-    // index, so flatten needs no second identity mapping.
     std::vector<int> indices(static_cast<std::size_t>(n));
     std::iota(indices.begin(), indices.end(), 0);
 
-    // Binary tree with n single-prim leaves has exactly 2n - 1 nodes. Pre-size so
-    // concurrent buildR calls can claim slots via nextSlot without reallocation.
+    // Upper bound (2n - 1), pre-sized so concurrent buildR calls can claim slots without reallocation.
     std::vector<Node> tree(static_cast<std::size_t>(2 * n - 1));
     std::atomic<int>  nextSlot{0};
 
@@ -213,8 +201,7 @@ void BVH::build(std::span<const Triangle> triangles, std::span<const Vertex> ver
     maxDepth = 0;
     root = flatten(treeRoot, tree, 1);
 
-    // buildR permuted `indices` in place; a leaf's (firstRef, refCount) addresses a run in
-    // it, so the finished permutation *is* the reference array the GPU needs.
+    // A leaf's (firstRef, refCount) addresses a run in the permuted `indices`, so it *is* the reference array.
     triRefs = std::move(indices);
 
     Log::info("BVH: {} nodes, {} triangle refs, max depth {}", nodes.size(), triRefs.size(), maxDepth);
@@ -227,16 +214,12 @@ int BVH::flatten(int nodeIndex, const std::vector<Node>& tree, int depth) {
 
     maxDepth = std::max(maxDepth, depth);
 
-    // Leaf — aabbMin.w carries the first triangle ref, aabbMax.w the count (> 0).
     if (node.isLeaf()) {
         nodes[currentIndex] = {glm::vec4(node.aabb.min, std::bit_cast<float>(node.firstRef)),
                                glm::vec4(node.aabb.max, std::bit_cast<float>(node.refCount))};
         return currentIndex;
     }
 
-    // Interior — lay out [self, left subtree, right subtree]. The left child is therefore
-    // always currentIndex + 1 and needs no storage; only the right child index is written,
-    // into aabbMin.w. aabbMax.w stays 0, which is what marks the node as interior.
     const int leftFlat = flatten(node.left, tree, depth + 1);
     const int rightFlat = flatten(node.right, tree, depth + 1);
 

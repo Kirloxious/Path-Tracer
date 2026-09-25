@@ -1,10 +1,5 @@
 #pragma once
 
-/**
- * @file window.h
- * @brief GLFW window + GL context ownership and the input translation layer.
- */
-
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <string_view>
@@ -13,12 +8,6 @@
 
 #include "core/input.h"
 
-/**
- * @brief GLFW key codes used to populate an InputState in Window::pollInput().
- *
- * Passed by value with a default-constructed fallback, so callers that want the stock
- * WASD + arrows binding can simply call `pollInput()`.
- */
 struct KeyMappings
 {
     int moveLeft = GLFW_KEY_A;
@@ -35,74 +24,40 @@ struct KeyMappings
     int debugGBufferNormal = GLFW_KEY_F1;
 };
 
-/**
- * @brief Owns the GLFW window and its OpenGL 4.6 core context.
- *
- * Construction throws std::runtime_error if GLFW, the window or the GL loader fails, so a
- * constructed Window always has a current 4.6 context.
- */
+/// Construction throws if GLFW, the window or GLAD fails, so a live Window always has a current 4.6 context.
 class Window
 {
 public:
     GLFWwindow* window = nullptr;
     int         width = 0;
     int         height = 0;
-    /// Owned, not a view: Application constructs the Window from Scene::name, and a scene
-    /// switch reassigns that string. A string_view here dangled from the second scene on.
+    /// Owned, not a view: a scene switch reassigns the Scene::name it was built from.
     std::string title;
 
-    /// Set by the GLFW framebuffer-size callback whenever the OS resizes the window.
-    /// Application drains this each frame to reallocate render targets on the render
-    /// thread rather than inside the callback.
+    /// Set by the framebuffer-size callback; the main loop drains it so targets are
+    /// reallocated between frames rather than inside the callback.
     bool pendingResize = false;
     int  pendingWidth = 0;
     int  pendingHeight = 0;
 
-    /**
-     * @brief Initialises GLFW, creates the window and makes its GL 4.6 context current.
-     *
-     * Requests a debug context in non-NDEBUG builds. On Hyprland it pushes a session-only
-     * `hyprctl` window rule so the window floats at the requested size; nothing is written
-     * to hyprland.conf.
-     *
-     * @param width       Requested framebuffer width in pixels.
-     * @param height      Requested framebuffer height in pixels.
-     * @param title       Window title; copied into `title`.
-     */
     Window(int width, int height, std::string_view title);
     ~Window();
 
-    // Owns the GLFW window *and* the library's global state, which the destructor tears down.
-    // Neither survives being duplicated or handed off, so copy and move are both gone.
+    // Also owns GLFW's global state (terminated in the destructor), so neither copy nor move is safe.
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
     Window(Window&&) = delete;
     Window& operator=(Window&&) = delete;
 
-    /// @return true once the user has closed the window.
     [[nodiscard]] bool shouldClose() const;
 
-    /**
-     * @brief Translates the current GLFW key state into a windowing-API-agnostic snapshot.
-     *
-     * @param keys Key bindings to sample; defaults to the stock WASD + arrows layout.
-     * @return One frame's worth of action flags for Camera::update().
-     */
     [[nodiscard]] InputState pollInput(const KeyMappings& keys = {}) const;
 
-    /// Makes this window's GL context current on the calling thread.
     void makeCurrentContext();
-    /// Presents the back buffer.
     void swapBuffers();
-    /// Drains the GLFW event queue, which may set `pendingResize`.
     void pollEvents();
 
-    /// Re-reads the framebuffer size from GLFW into `width` / `height`.
     void getFrameBufferSize();
 
-    /**
-     * @brief Replaces the window title.
-     * @param newTitle Copied into `title`; the caller's buffer need not outlive the call.
-     */
     void setTitle(std::string_view newTitle);
 };

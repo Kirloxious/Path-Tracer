@@ -7,7 +7,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 // Call of Duty: Advanced Warfare", SIGGRAPH 2014). Bilinear taps cover a 4x4 footprint.
 
 layout(binding = 0) uniform sampler2D src_tex;             // source mip (or hdr on the first pass)
-layout(rgba16f, binding = 1) writeonly uniform image2D dst_image; // destination mip
+layout(rgba16f, binding = 1) writeonly uniform image2D dst_image;
 
 layout(location = 0) uniform ivec2 dst_size;
 layout(location = 1) uniform int   apply_threshold; // 1 on the first (hdr → mip0) pass, 0 elsewhere
@@ -38,7 +38,6 @@ void main() {
     ivec2 p = ivec2(gl_GlobalInvocationID.xy);
     if (p.x >= dst_size.x || p.y >= dst_size.y) return;
 
-    // Offsets below are in source texels.
     vec2  uv = (vec2(p) + 0.5) / vec2(dst_size);
     vec2  ts = 1.0 / vec2(textureSize(src_tex, 0));
 

@@ -6,13 +6,12 @@
 // Mirrors FrameConstants in src/render/gpu_constants.h.
 layout(std140, binding = UBO_FRAME) uniform FrameConstants {
     ivec2 image_size;
-    // Counts from 1. Also the low-discrepancy sample index (via sampler_init), so it must
-    // advance only when a new sample is accumulated.
+    // Counts from 1. Also the sampler's sample index, so it may only advance when a sample is accumulated.
     int   frame_index;
-    // Frames since temporal history (TAA, ReSTIR) was last invalidated. Survives camera motion.
+    // Unlike frame_index, survives camera motion.
     int   history_frames;
-    uint  time_seed; // fresh every frame; seeds the white-noise PCG streams
-    uint  run_seed;  // constant for one accumulation; seeds the low-discrepancy sampler
+    uint  time_seed; // white-noise PCG streams
+    uint  run_seed; // low-discrepancy sampler; constant per accumulation
 };
 
 // Mirrors SceneConstants in src/render/gpu_constants.h.
@@ -23,7 +22,7 @@ layout(std140, binding = UBO_SCENE) uniform SceneConstants {
     int   max_bounces;
     float indirect_clamp;
     float env_map_intensity;
-    int   env_map_valid; // 0 = no envmap bound → sample_envmap returns black
+    int   env_map_valid;
 };
 
 #endif

@@ -103,24 +103,22 @@ void RasterGBufferPass::execute(const RenderContext&, RenderTargets& targets) {
 
     GL::applyRasterState({
         .depthTest = true,
-        // Reversed-Z: the projection maps far to 0 and near to 1, so "closer" is now "greater".
-        // Must stay in lockstep with makeReversedZProjection() and the 0.0 depth clear below.
+        // Reversed-Z: must stay in lockstep with makeReversedZProjection() and the 0.0 clear.
         .depthFunc = GL_GREATER,
         .depthWrite = true,
         .blend = false,
-        // Scenes here don't enforce a consistent winding (e.g. Cornell-box lids wind inward), so
-        // both sides are drawn and the fragment shader flips normals against the view direction —
-        // mirroring the path tracer's own set_face_normal convention.
+        // Windings aren't consistent (Cornell-box lids wind inward), so draw both sides; the fragment
+        // shader flips normals against the view direction.
         .cullFace = false,
     });
 
     constexpr float zeroNormal[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     fb.clearColor(GBuffer::ATTACH_NORMAL, zeroNormal);
-    fb.clearDepth(0.0f); // reversed-Z: 0 is the far plane
+    fb.clearDepth(0.0f);
 
     shader.use();
-    // `drawRanges` tiles the buffer exactly, so a draw per object would submit the same
-    // triangles at N times the CPU cost.
+    // `drawRanges` tiles the buffer exactly, so per-object draws would submit the same triangles at N
+    // times the CPU cost.
     vao.drawTriangles(indexCount);
 
     FrameBuffer::bindDefault();

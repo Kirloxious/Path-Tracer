@@ -1,17 +1,8 @@
 #pragma once
 
-/**
- * @file render_settings.h
- * @brief Runtime-tunable rendering knobs shared between the GUI and the passes.
- */
-
 #include "core/shader_shared.h"
 
-/**
- * @brief Debug AOV overlay selector.
- *
- * The values are the `AOV_*` defines from host_shared.glsl, which `aov.comp` switches on.
- */
+/// Values are the `AOV_*` defines from host_shared.glsl.
 enum class AovMode : int
 {
     None = AOV_NONE,
@@ -23,51 +14,36 @@ enum class AovMode : int
     Variance = AOV_VARIANCE,
 };
 
-/**
- * @brief Runtime-tunable rendering knobs shared between the GUI and the passes that consume them.
- *
- * Owned by Application, edited by the GUI, and handed to passes through RenderContext::settings.
- *
- * Anything added here must be safely mutable *without* resetting `frameIndex`, which would
- * invalidate progressive accumulation. Values that affect the integrand belong in Scene or
- * Camera, not here.
- */
+/// Everything here must be safely mutable without resetting `frameIndex`; anything affecting the
+/// integrand belongs in Scene or Camera.
 struct RenderSettings
 {
-    /// Multiplied into the color before tonemap. Slider range [0.05, 5.0].
-    /// Read directly by TonemapPass when auto-exposure is disabled.
+    /// Used by TonemapPass when auto-exposure is disabled.
     float exposure = 0.5f;
 
-    /// AOV overlay: when != None, AovPass overwrites the display texture with a
-    /// debug visualization of the selected buffer.
     AovMode aovMode = AovMode::None;
 
-    /// Far endpoint for the linear-depth visualization — depth is normalized against it.
     float aovDepthMax = 20.0f;
-    /// Upper endpoint for the BVH-cost heatmap, in traversal steps.
+    /// In traversal steps.
     float aovBvhCostMax = 200.0f;
 
     // -------- Bloom --------
     bool  bloomEnabled = true;
-    float bloomStrength = 0.06f;    ///< Final additive gain on the composite.
-    float bloomThreshold = 1.0f;    ///< Luminance above which bloom starts (soft-knee).
-    float bloomKnee = 0.5f;         ///< Width of the soft knee around the threshold.
-    float bloomFilterRadius = 1.0f; ///< 3x3 tent radius in destination texels for the upsample.
+    float bloomStrength = 0.06f;
+    float bloomThreshold = 1.0f;
+    float bloomKnee = 0.5f;
+    float bloomFilterRadius = 1.0f; ///< In destination texels.
 
     // -------- Auto exposure --------
-    bool autoExposureEnabled = true;
-    /// Lower end of the log2-luminance histogram range. -8 log2 ≈ 1/256 — together with
-    /// autoExposureLogMax this is a comfortable range for a mixed indoor/outdoor path-traced scene.
+    bool  autoExposureEnabled = true;
     float autoExposureLogMin = -8.0f;
-    /// Upper end of the log2-luminance histogram range. +4 log2 ≈ 16.
     float autoExposureLogMax = 4.0f;
-    float autoExposureTau = 1.0f;         ///< EMA time constant in seconds (larger = slower adaptation).
-    float autoExposureTargetLuma = 0.18f; ///< "Middle gray" target — standard photography convention.
-    float autoExposureMin = 0.05f;        ///< Clamp floor on the computed exposure.
-    float autoExposureMax = 8.0f;         ///< Clamp ceiling on the computed exposure.
-    /// Fractions of the non-black pixels, darkest first, dropped from each end of the
-    /// histogram before averaging — so a small emitter or a patch of deep shadow in view
-    /// does not swing the exposure of everything else.
+    float autoExposureTau = 1.0f; ///< EMA time constant in seconds.
+    float autoExposureTargetLuma = 0.18f;
+    float autoExposureMin = 0.05f;
+    float autoExposureMax = 8.0f;
+    /// Fractions of non-black pixels dropped from each end of the histogram, so a small emitter or
+    /// deep shadow doesn't swing the exposure of everything else.
     float autoExposureLowPercentile = 0.05f;
     float autoExposureHighPercentile = 0.95f;
 };

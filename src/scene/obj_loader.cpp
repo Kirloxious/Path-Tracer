@@ -22,7 +22,6 @@ struct VertexKey
 struct VertexKeyHash
 {
     std::size_t operator()(const VertexKey& k) const noexcept {
-        // Pack (vIdx, nIdx) into 64 bits then mix.
         std::uint64_t a = static_cast<std::uint32_t>(k.vIdx);
         std::uint64_t b = static_cast<std::uint32_t>(k.nIdx);
         std::uint64_t h = (a << 32) ^ b;
@@ -63,13 +62,11 @@ std::expected<Mesh, std::string> loadOBJ(const std::filesystem::path& path, floa
         return glm::vec3(cosY * v.x + sinY * v.z, v.y, -sinY * v.x + cosY * v.z);
     };
 
-    // A file can carry `vn` for some faces and omit it on others, so the fallback has to exist
-    // whenever *any* face vertex lacks a normal index — not only when the file has none.
+    // Some faces may carry `vn` and others not, so the fallback applies if *any* face vertex lacks one.
     const bool needsSmoothNormals = !hasNormals || std::any_of(shapes.begin(), shapes.end(), [](const tinyobj::shape_t& s) {
         return std::any_of(s.mesh.indices.begin(), s.mesh.indices.end(), [](const tinyobj::index_t& i) { return i.normal_index < 0; });
     });
 
-    // Smooth normals by averaging face normals at shared vertices.
     std::vector<glm::vec3> smoothNormals;
     if (needsSmoothNormals) {
         smoothNormals.resize(attrib.vertices.size() / 3, glm::vec3(0.0f));
@@ -93,7 +90,7 @@ std::expected<Mesh, std::string> loadOBJ(const std::filesystem::path& path, floa
                 glm::vec3 v2(
                     attrib.vertices[3 * idx2.vertex_index], attrib.vertices[3 * idx2.vertex_index + 1], attrib.vertices[3 * idx2.vertex_index + 2]);
 
-                // Weight by face area (unnormalized cross magnitude = 2 * area).
+                // Unnormalized cross product: weights by face area.
                 glm::vec3 faceNormal = glm::cross(v1 - v0, v2 - v0);
 
                 for (int i = 0; i < fv; ++i) {
@@ -126,8 +123,7 @@ std::expected<Mesh, std::string> loadOBJ(const std::filesystem::path& path, floa
         return rotY(smoothNormals[vIdx]);
     };
 
-    // Dedup keyed on (vertex_index, normal_index) so smoothing-group seams (same vertex, different
-    // normal) duplicate while shared verts within a smoothing group collapse.
+    // Keyed on (vertex, normal) so smoothing-group seams duplicate while shared vertices collapse.
     std::unordered_map<VertexKey, uint32_t, VertexKeyHash> vertexCache;
 
     auto resolveVertex = [&](const tinyobj::index_t& idx) -> uint32_t {
@@ -163,7 +159,6 @@ std::expected<Mesh, std::string> loadOBJ(const std::filesystem::path& path, floa
 
             uint32_t i0 = resolveVertex(shape.mesh.indices[indexOffset]);
 
-            // Fan-triangulate
             for (int i = 1; i + 1 < fv; ++i) {
                 uint32_t i1 = resolveVertex(shape.mesh.indices[indexOffset + i]);
                 uint32_t i2 = resolveVertex(shape.mesh.indices[indexOffset + i + 1]);

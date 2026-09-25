@@ -1,10 +1,5 @@
 #pragma once
 
-/**
- * @file renderer.h
- * @brief Owns the scene GPU buffers, the render targets and the ordered pass list.
- */
-
 #include <memory>
 #include <vector>
 
@@ -14,104 +9,36 @@
 #include "gpu/texture.h"
 #include "gpu/timer.h"
 
-/**
- * @brief Drives the pass chain and owns everything the passes share.
- *
- * Holds the scene-wide SSBOs/UBO (light groups, materials, camera, BVH nodes, triangles,
- * vertices), the environment map, the RenderTargets, and the pass list in execution order.
- * Passes never touch these buffers directly — they are bound once at their binding points
- * and read by the shaders.
- */
 class Renderer
 {
 public:
-    /**
-     * @brief Allocates the render targets at the initial framebuffer size.
-     * @param w Width in pixels.
-     * @param h Height in pixels.
-     */
     Renderer(int w, int h);
 
-    /**
-     * @brief (Re)uploads all scene buffers and SceneConstants, then calls onSceneLoaded() on every pass.
-     *
-     * Used both at startup and when the GUI requests a scene switch. An unlit scene is legal
-     * and gets a single zeroed light group. The envmap is rebuilt from
-     * `scene.envMapPath`, or cleared to an invalid EnvMap when the path is empty.
-     *
-     * @throws std::runtime_error if the envmap cannot be loaded, and std::logic_error if
-     *         World::create() was never called. Nothing has been replaced at that point, so
-     *         the previously loaded scene stays usable.
-     *
-     * @param scene  Scene to upload. Must already have had World::create() run on it.
-     * @param camera Camera whose CameraData seeds the UBO.
-     */
+    /// Throws if the envmap fails to load or World::create() was never run; nothing is replaced
+    /// by then, so the previous scene stays usable.
     void loadScene(const Scene& scene, const Camera& camera);
 
-    /**
-     * @brief Reallocates the render targets and forwards the new size to every pass.
-     *
-     * Non-positive dimensions are ignored (a minimised window reports 0x0). All accumulated
-     * image data is discarded, so the caller must reset `frameIndex`.
-     *
-     * @param w New width in pixels.
-     * @param h New height in pixels.
-     */
+    /// Ignores non-positive sizes (a minimised window reports 0x0). The caller must reset `frameIndex`.
     void resize(int w, int h);
 
-    /**
-     * @brief Uploads the camera's current CameraData into the UBO at binding 2.
-     * @param cam Camera to read `data` from. Call after Camera::update() and applyJitter().
-     */
+    /// Call after Camera::update() and applyJitter().
     void updateCameraUbo(const Camera& cam);
 
-    /**
-     * @brief Uploads FrameConstants, rotates the G-buffer, binds the shared resources, then
-     *        executes every registered pass in order, bracketing each with a GPU timer.
-     * @param ctx Per-frame state forwarded to each pass.
-     */
     void render(const RenderContext& ctx);
 
-    /**
-     * @brief Gives every pass a chance to hot-reload its shaders.
-     * @return true if any pass rebuilt a shader — the caller should then reset `frameIndex`.
-     */
+    /// @return true if any pass rebuilt a shader; the caller should then reset `frameIndex`.
     bool reloadShadersIfChanged();
 
-    /**
-     * @brief Appends a pass to the chain and registers it with the per-pass timer panel.
-     *
-     * Registration order is execution order, and the order is load-bearing (see RenderPass).
-     *
-     * @param pass Pass to take ownership of.
-     */
+    /// Registration order is execution order, and the order is load-bearing.
     void addRenderPass(std::unique_ptr<RenderPass> pass);
 
-    /**
-     * @brief Blits the final `display` target to the default framebuffer.
-     * @param width  Destination width in pixels.
-     * @param height Destination height in pixels.
-     */
     void blitToSwapChain(int width, int height);
 
-    /**
-     * @brief Blits a G-buffer attachment to the default framebuffer instead of the final image.
-     *
-     * Backs the F1/F2 debug views in Application::run().
-     *
-     * @param attachmentIndex GBuffer::ATTACH_NORMAL (the only colour attachment).
-     * @param width           Destination width in pixels.
-     * @param height          Destination height in pixels.
-     */
     void blitGBufferAttachmentToSwapChain(int attachmentIndex, int width, int height);
 
-    /// @return The per-pass GPU timings, for the GUI panel.
     const PassTimings& getPassTimings() const { return passTimings; }
 
 private:
-    /// Binds everything scene- and frame-wide — scene SSBOs, the camera/frame/scene UBOs, the
-    /// env map and the current G-buffer textures — at the BIND_* / UBO_* / TEX_* points the
-    /// shaders declare. Passes bind only their own.
     void bindSharedResources() const;
 
     RenderTargets targets;

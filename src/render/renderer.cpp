@@ -34,8 +34,7 @@ void Renderer::loadScene(const Scene& scene, const Camera& camera) {
     }
     envMap = std::move(nextEnvMap);
 
-    // An unlit scene still gets one zeroed group, so binding 0 never keeps the previous
-    // scene's lights; the shaders gate every read on num_light_groups.
+    // An unlit scene still gets one zeroed group so binding 0 never keeps the previous scene's lights.
     const std::vector<World::LightGroup> noLights(1);
     lightGroupsSSBO = Buffer(world.lightGroups.empty() ? noLights : world.lightGroups, GL_STATIC_DRAW);
     matsSSBO = Buffer(world.materials, GL_STATIC_DRAW);
@@ -43,12 +42,9 @@ void Renderer::loadScene(const Scene& scene, const Camera& camera) {
     bvhNodesSSBO = Buffer(world.bvh.nodes, GL_STATIC_DRAW);
     trianglesSSBO = Buffer(world.triangles, GL_STATIC_DRAW);
     verticesSSBO = Buffer(world.vertices, GL_STATIC_DRAW);
-    // A BVH leaf owns a contiguous run here, each entry indexing trianglesSSBO. The indirection
-    // lets leaves batch triangles without disturbing the emissive-first triangle order.
     triRefsSSBO = Buffer(world.bvh.triRefs, GL_STATIC_DRAW);
 
-    // Uploaded even without an envmap: every read is gated on env_map_valid, but an empty
-    // binding would make a stray read undefined rather than merely wrong.
+    // Uploaded even without an envmap so a stray read is merely wrong, not undefined.
     const std::vector<EnvSampleCell> fallback(1);
     envSamplingSSBO = Buffer(envMap.samplingCells().empty() ? fallback : envMap.samplingCells(), GL_STATIC_DRAW);
 
@@ -100,8 +96,7 @@ void Renderer::bindSharedResources() const {
 
     envMap.bind(TEX_ENV_MAP);
 
-    // Bound while RasterGBufferPass renders into them. That is not a feedback loop, since the
-    // raster shaders never sample these units.
+    // Not a feedback loop: the raster shaders never sample these units.
     targets.gbuf.normal.bindSampler(TEX_GBUF_NORMAL);
     targets.gbuf.depth.bindSampler(TEX_GBUF_DEPTH);
 }
@@ -118,7 +113,6 @@ void Renderer::render(const RenderContext& ctx) {
     targets.beginFrame();
     bindSharedResources();
 
-    // Pull in previous frame's per-pass timestamps before we overwrite them.
     passTimings.beginFrame();
     for (size_t i = 0; i < passes.size(); ++i) {
         passTimings.beginPass(static_cast<int>(i));

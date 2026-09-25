@@ -9,11 +9,8 @@
 #include "bsdf.glsl"
 #include "envmap.glsl"
 
-// Analytic next-event estimation for shade_surface and shade_transmissive, which differ only in
-// the lobe evaluated — one copy of the MIS bookkeeping, so the two cannot drift apart.
+// Shared by shade_surface and shade_transmissive so their MIS bookkeeping cannot drift apart.
 
-// The surface an estimator is standing on. `dielectric` picks the lobe: a rough dielectric's
-// reflection instead of the opaque metallic-roughness BSDF.
 struct NeeSurface {
     vec3  P;
     vec3  N;
@@ -31,20 +28,8 @@ vec3 nee_eval(in NeeSurface surf, vec3 L, out float pdf) {
     return bsdf_eval(m, surf.N, surf.V, L, pdf);
 }
 
-/**
- * Schedules up to two independent shadow rays for this vertex, toward an area light and toward
- * the environment.
- *
- * @param allow_light_nee false at a ReSTIR anchor, where resampling already estimates the same
- *                        area-light integral and a second estimator would double-count it.
- * @param dim_base        first sampler dimension group this vertex owns; uses [base, base+5).
- * @param ss              fully written, including the two validity flags — the caller must not
- *                        assume anything survives from a previous bounce.
- * @return the FLAG_* bits describing which techniques ran, for the next vertex's MIS. A
- *         technique that ran but drew an unusable sample still counts: the BSDF side's balance
- *         weight must apply whenever the technique *could* have produced the direction, or the
- *         two weights stop summing to one.
- */
+// allow_light_nee is false at a ReSTIR anchor, which already estimates the area-light integral. Returns
+// the FLAG_* bits of techniques that ran, usable sample or not, so the BSDF-side MIS weights sum to one.
 uint nee_schedule(in NeeSurface surf, in vec3 throughput, bool allow_light_nee, int num_light_groups, inout Sampler smp, uint dim_base,
                   out ShadowState ss) {
     ss.nee_dir   = vec3(0.0);
@@ -56,8 +41,7 @@ uint nee_schedule(in NeeSurface surf, in vec3 throughput, bool allow_light_nee, 
     ss.env_le    = vec3(0.0);
     ss.nee_tri   = 0xFFFFFFFFu;
 
-    // A delta lobe has zero density for any chosen direction, so no NEE technique can reach it.
-    // A smooth opaque dielectric still has its diffuse base; smooth glass has nothing.
+    // A delta lobe has zero density for any chosen direction. Smooth opaque dielectrics keep their diffuse base.
     Material m = mats[surf.matid];
     if (surf.dielectric ? bsdf_is_delta(m) : bsdf_is_mirror(m)) {
         return 0u;
@@ -84,8 +68,7 @@ uint nee_schedule(in NeeSurface surf, in vec3 throughput, bool allow_light_nee, 
         float light_pdf = light_solid_angle_pdf(tri, grp, L, dist2);
         float cos_theta = max(0.0, dot(surf.N, L));
         if (cos_theta > 0.0 && light_pdf > 0.0) {
-            // f and the BSDF pdf for this same direction come from one evaluation, so the
-            // balance heuristic can never disagree with the BSDF it is weighting.
+            // f and the pdf come from one evaluation, so the balance heuristic matches the BSDF it weights.
             float bsdf_pdf;
             vec3  f = nee_eval(surf, L, bsdf_pdf);
             if (dot(f, f) > 0.0) {
@@ -101,8 +84,7 @@ uint nee_schedule(in NeeSurface surf, in vec3 throughput, bool allow_light_nee, 
         }
     }
 
-    // Runs at a ReSTIR anchor too: ReSTIR resamples emissive triangles only, so without this
-    // an HDR sky never lights a primary surface by anything but a lucky escaping ray.
+    // Runs at a ReSTIR anchor too: ReSTIR resamples emissive triangles only.
     if (env_map_valid != 0) {
         flags |= FLAG_PREV_ENV_NEE;
         sampler_set_dim(smp, dim_base + 3u);
